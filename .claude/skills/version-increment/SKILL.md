@@ -1,0 +1,181 @@
+---
+description: Bump package version, generate changelog doc, tag, and publish to npm
+user-invocable: true
+disable-model-invocation: true
+argument-description: "Optional: major, minor, or patch to skip the proposal step"
+---
+
+# /version-increment
+
+Bump the version of `@takazudo/mdx-formatter`, generate a changelog doc page, commit, tag, and publish to npm.
+
+## Preconditions
+
+Before doing anything else, verify ALL of the following. If any check fails, stop and tell the user.
+
+1. Current branch is `main`
+2. Working tree is clean (`git status --porcelain` returns empty)
+3. At least one `v*` tag exists (`git tag -l 'v*'`). If no tag exists, tell the user to create the initial tag first (e.g. `git tag v0.1.0 && git push --tags`).
+
+Find the latest version tag:
+
+```bash
+git tag -l 'v*' --sort=-v:refname | head -1
+```
+
+## Analyze changes since last tag
+
+Run:
+
+```bash
+git log <last-tag>..HEAD --oneline
+```
+
+and
+
+```bash
+git diff <last-tag>..HEAD --stat
+```
+
+Categorize each commit by its conventional-commit prefix:
+
+- **Breaking Changes**: commits with `!` suffix or `BREAKING CHANGE` in body
+- **Features**: `feat:` prefix
+- **Bug Fixes**: `fix:` prefix
+- **Other Changes**: everything else (`docs:`, `chore:`, `refactor:`, `ci:`, `test:`, `style:`, `perf:`, etc.)
+
+## Propose version bump
+
+Based on the changes:
+
+- If there are breaking changes → propose **major** bump
+- If there are features (no breaking) → propose **minor** bump
+- Otherwise → propose **patch** bump
+
+If the user passed an argument (`major`, `minor`, or `patch`), use that directly instead of proposing.
+
+Present the proposal to the user:
+
+```
+Proposed bump: {current} → {new} ({type})
+
+Breaking Changes:
+- description (hash)
+
+Features:
+- description (hash)
+
+Bug Fixes:
+- description (hash)
+
+Other Changes:
+- description (hash)
+```
+
+Only show sections that have entries. **Wait for user confirmation before proceeding.**
+
+## Create changelog doc
+
+Create `doc/docs/changelog/v{VERSION}.mdx` with this format:
+
+```mdx
+---
+sidebar_position: {computed}
+---
+
+# v{VERSION}
+
+Released: {YYYY-MM-DD}
+
+## Breaking Changes
+
+- Description (commit-hash)
+
+## Features
+
+- Description (commit-hash)
+
+## Bug Fixes
+
+- Description (commit-hash)
+
+## Other Changes
+
+- Description (commit-hash)
+```
+
+Rules:
+
+- Only include sections that have entries
+- `sidebar_position` = `10000 - (MAJOR * 1000 + MINOR * 100 + PATCH)` — newer versions get lower numbers and appear first in the sidebar
+- Use today's date for the release date
+- Each entry should be the commit subject with the short hash in parentheses
+
+## Update sidebars.js
+
+In `doc/sidebars.js`, add the new changelog doc to `changelogSidebar`. Insert it after `'changelog/index'` so entries are listed in the array. Keep entries sorted with newer versions first (lower sidebar_position = listed first in the array).
+
+For example, after adding v0.2.0:
+
+```js
+changelogSidebar: ['changelog/index', 'changelog/v0.2.0'],
+```
+
+After adding v0.3.0:
+
+```js
+changelogSidebar: ['changelog/index', 'changelog/v0.3.0', 'changelog/v0.2.0'],
+```
+
+## Regenerate category nav
+
+Run the category nav generation script so the changelog index page picks up the new entry:
+
+```bash
+cd doc && node scripts/generate-category-nav.js
+```
+
+## Commit changelog
+
+```bash
+git add doc/docs/changelog/v{VERSION}.mdx doc/sidebars.js doc/src/data/category-nav.json
+git commit -m "docs: Add changelog for v{VERSION}"
+```
+
+## Bump version in package.json
+
+Update the `version` field in `package.json` to the new version (without the `v` prefix).
+
+```bash
+git add package.json
+git commit -m "chore: Bump version to v{VERSION}"
+```
+
+## Build and test
+
+Run the full build and test suite to make sure everything is good:
+
+```bash
+pnpm build && pnpm test
+```
+
+If anything fails, stop and tell the user. Do not proceed with tagging or publishing.
+
+## Tag and push
+
+**Ask the user for confirmation before tagging and pushing.**
+
+```bash
+git tag v{VERSION}
+git push && git push --tags
+```
+
+## Publish to npm
+
+**Ask the user for confirmation before publishing.**
+
+```bash
+npm publish
+```
+
+After publishing, verify the package page: `https://www.npmjs.com/package/@takazudo/mdx-formatter`
