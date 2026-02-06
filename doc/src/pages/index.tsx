@@ -43,7 +43,10 @@ export default function Home(): ReactNode {
                     </a>
                   </li>
                   <li>
-                    <a href="https://www.npmjs.com/package/@takazudo/mdx-formatter" rel="noopener noreferrer">
+                    <a
+                      href="https://www.npmjs.com/package/@takazudo/mdx-formatter"
+                      rel="noopener noreferrer"
+                    >
                       <svg className={styles.linkIcon} viewBox="0 0 16 16" aria-hidden="true">
                         <path fill="currentColor" d="M0 0v16h16V0H0zm13 13h-2V5H8v8H3V3h10v10z" />
                       </svg>
