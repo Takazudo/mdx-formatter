@@ -1,0 +1,84 @@
+name: 'Build Docusaurus Application'
+description: 'Setup environment, run quality checks, and build Docusaurus site'
+
+inputs:
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '20'
+  pnpm-version:
+    description: 'pnpm version to use'
+    required: false
+    default: '10'
+  working-directory:
+    description: 'Working directory containing the Docusaurus project'
+    required: false
+    default: 'doc'
+
+outputs:
+  build-output-path:
+    description: 'Path to the build output directory'
+    value: 'build'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'pnpm'
+        cache-dependency-path: '${{ inputs.working-directory }}/pnpm-lock.yaml'
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - name: Run code quality checks
+      run: |
+        echo "🔍 Running code quality checks..."
+        pnpm run typecheck
+        pnpm run lint
+        pnpm run format
+        echo "✅ Code quality checks passed"
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - name: Build Docusaurus
+      run: pnpm build
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        NODE_ENV: production
+        NODE_OPTIONS: '--max-old-space-size=4096'
+
+    - name: Verify build output
+      run: |
+        echo "📦 Build Output Verification"
+        echo "============================"
+
+        if [ ! -d "build" ]; then
+          echo "❌ Error: build/ directory not found"
+          exit 1
+        fi
+
+        # Count output files
+        HTML_COUNT=$(find build -name "*.html" | wc -l)
+        echo "📄 HTML files: $HTML_COUNT"
+
+        if [ -d "build/assets" ]; then
+          echo "✅ Docusaurus assets found"
+        else
+          echo "⚠️ Warning: assets/ directory not found (might be ok for minimal builds)"
+        fi
+
+        echo "============================"
+        echo "✅ Build output verified"
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}

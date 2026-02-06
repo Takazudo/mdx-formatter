@@ -19,3 +19,8 @@ coverage/
 __inbox/
 tmp/
 temp/
+
+# Docusaurus
+doc/.docusaurus/
+doc/build/
+doc/node_modules/
