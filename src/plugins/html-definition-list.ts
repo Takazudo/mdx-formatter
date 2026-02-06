@@ -1,14 +1,7 @@
 import { visit } from 'unist-util-visit';
 import type { Root } from 'mdast';
 import type { Node } from 'unist';
-
-interface HtmlNode extends Node {
-  value?: string;
-}
-
-interface ParentNode extends Node {
-  children: Node[];
-}
+import type { HtmlNode, ParentNode } from '../types.js';
 
 /**
  * Plugin to convert HTML definition lists to markdown

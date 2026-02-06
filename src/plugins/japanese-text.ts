@@ -1,20 +1,7 @@
 import { visit } from 'unist-util-visit';
 import type { Root } from 'mdast';
 import type { Node } from 'unist';
-
-interface TextNode extends Node {
-  type: 'text';
-  value: string;
-}
-
-interface HeadingNode extends Node {
-  type: 'heading';
-  children: Node[];
-}
-
-interface ParentNode extends Node {
-  children: Node[];
-}
+import type { TextNode, HeadingNode, ParentNode } from '../types.js';
 
 /**
  * Plugin to handle Japanese text formatting rules

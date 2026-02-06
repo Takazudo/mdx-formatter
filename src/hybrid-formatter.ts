@@ -53,13 +53,13 @@ interface ListItemNode extends AstNodeWithPosition {
 }
 
 export class HybridFormatter {
-  originalContent: string;
-  content: string;
-  lines: string[];
+  private readonly originalContent: string;
+  private content: string;
+  private lines: string[];
   settings: FormatterSettings;
-  ast: Root;
-  positionMap: PositionMapEntry[];
-  indentDetector: IndentDetectorLike | null;
+  private ast: Root;
+  private positionMap: PositionMapEntry[];
+  private indentDetector: IndentDetectorLike | null;
 
   constructor(content: string, settings: FormatterSettings | null = null) {
     this.originalContent = content;

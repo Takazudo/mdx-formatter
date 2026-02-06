@@ -1,24 +1,7 @@
 import { visit } from 'unist-util-visit';
 import type { Root } from 'mdast';
 import type { Node } from 'unist';
-
-interface ListNode extends Node {
-  type: 'list';
-  ordered?: boolean;
-  start?: number | null;
-  spread?: boolean;
-  children: ListItemNode[];
-}
-
-interface ListItemNode extends Node {
-  type: 'listItem';
-  spread?: boolean;
-  data?: Record<string, unknown>;
-}
-
-interface ParentNode extends Node {
-  children: Node[];
-}
+import type { ListNode, ListItemNode, ParentNode } from '../types.js';
 
 /**
  * Plugin to normalize list markers and merge adjacent lists

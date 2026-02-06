@@ -3,15 +3,15 @@
  * Analyzes content to determine the most likely indentation style and size
  */
 
-import type { IndentStats, IndentPattern } from './types.js';
+import type { IndentStats, IndentPattern, IndentDetectorLike } from './types.js';
 
-export class IndentDetector {
-  content: string;
-  lines: string[];
-  indentType: 'space' | 'tab';
-  indentSize: number;
-  confidence: number;
-  stats: IndentStats;
+export class IndentDetector implements IndentDetectorLike {
+  private readonly content: string;
+  private readonly lines: string[];
+  private indentType: 'space' | 'tab';
+  private indentSize: number;
+  private confidence: number;
+  private stats: IndentStats;
 
   constructor(content: string) {
     this.content = content || '';
@@ -395,34 +395,10 @@ export class IndentDetector {
   }
 
   /**
-   * Get detailed statistics about the detection
-   */
-  getStatistics(): IndentStats {
-    return this.stats;
-  }
-
-  /**
    * Format a string with the detected indentation
    */
   formatWithIndent(text: string, level: number): string {
     const indent = this.getIndentString().repeat(level);
     return indent + text;
-  }
-
-  /**
-   * Get the indentation level of a line
-   */
-  getLineIndentLevel(line: string): number {
-    const indent = this.getLineIndent(line);
-
-    if (!indent) {
-      return 0;
-    }
-
-    if (this.indentType === 'tab') {
-      return (indent.match(/\t/g) || []).length;
-    } else {
-      return Math.floor(indent.length / this.indentSize);
-    }
   }
 }

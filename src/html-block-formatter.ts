@@ -7,8 +7,8 @@ import * as prettier from 'prettier';
 import type { FormatHtmlBlocksInMdxSetting } from './types.js';
 
 export class HtmlBlockFormatter {
-  settings: FormatHtmlBlocksInMdxSetting;
-  htmlElements: Set<string>;
+  private settings: FormatHtmlBlocksInMdxSetting;
+  private readonly htmlElements: Set<string>;
 
   constructor(settings: Partial<FormatHtmlBlocksInMdxSetting> = {}) {
     this.settings = {

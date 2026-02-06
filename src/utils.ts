@@ -31,12 +31,15 @@ export function deepCloneSettings<T>(obj: T): T {
  * Deep merge source into target, returning a new object.
  * Arrays are replaced (not concatenated).
  */
-export function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
+export function deepMerge(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
   const result = deepCloneSettings(target);
 
   for (const key of Object.keys(source)) {
-    const sourceVal = (source as Record<string, unknown>)[key];
-    const targetVal = (result as Record<string, unknown>)[key];
+    const sourceVal = source[key];
+    const targetVal = result[key];
 
     if (
       sourceVal &&
@@ -46,12 +49,12 @@ export function deepMerge<T extends Record<string, unknown>>(target: T, source: 
       typeof targetVal === 'object' &&
       !Array.isArray(targetVal)
     ) {
-      (result as Record<string, unknown>)[key] = deepMerge(
+      result[key] = deepMerge(
         targetVal as Record<string, unknown>,
         sourceVal as Record<string, unknown>,
       );
     } else {
-      (result as Record<string, unknown>)[key] = deepCloneSettings(sourceVal);
+      result[key] = deepCloneSettings(sourceVal);
     }
   }
 

@@ -14,6 +14,20 @@ import { deepCloneSettings, deepMerge } from './utils.js';
 import type { FormatterSettings, FormatOptions } from './types.js';
 
 /**
+ * Type-safe wrapper for merging settings with untyped config objects.
+ * The deep merge operates on plain objects, so we cast at the boundary.
+ */
+function mergeSettings(
+  base: FormatterSettings,
+  overrides: Record<string, unknown>,
+): FormatterSettings {
+  return deepMerge(
+    base as unknown as Record<string, unknown>,
+    overrides,
+  ) as unknown as FormatterSettings;
+}
+
+/**
  * Try to find and read a config file
  */
 function findConfigFile(configPath?: string): Record<string, unknown> | null {
@@ -59,18 +73,12 @@ export function loadConfig(options: FormatOptions = {}): FormatterSettings {
   // Layer 2: Config file
   const fileConfig = findConfigFile(options.config);
   if (fileConfig) {
-    settings = deepMerge(
-      settings as unknown as Record<string, unknown>,
-      fileConfig,
-    ) as unknown as FormatterSettings;
+    settings = mergeSettings(settings, fileConfig);
   }
 
   // Layer 3: Programmatic options
   if (options.settings) {
-    settings = deepMerge(
-      settings as unknown as Record<string, unknown>,
-      options.settings as Record<string, unknown>,
-    ) as unknown as FormatterSettings;
+    settings = mergeSettings(settings, options.settings as Record<string, unknown>);
   }
 
   return settings;

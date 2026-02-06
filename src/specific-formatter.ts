@@ -9,8 +9,8 @@ import { deepCloneSettings } from './utils.js';
 import type { FormatterSettings, JsxStackEntry } from './types.js';
 
 export class SpecificFormatter {
-  content: string;
-  lines: string[];
+  private content: string;
+  private lines: string[];
   settings: FormatterSettings;
 
   constructor(content: string, settings: FormatterSettings | null = null) {
