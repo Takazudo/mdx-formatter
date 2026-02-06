@@ -136,7 +136,7 @@ export interface FormatterSettings {
  */
 export interface FormatOptions {
   config?: string;
-  settings?: Partial<DeepPartial<FormatterSettings>>;
+  settings?: DeepPartial<FormatterSettings>;
 }
 
 /**

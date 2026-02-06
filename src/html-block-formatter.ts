@@ -6,28 +6,21 @@
 import * as prettier from 'prettier';
 import type { FormatHtmlBlocksInMdxSetting } from './types.js';
 
-interface HtmlBlockFormatterSettings {
-  enabled?: boolean;
-  formatterConfig: {
-    parser: string;
-    tabWidth: number;
-    useTabs: boolean;
-  };
-}
-
 export class HtmlBlockFormatter {
-  settings: HtmlBlockFormatterSettings;
+  settings: FormatHtmlBlocksInMdxSetting;
   htmlElements: Set<string>;
 
   constructor(settings: Partial<FormatHtmlBlocksInMdxSetting> = {}) {
     this.settings = {
+      enabled: true,
+      description: '',
       formatterConfig: {
         parser: 'html',
         tabWidth: 2,
         useTabs: false,
       },
       ...settings,
-    } as HtmlBlockFormatterSettings;
+    } as FormatHtmlBlocksInMdxSetting;
 
     // List of HTML elements (not JSX components which start with uppercase)
     this.htmlElements = new Set([
@@ -276,7 +269,7 @@ export class HtmlBlockFormatter {
     try {
       // Find HTML blocks - handle nested tags properly
       const blocks: { start: number; end: number; content: string; tagName: string }[] = [];
-      const processedRanges = new Set<[number, number]>();
+      const processedRanges: [number, number][] = [];
 
       // First pass: find all opening tags
       const openingTagPattern = /<(\w+)(?:\s[^>]*)?>(?!.*\/>)/g;
@@ -311,7 +304,7 @@ export class HtmlBlockFormatter {
                 content: content.substring(startIndex, endIndex),
                 tagName: tagName,
               });
-              processedRanges.add([startIndex, endIndex]);
+              processedRanges.push([startIndex, endIndex]);
             }
           }
         }

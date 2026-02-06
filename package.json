@@ -12,7 +12,7 @@
     }
   },
   "bin": {
-    "mdx-formatter": "dist/cli.js"
+    "mdx-formatter": "./dist/cli.js"
   },
   "files": [
     "dist/",

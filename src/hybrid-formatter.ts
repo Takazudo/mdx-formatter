@@ -877,7 +877,7 @@ export class HybridFormatter {
 
     // Collect all HTML nodes first, tracking parent-child relationships
     const htmlNodes: MdxJsxElement[] = [];
-    const processedRanges = new Set<[number, number]>();
+    const processedRanges: [number, number][] = [];
 
     visit(this.ast, 'mdxJsxFlowElement', (node: Node) => {
       const jsxNode = node as MdxJsxElement;
@@ -898,7 +898,7 @@ export class HybridFormatter {
         // Only process top-level HTML elements, not nested ones
         if (!isNested) {
           htmlNodes.push(jsxNode);
-          processedRanges.add([startLine, endLine]);
+          processedRanges.push([startLine, endLine]);
         }
       }
     });
