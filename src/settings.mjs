@@ -100,20 +100,3 @@ export function getEnabledRules() {
       return acc;
     }, {});
 }
-
-// Export function to toggle a specific rule
-export function toggleRule(ruleName, enabled) {
-  if (formatterSettings[ruleName]) {
-    formatterSettings[ruleName].enabled = enabled;
-  }
-}
-
-// Export function to update rule configuration
-export function updateRuleConfig(ruleName, config) {
-  if (formatterSettings[ruleName]) {
-    formatterSettings[ruleName] = {
-      ...formatterSettings[ruleName],
-      ...config,
-    };
-  }
-}

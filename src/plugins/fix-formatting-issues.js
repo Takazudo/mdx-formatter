@@ -24,15 +24,15 @@ export function fixFormattingIssues(content) {
   // Pattern: **word ** -> **word**
   fixed = fixed.replace(/\*\*([^*]+)\s+\*\*/g, '**$1**');
 
-  // Fix 5: Remove unwanted spaces inside HTML tags
-  // Pattern: <tag>content </tag> -> <tag>content</tag>
-  fixed = fixed.replace(/(<[^/>]+>)([^<]*)\s+(<\/[^>]+>)/g, '$1$2$3');
+  // Fix 5: Remove extra trailing spaces inside HTML tags (2+ spaces only)
+  // Pattern: <tag>content  </tag> -> <tag>content </tag> (preserves single space)
+  fixed = fixed.replace(/(<[^/>]+>)([^<]*)\s{2,}(<\/[^>]+>)/g, '$1$2 $3');
 
-  // Fix 6: Remove unwanted spaces before self-closing HTML tags
-  // Pattern: text <br/> -> text<br/>
-  fixed = fixed.replace(/\s+(<[^>]+\/>)/g, '$1');
+  // Fix 6: Collapse multiple spaces before self-closing HTML tags to single space
+  // Pattern: text  <br/> -> text <br/> (preserves meaningful single space)
+  fixed = fixed.replace(/\s{2,}(<[^>]+\/>)/g, ' $1');
 
-  // Fix 5: Fix HTML entity encoding for Japanese characters
+  // Fix 7: Fix HTML entity encoding for Japanese characters
   // Specifically fix the common case of を being encoded as &#x3092;
   fixed = fixed.replace(/&#x3092;/g, 'を');
 

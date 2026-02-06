@@ -20,15 +20,13 @@ export function deepCloneSettings(obj) {
     return obj.map((item) => deepCloneSettings(item));
   }
 
-  if (obj instanceof Object) {
-    const clonedObj = {};
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        clonedObj[key] = deepCloneSettings(obj[key]);
-      }
+  const clonedObj = {};
+  for (const key in obj) {
+    if (Object.hasOwn(obj, key)) {
+      clonedObj[key] = deepCloneSettings(obj[key]);
     }
-    return clonedObj;
   }
+  return clonedObj;
 }
 
 /**

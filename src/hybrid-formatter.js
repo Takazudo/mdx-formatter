@@ -660,48 +660,43 @@ export class HybridFormatter {
   extractAttributeExpression(attrName, originalText) {
     // Try to find the attribute expression in the original text
     const lines = originalText.split('\n');
+    const needle = `${attrName}={`;
 
-    for (const line of lines) {
-      // Look for the attribute with expression
-      const pattern = new RegExp(`${attrName}=\\{`);
-      if (pattern.test(line)) {
-        // Check if it's a complete single-line expression
-        const startMatch = line.match(new RegExp(`${attrName}=\\{([^}]+)\\}`));
-        if (startMatch) {
-          return `${attrName}={${startMatch[1]}}`;
-        }
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const line = lines[lineIdx];
+      // Look for the attribute with expression using string matching (not regex)
+      const needlePos = line.indexOf(needle);
+      if (needlePos === -1) continue;
 
-        // Multi-line expression - need to extract across lines
-        const startMatch2 = line.match(new RegExp(`${attrName}=\\{`));
-        if (startMatch2) {
-          // Find the closing brace
-          let braceDepth = 1;
-          let result = `${attrName}={`;
-          let lineIndex = lines.indexOf(line);
-          let charIndex = line.indexOf(`${attrName}={`) + `${attrName}={`.length;
+      // Check if it's a complete single-line expression
+      const afterOpen = needlePos + needle.length;
+      const closeBrace = line.indexOf('}', afterOpen);
+      if (closeBrace !== -1 && !line.substring(afterOpen, closeBrace).includes('{')) {
+        return `${attrName}={${line.substring(afterOpen, closeBrace)}}`;
+      }
 
-          while (lineIndex < lines.length && braceDepth > 0) {
-            const currentLine = lines[lineIndex];
-            for (
-              let i = lineIndex === lines.indexOf(line) ? charIndex : 0;
-              i < currentLine.length;
-              i++
-            ) {
-              const char = currentLine[i];
-              result += char;
-              if (char === '{') braceDepth++;
-              if (char === '}') {
-                braceDepth--;
-                if (braceDepth === 0) {
-                  return result;
-                }
-              }
-            }
-            lineIndex++;
-            if (lineIndex < lines.length && braceDepth > 0) {
-              result += '\n';
+      // Multi-line expression - need to extract across lines
+      let braceDepth = 1;
+      let result = needle;
+      let currentLineIdx = lineIdx;
+      let charIndex = afterOpen;
+
+      while (currentLineIdx < lines.length && braceDepth > 0) {
+        const currentLine = lines[currentLineIdx];
+        for (let i = currentLineIdx === lineIdx ? charIndex : 0; i < currentLine.length; i++) {
+          const char = currentLine[i];
+          result += char;
+          if (char === '{') braceDepth++;
+          if (char === '}') {
+            braceDepth--;
+            if (braceDepth === 0) {
+              return result;
             }
           }
+        }
+        currentLineIdx++;
+        if (currentLineIdx < lines.length && braceDepth > 0) {
+          result += '\n';
         }
       }
     }
