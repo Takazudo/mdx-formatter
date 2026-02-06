@@ -1,0 +1,46 @@
+---
+sidebar_position: 7
+---
+
+# API Reference
+
+## CLI Options
+
+| Option                | Description                                                                                           |
+| --------------------- | ----------------------------------------------------------------------------------------------------- |
+| `-w, --write`         | Write formatted files in place                                                                        |
+| `-c, --check`         | Check if files need formatting (for CI)                                                               |
+| `--config <path>`     | Path to config file                                                                                   |
+| `--ignore <patterns>` | Comma-separated patterns to ignore (default: `node_modules/**,dist/**,build/**,.git/**,worktrees/**`) |
+
+## `format(content, options?)`
+
+Format markdown/MDX content.
+
+- `content` (`string`) - Content to format
+- `options.config` (`string`) - Path to config file
+- `options.settings` (`object`) - Direct settings overrides (see [Options Reference](/docs/options))
+- Returns `Promise<string>` - Formatted content (returns original on error)
+
+## `formatFile(filePath, options?)`
+
+Format a file and write it back if changed.
+
+- `filePath` (`string`) - Path to the file
+- `options` - Same as `format()`
+- Returns `Promise<boolean>` - `true` if file was changed
+
+## `checkFile(filePath, options?)`
+
+Check if a file needs formatting without modifying it.
+
+- `filePath` (`string`) - Path to the file
+- `options` - Same as `format()`
+- Returns `Promise<boolean>` - `true` if file needs formatting
+
+## `detectMdx(content)`
+
+Check if content is likely MDX (has imports, exports, JSX components, or frontmatter).
+
+- `content` (`string`) - Content to check
+- Returns `boolean`

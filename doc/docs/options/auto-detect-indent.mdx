@@ -1,0 +1,81 @@
+---
+sidebar_position: 10
+---
+
+# autoDetectIndent
+
+Automatically detect indentation style (spaces vs tabs, indent size) from the file content and apply it consistently across all formatting rules.
+
+**Disabled by default.** When enabled, detected indentation overrides `indentSize` settings in other rules.
+
+## Options
+
+| Property             | Type      | Default   | Description                                                |
+| -------------------- | --------- | --------- | ---------------------------------------------------------- |
+| `enabled`            | `boolean` | `false`   | Enable/disable auto-detection                              |
+| `fallbackIndentSize` | `number`  | `2`       | Default indent size if detection fails                     |
+| `fallbackIndentType` | `string`  | `"space"` | Default indent type: `"space"` or `"tab"`                  |
+| `minConfidence`      | `number`  | `0.7`     | Minimum confidence score (0-1) to use detected indentation |
+
+## Config
+
+```json
+{
+  "autoDetectIndent": {
+    "enabled": true,
+    "fallbackIndentSize": 2,
+    "fallbackIndentType": "space",
+    "minConfidence": 0.7
+  }
+}
+```
+
+## Examples
+
+### 4-space indentation detected
+
+If a file primarily uses 4-space indentation, the formatter preserves it:
+
+Before:
+
+````markdown
+<Component
+      propA="value1"
+  propB="value2"
+            propC="value3" />
+````
+
+After (detected 4-space indent):
+
+````markdown
+<Component
+    propA="value1"
+    propB="value2"
+    propC="value3" />
+````
+
+### Tab indentation detected
+
+If a file uses tabs, HTML block formatting also uses tabs:
+
+Before:
+
+````markdown
+<dl>
+<dt>Term</dt>
+<dd>Definition</dd>
+</dl>
+````
+
+After (detected tab indent):
+
+````markdown
+<dl>
+	<dt>Term</dt>
+	<dd>Definition</dd>
+</dl>
+````
+
+### Fallback when detection fails
+
+If the file has no clear indentation pattern, the `fallbackIndentSize` and `fallbackIndentType` values are used (default: 2 spaces).

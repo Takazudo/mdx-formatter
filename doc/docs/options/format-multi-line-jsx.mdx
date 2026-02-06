@@ -1,0 +1,83 @@
+---
+sidebar_position: 3
+---
+
+# formatMultiLineJsx
+
+Format multi-line JSX/HTML components with proper indentation. The closing `/>` is appended to the last attribute line.
+
+## Options
+
+| Property           | Type       | Default | Description                                               |
+| ------------------ | ---------- | ------- | --------------------------------------------------------- |
+| `enabled`          | `boolean`  | `true`  | Enable/disable this rule                                  |
+| `indentSize`       | `number`   | `2`     | Number of spaces for indentation                          |
+| `ignoreComponents` | `string[]` | `[]`    | Component names to skip (preserve their formatting as-is) |
+
+## Config
+
+```json
+{
+  "formatMultiLineJsx": {
+    "enabled": true,
+    "indentSize": 2,
+    "ignoreComponents": ["CodeBlock", "RawHTML"]
+  }
+}
+```
+
+## Examples
+
+### Basic multi-line JSX formatting
+
+Before:
+
+````markdown
+<ExImg src="/images/p/oxi-one-display-select-type" className="mx-auto md:ml-0 md:mr-auto" restrictedWidth="500"
+  alt="Display: Sequencer Mode"
+/>
+````
+
+After:
+
+````markdown
+<ExImg
+  src="/images/p/oxi-one-display-select-type"
+  className="mx-auto md:ml-0 md:mr-auto"
+  restrictedWidth="500"
+  alt="Display: Sequencer Mode" />
+````
+
+### Inconsistent indentation
+
+Before:
+
+````markdown
+<Component
+      propA="value1"
+  propB="value2"
+        propC="value3"
+/>
+````
+
+After:
+
+````markdown
+<Component
+  propA="value1"
+  propB="value2"
+  propC="value3" />
+````
+
+### Ignoring specific components
+
+With `ignoreComponents: ["CodeBlock"]`, the component is left untouched:
+
+````markdown
+<CodeBlock
+      language="jsx"
+title="example.jsx"
+/>
+````
+
+This stays exactly as-is — no reformatting applied.

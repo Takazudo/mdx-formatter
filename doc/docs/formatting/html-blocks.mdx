@@ -1,0 +1,165 @@
+---
+sidebar_position: 8
+---
+
+# HTML Blocks
+
+The formatter properly indents HTML blocks within MDX content. This is controlled by the [formatHtmlBlocksInMdx](/docs/options/format-html-blocks-in-mdx) option and uses Prettier under the hood.
+
+## Rules
+
+- HTML blocks (`dl`, `table`, `div`, `ul`, `ol`, `form`, etc.) are properly indented
+- Content whitespace in `dt`/`dd` elements is trimmed
+- Nested HTML structures maintain correct indentation hierarchy
+
+## Examples
+
+### Definition list
+
+Before:
+
+````markdown
+<dl>
+<dt>Term 1</dt>
+<dd>Definition 1</dd>
+<dt>Term 2</dt>
+<dd>Definition 2</dd>
+</dl>
+````
+
+After:
+
+````markdown
+<dl>
+  <dt>Term 1</dt>
+  <dd>Definition 1</dd>
+  <dt>Term 2</dt>
+  <dd>Definition 2</dd>
+</dl>
+````
+
+### Definition list with div wrappers
+
+Before:
+
+````markdown
+<dl>
+<div>
+<dt>Term 1</dt>
+<dd>Definition 1</dd>
+</div>
+<div>
+<dt>Term 2</dt>
+<dd>Definition 2</dd>
+</div>
+</dl>
+````
+
+After:
+
+````markdown
+<dl>
+  <div>
+    <dt>Term 1</dt>
+    <dd>Definition 1</dd>
+  </div>
+  <div>
+    <dt>Term 2</dt>
+    <dd>Definition 2</dd>
+  </div>
+</dl>
+````
+
+### Whitespace trimming in dt/dd
+
+Before:
+
+````markdown
+<dl>
+  <dt>  Term with spaces  </dt>
+  <dd>   Definition with spaces   </dd>
+</dl>
+````
+
+After:
+
+````markdown
+<dl>
+  <dt>Term with spaces</dt>
+  <dd>Definition with spaces</dd>
+</dl>
+````
+
+### Nested HTML structures
+
+Before:
+
+````markdown
+<dl>
+<dt>Outer Term</dt>
+<dd>
+<dl>
+<dt>Inner Term</dt>
+<dd>Inner Definition</dd>
+</dl>
+</dd>
+</dl>
+````
+
+After:
+
+````markdown
+<dl>
+  <dt>Outer Term</dt>
+  <dd>
+    <dl>
+      <dt>Inner Term</dt>
+      <dd>Inner Definition</dd>
+    </dl>
+  </dd>
+</dl>
+````
+
+### Unordered list
+
+Before:
+
+````markdown
+<ul>
+<li>Item 1</li>
+<li>Item 2</li>
+<li>Item 3</li>
+</ul>
+````
+
+After:
+
+````markdown
+<ul>
+  <li>Item 1</li>
+  <li>Item 2</li>
+  <li>Item 3</li>
+</ul>
+````
+
+### Nested divs
+
+Before:
+
+````markdown
+<div class="container">
+<div class="row">
+<div class="col">Content</div>
+</div>
+</div>
+````
+
+After:
+
+````markdown
+<div class="container">
+  <div class="row">
+    <div class="col">Content</div>
+  </div>
+</div>
+````

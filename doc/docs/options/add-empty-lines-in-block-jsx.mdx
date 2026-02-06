@@ -1,0 +1,93 @@
+---
+sidebar_position: 7
+---
+
+# addEmptyLinesInBlockJsx
+
+Add empty lines after opening tags and before closing tags in block JSX components for better readability.
+
+You must specify which components are "block" components via `blockComponents`.
+
+## Options
+
+| Property          | Type       | Default | Description                                        |
+| ----------------- | ---------- | ------- | -------------------------------------------------- |
+| `enabled`         | `boolean`  | `true`  | Enable/disable this rule                           |
+| `blockComponents` | `string[]` | `[]`    | Component names that should have empty lines added |
+
+## Config
+
+```json
+{
+  "addEmptyLinesInBlockJsx": {
+    "enabled": true,
+    "blockComponents": ["Outro", "InfoBox", "Sidebar"]
+  }
+}
+```
+
+## Examples
+
+### Basic block component
+
+With `blockComponents: ["Outro"]`:
+
+Before:
+
+````markdown
+<Outro>
+This is the outro content.
+Multiple lines here.
+</Outro>
+````
+
+After:
+
+````markdown
+<Outro>
+
+This is the outro content.
+Multiple lines here.
+
+</Outro>
+````
+
+### InfoBox with list content
+
+With `blockComponents: ["InfoBox"]`:
+
+Before:
+
+````markdown
+<InfoBox>
+Important information
+
+- Point 1
+- Point 2
+</InfoBox>
+````
+
+After:
+
+````markdown
+<InfoBox>
+
+Important information
+
+- Point 1
+- Point 2
+
+</InfoBox>
+````
+
+### Non-listed components are not affected
+
+Components not in `blockComponents` are left alone:
+
+````markdown
+<Card>
+Content without extra empty lines.
+</Card>
+````
+
+This stays unchanged.

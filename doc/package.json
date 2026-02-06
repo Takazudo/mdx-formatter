@@ -1,0 +1,67 @@
+{
+  "name": "doc",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "docusaurus": "docusaurus",
+    "generate-doc-titles": "node scripts/generate-doc-titles.js",
+    "generate-category-nav": "node scripts/generate-category-nav.js",
+    "start": "docusaurus start --port 33771 --host mdx-formatter.localhost",
+    "build": "npm run generate-doc-titles && npm run generate-category-nav && docusaurus build",
+    "swizzle": "docusaurus swizzle",
+    "deploy": "docusaurus deploy",
+    "clear": "docusaurus clear",
+    "serve": "docusaurus serve",
+    "write-translations": "docusaurus write-translations",
+    "write-heading-ids": "docusaurus write-heading-ids",
+    "lint": "eslint src --ext .ts,.tsx,.js,.jsx",
+    "lint:fix": "eslint src --ext .ts,.tsx,.js,.jsx --fix",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md,mdx}\" \"!node_modules/**\" \"!.docusaurus/**\" \"!build/**\"",
+    "format:fix": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md,mdx}\" \"!node_modules/**\" \"!.docusaurus/**\" \"!build/**\"",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format",
+    "check:fix": "pnpm run lint:fix && pnpm run format:fix"
+  },
+  "dependencies": {
+    "@docusaurus/core": "3.9.2",
+    "@docusaurus/plugin-content-docs": "3.9.2",
+    "@docusaurus/preset-classic": "3.9.2",
+    "@docusaurus/theme-common": "3.9.2",
+    "@docusaurus/theme-mermaid": "^3.9.2",
+    "@mdx-js/react": "^3.1.1",
+    "clsx": "^2.1.1",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "3.9.2",
+    "@docusaurus/types": "3.9.2",
+    "@eslint/js": "^9.39.2",
+    "@types/react": "^19.2.8",
+    "@types/react-dom": "^19.2.3",
+    "@typescript-eslint/eslint-plugin": "^8.53.0",
+    "@typescript-eslint/parser": "^8.53.0",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^17.0.0",
+    "gray-matter": "^4.0.3",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3"
+  },
+  "browserslist": {
+    "production": [">0.5%", "not dead", "not op_mini all"],
+    "development": [
+      "last 3 chrome version",
+      "last 3 firefox version",
+      "last 5 safari version"
+    ]
+  },
+  "engines": {
+    "node": ">=20.0"
+  }
+}

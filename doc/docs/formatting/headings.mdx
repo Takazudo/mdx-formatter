@@ -1,0 +1,90 @@
+---
+sidebar_position: 2
+---
+
+# Headings
+
+The formatter normalizes headings to ATX-style (`#`) and ensures blank lines between headings and other block elements.
+
+## Rules
+
+- ATX-style headings (`#`, `##`, `###`, etc.) are used
+- A blank line is inserted between a heading and the following content
+- A blank line is inserted between consecutive headings
+
+## Examples
+
+### Heading followed by content
+
+Before:
+
+````markdown
+# Heading
+Content here
+````
+
+After:
+
+````markdown
+# Heading
+
+Content here
+````
+
+### Consecutive headings
+
+Before:
+
+````markdown
+# Heading 1
+## Heading 2
+### Heading 3
+````
+
+After:
+
+````markdown
+# Heading 1
+
+## Heading 2
+
+### Heading 3
+````
+
+### Heading followed by JSX
+
+Before:
+
+````markdown
+## Section Title
+<ExImg src="/banner.jpg" alt="Banner" />
+````
+
+After:
+
+````markdown
+## Section Title
+
+<ExImg src="/banner.jpg" alt="Banner" />
+````
+
+### Heading followed by list
+
+Before:
+
+````markdown
+## Features
+- Item 1
+- Item 2
+- Item 3
+````
+
+After:
+
+````markdown
+## Features
+
+- Item 1
+- Item 2
+- Item 3
+````

@@ -1,0 +1,20 @@
+.navList {
+  margin: 1rem 0;
+}
+
+.navItem {
+  margin: 0.25rem 0;
+}
+
+.navItem a {
+  color: var(--ifm-link-color);
+}
+
+.navItem a:hover {
+  color: var(--ifm-link-hover-color);
+}
+
+.empty {
+  color: var(--ifm-color-emphasis-600);
+  font-style: italic;
+}

@@ -1,0 +1,119 @@
+---
+sidebar_position: 8
+---
+
+# formatYamlFrontmatter
+
+Format YAML frontmatter using proper YAML formatting rules.
+
+## Options
+
+| Property       | Type      | Default | Description                             |
+| -------------- | --------- | ------- | --------------------------------------- |
+| `enabled`      | `boolean` | `true`  | Enable/disable this rule                |
+| `indent`       | `number`  | `2`     | Number of spaces for YAML indentation   |
+| `lineWidth`    | `number`  | `100`   | Maximum line width for folded strings   |
+| `quotingType`  | `string`  | `"\""`  | Quote type for strings: `"\""` or `"'"` |
+| `forceQuotes`  | `boolean` | `false` | Force quotes on all string values       |
+| `noCompatMode` | `boolean` | `true`  | Use YAML 1.2 spec (not 1.1)             |
+
+## Config
+
+```json
+{
+  "formatYamlFrontmatter": {
+    "enabled": true,
+    "indent": 2,
+    "lineWidth": 80,
+    "quotingType": "'",
+    "forceQuotes": false,
+    "noCompatMode": true
+  }
+}
+```
+
+## Examples
+
+### Remove unnecessary quotes and extra blank lines
+
+Before:
+
+````markdown
+---
+title: "Test Article"
+
+description: "A long description"
+
+tags:
+
+  - tag1
+  - tag2
+---
+
+# Content
+````
+
+After:
+
+````markdown
+---
+title: Test Article
+description: A long description
+tags:
+  - tag1
+  - tag2
+---
+
+# Content
+````
+
+### Normalize inline arrays to block style
+
+Before:
+
+````markdown
+---
+title:   "Article Title"
+tags: [tag1, tag2, tag3]
+---
+````
+
+After:
+
+````markdown
+---
+title: Article Title
+tags:
+  - tag1
+  - tag2
+  - tag3
+---
+````
+
+### Complex frontmatter
+
+Before:
+
+````markdown
+---
+title:   "My Post"
+date:  2024-01-15
+author: "John Doe"
+categories: [blog, tech]
+draft:    false
+---
+````
+
+After:
+
+````markdown
+---
+title: My Post
+date: 2024-01-15
+author: John Doe
+categories:
+  - blog
+  - tech
+draft: false
+---
+````

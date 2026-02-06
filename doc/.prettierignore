@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+.cache
+.docusaurus
+public
+coverage
+package-lock.json
+*.min.js
+*.svg
+.next
+out

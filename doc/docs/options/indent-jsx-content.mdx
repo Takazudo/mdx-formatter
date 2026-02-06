@@ -1,0 +1,99 @@
+---
+sidebar_position: 6
+---
+
+# indentJsxContent
+
+Add indentation to content inside JSX container components.
+
+**Disabled by default.** You must specify which components to indent via `containerComponents`.
+
+## Options
+
+| Property              | Type       | Default | Description                                      |
+| --------------------- | ---------- | ------- | ------------------------------------------------ |
+| `enabled`             | `boolean`  | `false` | Enable/disable this rule                         |
+| `indentSize`          | `number`   | `2`     | Number of spaces for indentation                 |
+| `containerComponents` | `string[]` | `[]`    | Component names whose content should be indented |
+
+## Config
+
+```json
+{
+  "indentJsxContent": {
+    "enabled": true,
+    "indentSize": 2,
+    "containerComponents": ["Outro", "InfoBox", "LayoutDivide"]
+  }
+}
+```
+
+## Examples
+
+### Basic content indentation
+
+With `containerComponents: ["Outro"]`:
+
+Before:
+
+````markdown
+<Outro>
+
+This is the outro content.
+Multiple lines here.
+
+</Outro>
+````
+
+After:
+
+````markdown
+<Outro>
+
+  This is the outro content.
+  Multiple lines here.
+
+</Outro>
+````
+
+### List content indentation
+
+With `containerComponents: ["LayoutDivideItem"]`:
+
+Before:
+
+````markdown
+<LayoutDivideItem>
+
+- List item 1
+- List item 2
+- List item 3
+
+</LayoutDivideItem>
+````
+
+After:
+
+````markdown
+<LayoutDivideItem>
+
+  - List item 1
+  - List item 2
+  - List item 3
+
+</LayoutDivideItem>
+````
+
+### Non-listed components are not indented
+
+Components not in `containerComponents` are left alone:
+
+````markdown
+<SomeOtherComponent>
+
+Content stays as-is.
+
+</SomeOtherComponent>
+````
+
+This stays unchanged.
