@@ -39,7 +39,7 @@ git diff <last-tag>..HEAD --stat
 
 Categorize each commit by its conventional-commit prefix:
 
-- **Breaking Changes**: commits with `!` suffix or `BREAKING CHANGE` in body
+- **Breaking Changes**: commits with an exclamation mark suffix (e.g. `feat!:`) or BREAKING CHANGE in body
 - **Features**: `feat:` prefix
 - **Bug Fixes**: `fix:` prefix
 - **Other Changes**: everything else (`docs:`, `chore:`, `refactor:`, `ci:`, `test:`, `style:`, `perf:`, etc.)
