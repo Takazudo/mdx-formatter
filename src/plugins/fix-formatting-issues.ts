@@ -1,9 +1,7 @@
 /**
  * Post-processing fixes for common formatting issues
- * @param {string} content - The formatted content
- * @returns {string} - The fixed content
  */
-export function fixFormattingIssues(content) {
+export function fixFormattingIssues(content: string): string {
   let fixed = content;
 
   // Fix 1: Restore spaces between bold elements and operators
@@ -37,7 +35,7 @@ export function fixFormattingIssues(content) {
   fixed = fixed.replace(/&#x3092;/g, 'を');
 
   // Fix other common Japanese character encodings if they appear
-  fixed = fixed.replace(/&#x([0-9a-fA-F]{4});/g, (match, hex) => {
+  fixed = fixed.replace(/&#x([0-9a-fA-F]{4});/g, (match, hex: string) => {
     const code = parseInt(hex, 16);
     // Only decode Japanese characters (Hiragana, Katakana, Kanji ranges)
     if (

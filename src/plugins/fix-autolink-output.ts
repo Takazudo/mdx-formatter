@@ -1,9 +1,7 @@
 /**
  * Post-process the formatted output to fix autolink and spacing issues
- * @param {string} content - The formatted content
- * @returns {string} - The fixed content
  */
-export function fixAutolinkOutput(content) {
+export function fixAutolinkOutput(content: string): string {
   let fixed = content;
 
   // 1. Remove angle brackets around URLs

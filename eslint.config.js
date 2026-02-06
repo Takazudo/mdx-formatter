@@ -1,3 +1,5 @@
+import tseslint from 'typescript-eslint';
+
 export default [
   {
     ignores: ['node_modules/', 'dist/', 'build/', 'coverage/'],
@@ -13,16 +15,30 @@ export default [
       'no-console': ['warn', { allow: ['error'] }],
     },
   },
+  ...tseslint.configs.recommended.map((config) => ({
+    ...config,
+    files: ['**/*.ts'],
+  })),
   {
-    files: ['src/cli.js', 'format-stdin.js'],
+    files: ['**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      'no-console': ['warn', { allow: ['error'] }],
+    },
+  },
+  {
+    files: ['src/cli.ts', 'format-stdin.js'],
     rules: {
       'no-console': 'off',
     },
   },
   {
-    files: ['test/**/*.js'],
+    files: ['test/**/*.ts'],
     rules: {
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
     },
   },
 ];

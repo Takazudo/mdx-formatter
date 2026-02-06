@@ -3,19 +3,24 @@
  * Does NOT reformat everything, only applies targeted fixes
  */
 
-import { formatterSettings } from './settings.mjs';
+import { formatterSettings } from './settings.js';
 import { HtmlBlockFormatter } from './html-block-formatter.js';
 import { deepCloneSettings } from './utils.js';
+import type { FormatterSettings, JsxStackEntry } from './types.js';
 
 export class SpecificFormatter {
-  constructor(content, settings = null) {
+  content: string;
+  lines: string[];
+  settings: FormatterSettings;
+
+  constructor(content: string, settings: FormatterSettings | null = null) {
     // Normalize line endings to \n
     this.content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     this.lines = this.content.split('\n');
     this.settings = settings ? deepCloneSettings(settings) : deepCloneSettings(formatterSettings);
   }
 
-  async format() {
+  async format(): Promise<string> {
     let result = this.content;
 
     // Apply rules in specific order to avoid conflicts
@@ -54,9 +59,9 @@ export class SpecificFormatter {
   /**
    * Rule 1: Add 1 empty line between elements
    */
-  addEmptyLineBetweenElements(content) {
+  addEmptyLineBetweenElements(content: string): string {
     const lines = content.split('\n');
-    const result = [];
+    const result: string[] = [];
     let inCodeBlock = false;
     let inJsxBlock = false;
     let inAdmonition = false;
@@ -118,7 +123,7 @@ export class SpecificFormatter {
     return result.join('\n').replace(/\n{3,}/g, '\n\n');
   }
 
-  shouldAddEmptyLine(currentLine, nextLine) {
+  shouldAddEmptyLine(currentLine: string, nextLine: string): boolean {
     const current = currentLine.trim();
     const next = nextLine.trim();
 
@@ -154,10 +159,10 @@ export class SpecificFormatter {
   /**
    * Combined JSX formatting - handles structure and content indentation together
    */
-  formatJsxStructure(content) {
+  formatJsxStructure(content: string): string {
     const lines = content.split('\n');
-    const result = [];
-    const jsxStack = [];
+    const result: string[] = [];
+    const jsxStack: JsxStackEntry[] = [];
     let inCodeBlock = false;
 
     const containerComponents = this.settings.indentJsxContent.containerComponents;
@@ -197,7 +202,7 @@ export class SpecificFormatter {
       if (trimmed.match(/^<([A-Z][A-Za-z0-9]*)(?:\s[^>]*)?>$/)) {
         // Opening tag
         const tagMatch = trimmed.match(/^<([A-Z][A-Za-z0-9]*)/);
-        const tagName = tagMatch[1];
+        const tagName = tagMatch![1];
 
         // Add appropriate indentation
         const indent = '  '.repeat(jsxStack.length);
@@ -261,10 +266,10 @@ export class SpecificFormatter {
   /**
    * Rule 2: Format multi-line JSX/HTML (OLD - replaced by formatJsxStructure)
    */
-  formatMultiLineJsx(content) {
+  formatMultiLineJsx(content: string): string {
     // This is complex - for now, detect multi-line JSX and ensure proper indentation
     const lines = content.split('\n');
-    const result = [];
+    const result: string[] = [];
     let inJsxBlock = false;
     let jsxIndentLevel = 0;
     let inCodeBlock = false;
@@ -322,7 +327,7 @@ export class SpecificFormatter {
   /**
    * Rule 4: Expand single-line JSX with 2+ props
    */
-  expandSingleLineJsx(content) {
+  expandSingleLineJsx(content: string): string {
     const threshold = this.settings.expandSingleLineJsx.propsThreshold;
 
     // First, handle self-closing tags - use more careful parsing
@@ -367,7 +372,7 @@ export class SpecificFormatter {
     // Then handle opening tags with content
     content = content.replace(
       /<([A-Z][A-Za-z0-9]*)\s+([^>]+)>([^<]*)<\/\1>/g,
-      (match, componentName, propsString, innerContent) => {
+      (match, componentName: string, propsString: string, innerContent: string) => {
         // Parse and count props
         const props = this.parseJsxProps(propsString);
 
@@ -389,8 +394,8 @@ export class SpecificFormatter {
     return content;
   }
 
-  parseJsxProps(propsString) {
-    const props = [];
+  parseJsxProps(propsString: string): string[] {
+    const props: string[] = [];
     let current = '';
     let inQuotes = false;
     let quoteChar = '';
@@ -436,13 +441,13 @@ export class SpecificFormatter {
   /**
    * Rule 5: Indent JSX content
    */
-  indentJsxContent(content) {
+  indentJsxContent(content: string): string {
     const containerComponents = this.settings.indentJsxContent.containerComponents;
     const indentSize = 2; // Force 2 spaces for now
     const indent = ' '.repeat(indentSize);
 
     // Split content into sections to preserve code blocks
-    const sections = [];
+    const sections: { content: string; isCode: boolean }[] = [];
     let currentSection = '';
     let inCodeBlock = false;
 
@@ -477,7 +482,7 @@ export class SpecificFormatter {
       containerComponents.forEach((componentName) => {
         const regex = new RegExp(`<${componentName}>([\\s\\S]*?)<\\/${componentName}>`, 'g');
 
-        result = result.replace(regex, (match, innerContent) => {
+        result = result.replace(regex, (match, innerContent: string) => {
           // Don't indent if content is empty
           if (!innerContent.trim()) {
             return match;
@@ -493,16 +498,16 @@ export class SpecificFormatter {
           }
 
           // Split content into lines and indent each
-          const lines = trimmedContent.split('\n');
-          const indentedLines = lines.map((line) => {
+          const contentLines = trimmedContent.split('\n');
+          const indentedLines = contentLines.map((contentLine) => {
             // Don't add indent to empty lines
-            if (line.trim() === '') return line;
+            if (contentLine.trim() === '') return contentLine;
             // Check if line already has correct indentation
-            if (line.startsWith(indent) && !line.startsWith(indent + indent)) {
-              return line;
+            if (contentLine.startsWith(indent) && !contentLine.startsWith(indent + indent)) {
+              return contentLine;
             }
             // Add indent
-            return indent + line;
+            return indent + contentLine;
           });
 
           // Join with proper newlines
@@ -522,7 +527,7 @@ export class SpecificFormatter {
   /**
    * Rule 7: Validate MDX and throw errors on invalid content
    */
-  validateMdx(content) {
+  validateMdx(content: string): boolean {
     // First, remove all code blocks and inline code to avoid false positives
     let cleanedContent = content;
 
@@ -536,7 +541,7 @@ export class SpecificFormatter {
 
     // Simple check for unclosed quotes - but be more careful with complex props
     const lines = cleanedContent.split('\n');
-    for (let line of lines) {
+    for (const line of lines) {
       // Check for unclosed quotes in simpler cases
       let inString = false;
       let stringChar = '';
@@ -566,7 +571,7 @@ export class SpecificFormatter {
     }
 
     // Check for unclosed JSX tags, but handle self-closing tags properly
-    const openTags = [];
+    const openTags: string[] = [];
 
     // Parse JSX tags more carefully to handle complex props
     let i = 0;
@@ -610,34 +615,29 @@ export class SpecificFormatter {
           }
 
           // Now skip to the end of the tag, handling props properly
-          let inString = false;
-          let stringChar = '';
-          let braceDepth = 0;
+          let inStr = false;
+          let strChar = '';
+          let brDepth = 0;
           let isSelfClosing = false;
 
           while (j < cleanedContent.length) {
             const char = cleanedContent[j];
             const prevChar = j > 0 ? cleanedContent[j - 1] : '';
 
-            if (!inString && (char === '"' || char === "'")) {
-              inString = true;
-              stringChar = char;
-            } else if (inString && char === stringChar && prevChar !== '\\') {
-              inString = false;
-            } else if (!inString && char === '{') {
-              braceDepth++;
-            } else if (!inString && char === '}') {
-              braceDepth--;
-            } else if (
-              !inString &&
-              braceDepth === 0 &&
-              char === '/' &&
-              cleanedContent[j + 1] === '>'
-            ) {
+            if (!inStr && (char === '"' || char === "'")) {
+              inStr = true;
+              strChar = char;
+            } else if (inStr && char === strChar && prevChar !== '\\') {
+              inStr = false;
+            } else if (!inStr && char === '{') {
+              brDepth++;
+            } else if (!inStr && char === '}') {
+              brDepth--;
+            } else if (!inStr && brDepth === 0 && char === '/' && cleanedContent[j + 1] === '>') {
               isSelfClosing = true;
               j += 2;
               break;
-            } else if (!inString && braceDepth === 0 && char === '>') {
+            } else if (!inStr && brDepth === 0 && char === '>') {
               j++;
               break;
             }

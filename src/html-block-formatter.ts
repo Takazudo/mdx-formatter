@@ -4,9 +4,22 @@
  */
 
 import * as prettier from 'prettier';
+import type { FormatHtmlBlocksInMdxSetting } from './types.js';
+
+interface HtmlBlockFormatterSettings {
+  enabled?: boolean;
+  formatterConfig: {
+    parser: string;
+    tabWidth: number;
+    useTabs: boolean;
+  };
+}
 
 export class HtmlBlockFormatter {
-  constructor(settings = {}) {
+  settings: HtmlBlockFormatterSettings;
+  htmlElements: Set<string>;
+
+  constructor(settings: Partial<FormatHtmlBlocksInMdxSetting> = {}) {
     this.settings = {
       formatterConfig: {
         parser: 'html',
@@ -14,7 +27,7 @@ export class HtmlBlockFormatter {
         useTabs: false,
       },
       ...settings,
-    };
+    } as HtmlBlockFormatterSettings;
 
     // List of HTML elements (not JSX components which start with uppercase)
     this.htmlElements = new Set([
@@ -33,7 +46,6 @@ export class HtmlBlockFormatter {
       'nav',
       'figure',
       'figcaption',
-
       // Text
       'p',
       'h1',
@@ -62,7 +74,6 @@ export class HtmlBlockFormatter {
       'abbr',
       'address',
       'time',
-
       // Lists
       'ul',
       'ol',
@@ -70,7 +81,6 @@ export class HtmlBlockFormatter {
       'dl',
       'dt',
       'dd',
-
       // Tables
       'table',
       'thead',
@@ -82,7 +92,6 @@ export class HtmlBlockFormatter {
       'caption',
       'colgroup',
       'col',
-
       // Forms
       'form',
       'input',
@@ -98,7 +107,6 @@ export class HtmlBlockFormatter {
       'output',
       'progress',
       'meter',
-
       // Media
       'img',
       'audio',
@@ -112,7 +120,6 @@ export class HtmlBlockFormatter {
       'param',
       'canvas',
       'svg',
-
       // Other
       'a',
       'br',
@@ -132,7 +139,7 @@ export class HtmlBlockFormatter {
   /**
    * Check if a tag name is an HTML element (not a JSX component)
    */
-  isHtmlElement(tagName) {
+  isHtmlElement(tagName: string): boolean {
     if (!tagName) return false;
     // HTML elements are lowercase or known HTML elements
     return this.htmlElements.has(tagName.toLowerCase());
@@ -141,17 +148,17 @@ export class HtmlBlockFormatter {
   /**
    * Format HTML content using Prettier
    */
-  async formatWithPrettier(html) {
+  async formatWithPrettier(html: string): Promise<string> {
     try {
       // Preprocess: Remove newlines within dd and dt tags to keep them on single lines
       // This is important for Japanese text readability in definition lists
       const preprocessed = html
-        .replace(/<dd>([\s\S]*?)<\/dd>/g, (match, content) => {
+        .replace(/<dd>([\s\S]*?)<\/dd>/g, (_match, content: string) => {
           // Replace multiple whitespaces (including newlines) with single space
           const cleaned = content.replace(/\s+/g, ' ').trim();
           return `<dd>${cleaned}</dd>`;
         })
-        .replace(/<dt>([\s\S]*?)<\/dt>/g, (match, content) => {
+        .replace(/<dt>([\s\S]*?)<\/dt>/g, (_match, content: string) => {
           // Same for dt tags
           const cleaned = content.replace(/\s+/g, ' ').trim();
           return `<dt>${cleaned}</dt>`;
@@ -194,7 +201,11 @@ export class HtmlBlockFormatter {
   /**
    * Extract HTML block from position in original content
    */
-  extractHtmlBlock(content, startPos, endPos) {
+  extractHtmlBlock(
+    content: string,
+    startPos: { line: number; column: number },
+    endPos: { line: number; column: number },
+  ): string {
     const lines = content.split('\n');
     const startLine = startPos.line - 1;
     const endLine = endPos.line - 1;
@@ -206,7 +217,7 @@ export class HtmlBlockFormatter {
       return lines[startLine].substring(startCol, endCol);
     } else {
       // Multi-line
-      const extractedLines = [];
+      const extractedLines: string[] = [];
       extractedLines.push(lines[startLine].substring(startCol));
 
       for (let i = startLine + 1; i < endLine; i++) {
@@ -221,7 +232,7 @@ export class HtmlBlockFormatter {
   /**
    * Find matching closing tag for an opening tag
    */
-  findMatchingClosingTag(content, startIndex, tagName) {
+  findMatchingClosingTag(content: string, startIndex: number, tagName: string): number {
     let depth = 1;
     let index = startIndex;
     const openPattern = new RegExp(`<${tagName}(?:\\s[^>]*)?>`, 'gi');
@@ -257,15 +268,15 @@ export class HtmlBlockFormatter {
   /**
    * Format MDX content with HTML block formatting
    */
-  async format(content) {
+  async format(content: string): Promise<string> {
     if (!this.settings.enabled) {
       return content;
     }
 
     try {
       // Find HTML blocks - handle nested tags properly
-      const blocks = [];
-      const processedRanges = new Set();
+      const blocks: { start: number; end: number; content: string; tagName: string }[] = [];
+      const processedRanges = new Set<[number, number]>();
 
       // First pass: find all opening tags
       const openingTagPattern = /<(\w+)(?:\s[^>]*)?>(?!.*\/>)/g;
@@ -356,7 +367,12 @@ export class HtmlBlockFormatter {
   /**
    * Replace HTML block in content with formatted version
    */
-  replaceHtmlBlock(content, startPos, endPos, replacement) {
+  replaceHtmlBlock(
+    content: string,
+    startPos: { line: number; column: number },
+    endPos: { line: number; column: number },
+    replacement: string,
+  ): string {
     const lines = content.split('\n');
     const startLine = startPos.line - 1;
     const endLine = endPos.line - 1;
@@ -372,7 +388,7 @@ export class HtmlBlockFormatter {
       const replacementLines = replacement.split('\n');
 
       // Create new line array
-      const newLines = [];
+      const newLines: string[] = [];
 
       // Add lines before the block
       for (let i = 0; i < startLine; i++) {

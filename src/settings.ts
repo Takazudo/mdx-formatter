@@ -3,7 +3,9 @@
  * Each option can be toggled on/off independently
  */
 
-export const formatterSettings = {
+import type { FormatterSettings } from './types.js';
+
+export const formatterSettings: FormatterSettings = {
   // Rule 1: Add 1 empty line between markdown elements (headings, paragraphs, lists)
   addEmptyLineBetweenElements: {
     enabled: true,
@@ -92,11 +94,11 @@ export const formatterSettings = {
 };
 
 // Export function to get only enabled rules
-export function getEnabledRules() {
+export function getEnabledRules(): Partial<FormatterSettings> {
   return Object.entries(formatterSettings)
-    .filter(([_, config]) => config.enabled)
+    .filter(([_, config]) => (config as { enabled?: boolean }).enabled)
     .reduce((acc, [key, config]) => {
-      acc[key] = config;
+      (acc as Record<string, unknown>)[key] = config;
       return acc;
-    }, {});
+    }, {} as Partial<FormatterSettings>);
 }

@@ -9,17 +9,64 @@ import remarkMdx from 'remark-mdx';
 import remarkFrontmatter from 'remark-frontmatter';
 import { visit } from 'unist-util-visit';
 import yaml from 'js-yaml';
-import { formatterSettings } from './settings.mjs';
+import { formatterSettings } from './settings.js';
 import { HtmlBlockFormatter } from './html-block-formatter.js';
 import { IndentDetector } from './indent-detector.js';
 import { deepCloneSettings } from './utils.js';
+import type {
+  FormatterSettings,
+  FormatterOperation,
+  PositionMapEntry,
+  IndentDetectorLike,
+  MdxJsxElement,
+  MdxJsxAttribute,
+  MdxJsxAttributeValueExpression,
+  Root,
+  Node,
+  Parent,
+} from './types.js';
+
+interface AstNodeWithPosition extends Node {
+  position: {
+    start: { line: number; column: number };
+    end: { line: number; column: number };
+  };
+}
+
+interface HeadingNode extends AstNodeWithPosition {
+  type: 'heading';
+}
+
+interface YamlNode extends AstNodeWithPosition {
+  type: 'yaml';
+  value: string;
+}
+
+interface ListNode extends AstNodeWithPosition {
+  type: 'list';
+  children: ListItemNode[];
+}
+
+interface ListItemNode extends AstNodeWithPosition {
+  type: 'listItem';
+  children: Node[];
+}
 
 export class HybridFormatter {
-  constructor(content, settings = null) {
+  originalContent: string;
+  content: string;
+  lines: string[];
+  settings: FormatterSettings;
+  ast: Root;
+  positionMap: PositionMapEntry[];
+  indentDetector: IndentDetectorLike | null;
+
+  constructor(content: string, settings: FormatterSettings | null = null) {
     this.originalContent = content;
     this.content = content; // Use content directly without preprocessing
     this.lines = this.content.split('\n');
     this.settings = settings ? deepCloneSettings(settings) : deepCloneSettings(formatterSettings);
+    this.indentDetector = null;
 
     // Auto-detect indentation if enabled
     if (this.settings.autoDetectIndent && this.settings.autoDetectIndent.enabled) {
@@ -33,32 +80,33 @@ export class HybridFormatter {
     this.positionMap = this.buildPositionMap();
   }
 
-  parseAST(content) {
+  parseAST(content: string): Root {
     const processor = unified().use(remarkParse).use(remarkFrontmatter).use(remarkMdx);
 
     try {
-      return processor.parse(content);
+      return processor.parse(content) as Root;
     } catch (error) {
       // If parsing fails, it might be due to JSX with closing /> on its own line
       // Try to fix this common issue and parse again
-      if (error.message.includes('Unexpected closing slash')) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('Unexpected closing slash')) {
         const fixed = this.fixStandaloneClosingTags(content);
         try {
-          return processor.parse(fixed);
+          return processor.parse(fixed) as Root;
         } catch {
           // If still fails, throw the original error
-          throw new Error(`Invalid MDX syntax: ${error.message}`);
+          throw new Error(`Invalid MDX syntax: ${message}`);
         }
       }
       // For other errors, throw as is
-      throw new Error(`Invalid MDX syntax: ${error.message}`);
+      throw new Error(`Invalid MDX syntax: ${message}`);
     }
   }
 
-  fixStandaloneClosingTags(content) {
+  fixStandaloneClosingTags(content: string): string {
     // Fix JSX with closing /> on its own line
     const lines = content.split('\n');
-    const fixed = [];
+    const fixed: string[] = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -81,9 +129,9 @@ export class HybridFormatter {
     return fixed.join('\n');
   }
 
-  buildPositionMap() {
+  buildPositionMap(): PositionMapEntry[] {
     // Create a map of line numbers to character positions
-    const map = [];
+    const map: PositionMapEntry[] = [];
     let charPos = 0;
 
     for (let i = 0; i < this.lines.length; i++) {
@@ -101,7 +149,7 @@ export class HybridFormatter {
   /**
    * Detect indentation from content and update formatter settings
    */
-  detectAndApplyIndentation() {
+  detectAndApplyIndentation(): void {
     const detector = new IndentDetector(this.content);
     const confidence = detector.getConfidence();
     // Use nullish coalescing to allow explicit 0 value
@@ -130,7 +178,7 @@ export class HybridFormatter {
         getIndentType: () => fallbackType,
         getIndentString: () => (fallbackType === 'tab' ? '\t' : ' '.repeat(fallbackSize)),
         getConfidence: () => 0,
-        formatWithIndent: (text, level) => {
+        formatWithIndent: (text: string, level: number): string => {
           const indent =
             fallbackType === 'tab' ? '\t'.repeat(level) : ' '.repeat(fallbackSize * level);
           return indent + text;
@@ -141,10 +189,8 @@ export class HybridFormatter {
 
   /**
    * Apply indentation settings consistently across all formatters
-   * @param {number} size - The indent size
-   * @param {string} type - The indent type ('tab' or 'space')
    */
-  applyIndentationToSettings(size, type) {
+  applyIndentationToSettings(size: number, type: string): void {
     // Update JSX formatting settings
     if (this.settings.formatMultiLineJsx) {
       this.settings.formatMultiLineJsx.indentSize = size;
@@ -172,9 +218,9 @@ export class HybridFormatter {
     }
   }
 
-  async format() {
+  async format(): Promise<string> {
     // Collect all formatting operations
-    const operations = [];
+    const operations: FormatterOperation[] = [];
 
     // Rule 1: Add empty lines between elements
     if (this.settings.addEmptyLineBetweenElements.enabled) {
@@ -216,7 +262,7 @@ export class HybridFormatter {
         return b.startLine - a.startLine;
       }
       // If same line, prioritize replaceLines over insertLine
-      const priority = {
+      const priority: Record<string, number> = {
         replaceLines: 1,
         insertLine: 2,
         indentLine: 3,
@@ -227,12 +273,13 @@ export class HybridFormatter {
     });
 
     // Apply operations to lines with deduplication
-    let resultLines = [...this.lines];
-    const appliedOperations = new Set();
+    const resultLines = [...this.lines];
+    const appliedOperations = new Set<string>();
 
     for (const op of operations) {
       // Create a unique key for this operation
-      const opKey = `${op.type}-${op.startLine}-${op.endLine || op.startLine}`;
+      const endLine = 'endLine' in op ? op.endLine : op.startLine;
+      const opKey = `${op.type}-${op.startLine}-${endLine}`;
 
       // Skip if we've already applied an operation at this location
       if (appliedOperations.has(opKey)) {
@@ -248,14 +295,15 @@ export class HybridFormatter {
     return result.replace(/\n{3,}/g, '\n\n');
   }
 
-  collectSpacingOperations(operations) {
+  collectSpacingOperations(operations: FormatterOperation[]): void {
     // Initialize HTML formatter to check if elements are HTML
     const htmlFormatter = new HtmlBlockFormatter(this.settings.formatHtmlBlocksInMdx || {});
 
-    visit(this.ast, (node) => {
+    visit(this.ast, (node: Node) => {
       // Add spacing after headings
       if (node.type === 'heading' && node.position) {
-        const endLine = node.position.end.line - 1;
+        const headingNode = node as HeadingNode;
+        const endLine = headingNode.position.end.line - 1;
         if (endLine < this.lines.length - 1) {
           const nextLine = this.lines[endLine + 1];
           if (nextLine && nextLine.trim() !== '' && !nextLine.startsWith('#')) {
@@ -273,11 +321,12 @@ export class HybridFormatter {
         (node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') &&
         node.position
       ) {
+        const jsxNode = node as MdxJsxElement;
         // Skip HTML elements - they will be handled by HTML formatter
-        if (node.name && htmlFormatter.isHtmlElement(node.name)) {
+        if (jsxNode.name && htmlFormatter.isHtmlElement(jsxNode.name)) {
           return;
         }
-        const endLine = node.position.end.line - 1;
+        const endLine = jsxNode.position!.end.line - 1;
         if (endLine < this.lines.length - 1) {
           const nextLine = this.lines[endLine + 1];
           // Check if next line is text (not empty, not heading)
@@ -290,8 +339,8 @@ export class HybridFormatter {
           ) {
             // Add spacing between consecutive block components
             const blockComponents = this.settings.addEmptyLinesInBlockJsx.blockComponents || [];
-            const isBlockComponent = blockComponents.includes(node.name);
-            const nextIsBlockComponent = blockComponents.some((name) =>
+            const isBlockComponent = blockComponents.includes(jsxNode.name || '');
+            const nextIsBlockComponent = blockComponents.some((name: string) =>
               nextLine.trim().startsWith(`<${name}`),
             );
 
@@ -317,24 +366,25 @@ export class HybridFormatter {
   }
 
   // NEW: Method to fix list indentation
-  collectListIndentationOperations(operations) {
+  collectListIndentationOperations(operations: FormatterOperation[]): void {
     // Track nesting level for list items
-    const listNestingLevels = new Map();
-    const processedLists = new Set();
+    const listNestingLevels = new Map<string, number>();
+    const processedLists = new Set<string>();
 
     // Recursive function to determine nesting levels
-    const determineNesting = (node, parentLevel = 0) => {
+    const determineNesting = (node: Node, parentLevel: number = 0): void => {
       if (node.type === 'list') {
+        const listNode = node as ListNode;
         // Mark this list as processed to avoid duplicate processing
-        const listKey = `${node.position.start.line}-${node.position.start.column}`;
+        const listKey = `${listNode.position.start.line}-${listNode.position.start.column}`;
         if (processedLists.has(listKey)) {
           return; // Already processed this list
         }
         processedLists.add(listKey);
 
         // Process list items
-        if (node.children) {
-          node.children.forEach((child) => {
+        if (listNode.children) {
+          listNode.children.forEach((child) => {
             if (child.type === 'listItem') {
               const key = `${child.position.start.line}-${child.position.start.column}`;
               // Only set if not already set (preserve the first, correct setting)
@@ -353,12 +403,13 @@ export class HybridFormatter {
             }
           });
         }
-      } else if (node.children) {
+      } else if ((node as Parent).children) {
         // Process children of non-list nodes
-        node.children.forEach((child) => {
+        const parentNode = node as Parent;
+        parentNode.children.forEach((child: Node) => {
           if (child.type === 'list') {
             determineNesting(child, parentLevel);
-          } else if (child.children) {
+          } else if ((child as Parent).children) {
             // Recursively check for lists
             determineNesting(child, parentLevel);
           }
@@ -370,14 +421,15 @@ export class HybridFormatter {
     determineNesting(this.ast, 0);
 
     // Second pass: fix indentation
-    visit(this.ast, (node) => {
+    visit(this.ast, (node: Node) => {
       if (node.type === 'listItem' && node.position) {
-        const key = `${node.position.start.line}-${node.position.start.column}`;
+        const listItemNode = node as ListItemNode;
+        const key = `${listItemNode.position.start.line}-${listItemNode.position.start.column}`;
         const nestingLevel = listNestingLevels.get(key) || 0;
         const expectedIndent = nestingLevel * 2;
 
         // Find the line with the list marker
-        const startLine = node.position.start.line - 1;
+        const startLine = listItemNode.position.start.line - 1;
         const line = this.lines[startLine];
         const trimmed = line.trim();
 
@@ -398,35 +450,36 @@ export class HybridFormatter {
     });
   }
 
-  collectJsxFormatOperations(operations) {
+  collectJsxFormatOperations(operations: FormatterOperation[]): void {
     // Initialize HTML formatter to check if elements are HTML
     const htmlFormatter = new HtmlBlockFormatter(this.settings.formatHtmlBlocksInMdx || {});
 
-    visit(this.ast, (node) => {
+    visit(this.ast, (node: Node) => {
       if (
         (node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') &&
         node.position
       ) {
+        const jsxNode = node as MdxJsxElement;
         // Skip HTML elements - they will be handled by HTML formatter
-        if (node.name && htmlFormatter.isHtmlElement(node.name)) {
+        if (jsxNode.name && htmlFormatter.isHtmlElement(jsxNode.name)) {
           return;
         }
 
         // Skip components in the ignore list
         const ignoreComponents = this.settings.formatMultiLineJsx.ignoreComponents || [];
-        if (node.name && ignoreComponents.includes(node.name)) {
+        if (jsxNode.name && ignoreComponents.includes(jsxNode.name)) {
           return;
         }
 
-        const startLine = node.position.start.line - 1;
-        const endLine = node.position.end.line - 1;
+        const startLine = jsxNode.position!.start.line - 1;
+        const endLine = jsxNode.position!.end.line - 1;
 
         // Extract the original JSX text
-        const originalText = this.extractNodeText(node.position);
+        const originalText = this.extractNodeText(jsxNode.position!);
 
         // Check if it needs formatting
-        if (this.needsJsxFormatting(node, originalText)) {
-          const formatted = this.formatJsxElement(node, originalText);
+        if (this.needsJsxFormatting(jsxNode, originalText)) {
+          const formatted = this.formatJsxElement(jsxNode, originalText);
 
           if (formatted !== originalText) {
             operations.push({
@@ -441,7 +494,7 @@ export class HybridFormatter {
     });
   }
 
-  needsJsxFormatting(node, originalText) {
+  needsJsxFormatting(node: MdxJsxElement, originalText: string): boolean {
     // Check if component is in ignore list
     const ignoreComponents = this.settings.formatMultiLineJsx.ignoreComponents || [];
     if (node.name && ignoreComponents.includes(node.name)) {
@@ -449,7 +502,7 @@ export class HybridFormatter {
     }
 
     const attributes = node.attributes || [];
-    const isMultiLine = node.position.start.line !== node.position.end.line;
+    const isMultiLine = node.position!.start.line !== node.position!.end.line;
     const propsThreshold = this.settings.expandSingleLineJsx.propsThreshold || 2;
 
     // Rule 4: Single-line with threshold+ attributes needs expansion
@@ -514,7 +567,7 @@ export class HybridFormatter {
     return false;
   }
 
-  formatJsxElement(node, originalText) {
+  formatJsxElement(node: MdxJsxElement, originalText: string): string {
     const name = node.name || '';
     const attributes = node.attributes || [];
     const children = node.children || [];
@@ -534,12 +587,12 @@ export class HybridFormatter {
     const propsThreshold = this.settings.expandSingleLineJsx.propsThreshold || 2;
 
     // Build formatted JSX
-    const lines = [];
+    const lines: string[] = [];
 
     // Determine if we should use multi-line format
     const shouldExpand =
       (this.settings.expandSingleLineJsx.enabled && attributes.length >= propsThreshold) ||
-      node.position.start.line !== node.position.end.line;
+      node.position!.start.line !== node.position!.end.line;
 
     if (attributes.length === 0) {
       // No attributes
@@ -628,7 +681,7 @@ export class HybridFormatter {
     return lines.join('\n');
   }
 
-  getAttributeString(attr, originalText) {
+  getAttributeString(attr: MdxJsxAttribute, originalText: string): string {
     if (!attr || !attr.name) return '';
 
     let result = attr.name;
@@ -639,7 +692,7 @@ export class HybridFormatter {
         result += `="${attr.value}"`;
       } else if (attr.value && attr.value.type === 'mdxJsxAttributeValueExpression') {
         // Expression value
-        const exprValue = this.extractExpressionValue(attr.value);
+        const exprValue = this.extractExpressionValue(attr.value as MdxJsxAttributeValueExpression);
         if (exprValue) {
           result += `={${exprValue}}`;
         } else {
@@ -657,7 +710,7 @@ export class HybridFormatter {
     return result;
   }
 
-  extractAttributeExpression(attrName, originalText) {
+  extractAttributeExpression(attrName: string, originalText: string): string | null {
     // Try to find the attribute expression in the original text
     const lines = originalText.split('\n');
     const needle = `${attrName}={`;
@@ -679,7 +732,7 @@ export class HybridFormatter {
       let braceDepth = 1;
       let result = needle;
       let currentLineIdx = lineIdx;
-      let charIndex = afterOpen;
+      const charIndex = afterOpen;
 
       while (currentLineIdx < lines.length && braceDepth > 0) {
         const currentLine = lines[currentLineIdx];
@@ -704,7 +757,7 @@ export class HybridFormatter {
     return null;
   }
 
-  extractExpressionValue(expr) {
+  extractExpressionValue(expr: MdxJsxAttributeValueExpression): string {
     // Extract the raw expression value from the AST node
     if (expr.value) {
       return expr.value;
@@ -727,7 +780,10 @@ export class HybridFormatter {
     return '';
   }
 
-  extractNodeText(position) {
+  extractNodeText(position: {
+    start: { line: number; column: number };
+    end: { line: number; column: number };
+  }): string {
     // Extract text from original content using position info
     const startLine = position.start.line - 1;
     const endLine = position.end.line - 1;
@@ -739,7 +795,7 @@ export class HybridFormatter {
       return this.lines[startLine].substring(startCol, endCol);
     } else {
       // Multi-line
-      const lines = [];
+      const lines: string[] = [];
 
       // First line
       lines.push(this.lines[startLine].substring(startCol));
@@ -756,7 +812,7 @@ export class HybridFormatter {
     }
   }
 
-  extractChildrenText(node, originalText) {
+  extractChildrenText(node: MdxJsxElement, originalText: string): string {
     if (!node.children || node.children.length === 0) {
       return '';
     }
@@ -785,7 +841,7 @@ export class HybridFormatter {
 
     if (openingEndIndex >= 0 && closingStartIndex > openingEndIndex) {
       // Extract content between tags
-      const contentLines = [];
+      const contentLines: string[] = [];
 
       // Handle case where opening tag has content on same line
       const openingLine = lines[openingEndIndex];
@@ -815,19 +871,20 @@ export class HybridFormatter {
   /**
    * Collect HTML block formatting operations using HtmlBlockFormatter
    */
-  async collectHtmlBlockOperations(operations) {
+  async collectHtmlBlockOperations(operations: FormatterOperation[]): Promise<void> {
     // Initialize the HTML formatter
     const htmlFormatter = new HtmlBlockFormatter(this.settings.formatHtmlBlocksInMdx);
 
     // Collect all HTML nodes first, tracking parent-child relationships
-    const htmlNodes = [];
-    const processedRanges = new Set();
+    const htmlNodes: MdxJsxElement[] = [];
+    const processedRanges = new Set<[number, number]>();
 
-    visit(this.ast, 'mdxJsxFlowElement', (node) => {
+    visit(this.ast, 'mdxJsxFlowElement', (node: Node) => {
+      const jsxNode = node as MdxJsxElement;
       // Check if this is an HTML element (not a JSX component)
-      if (node.name && htmlFormatter.isHtmlElement(node.name)) {
-        const startLine = node.position.start.line;
-        const endLine = node.position.end.line;
+      if (jsxNode.name && htmlFormatter.isHtmlElement(jsxNode.name)) {
+        const startLine = jsxNode.position!.start.line;
+        const endLine = jsxNode.position!.end.line;
 
         // Check if this node is within an already processed range
         let isNested = false;
@@ -840,7 +897,7 @@ export class HybridFormatter {
 
         // Only process top-level HTML elements, not nested ones
         if (!isNested) {
-          htmlNodes.push(node);
+          htmlNodes.push(jsxNode);
           processedRanges.add([startLine, endLine]);
         }
       }
@@ -859,8 +916,8 @@ export class HybridFormatter {
         if (formatted !== htmlContent) {
           operations.push({
             type: 'replaceHtmlBlock',
-            startLine: node.position.start.line - 1,
-            endLine: node.position.end.line - 1,
+            startLine: node.position!.start.line - 1,
+            endLine: node.position!.end.line - 1,
             content: formatted,
           });
         }
@@ -871,14 +928,14 @@ export class HybridFormatter {
   /**
    * Extract HTML content from an AST node
    */
-  extractHtmlFromNode(node) {
+  extractHtmlFromNode(node: MdxJsxElement): string | null {
     if (!node.position) return null;
 
     const startLine = node.position.start.line - 1;
     const endLine = node.position.end.line - 1;
 
     // Extract lines for this node
-    const htmlLines = [];
+    const htmlLines: string[] = [];
     for (let i = startLine; i <= endLine; i++) {
       htmlLines.push(this.lines[i]);
     }
@@ -886,7 +943,7 @@ export class HybridFormatter {
     return htmlLines.join('\n');
   }
 
-  collectJsxIndentOperations(operations) {
+  collectJsxIndentOperations(operations: FormatterOperation[]): void {
     const containerNames = this.settings.indentJsxContent.containerComponents || [];
 
     // Initialize HTML formatter to check if elements are HTML
@@ -895,43 +952,44 @@ export class HybridFormatter {
     // Get components to ignore
     const ignoreComponents = this.settings.formatMultiLineJsx.ignoreComponents || [];
 
-    visit(this.ast, (node) => {
-      if (
-        node.type === 'mdxJsxFlowElement' &&
-        containerNames.includes(node.name) &&
-        node.position &&
-        // Skip HTML elements - they are handled by HTML formatter
-        !htmlFormatter.isHtmlElement(node.name) &&
-        // Skip ignored components
-        !ignoreComponents.includes(node.name)
-      ) {
-        const startLine = node.position.start.line - 1;
-        const endLine = node.position.end.line - 1;
+    visit(this.ast, (node: Node) => {
+      if (node.type === 'mdxJsxFlowElement' && node.position) {
+        const jsxNode = node as MdxJsxElement;
+        if (
+          containerNames.includes(jsxNode.name || '') &&
+          // Skip HTML elements - they are handled by HTML formatter
+          !htmlFormatter.isHtmlElement(jsxNode.name || '') &&
+          // Skip ignored components
+          !ignoreComponents.includes(jsxNode.name || '')
+        ) {
+          const startLine = jsxNode.position!.start.line - 1;
+          const endLine = jsxNode.position!.end.line - 1;
 
-        // Check if content needs indentation
-        for (let i = startLine + 1; i < endLine; i++) {
-          const line = this.lines[i];
-          const trimmed = line.trim();
+          // Check if content needs indentation
+          for (let i = startLine + 1; i < endLine; i++) {
+            const line = this.lines[i];
+            const trimmed = line.trim();
 
-          // Skip empty lines and closing tag
-          if (!trimmed || trimmed.startsWith(`</${node.name}`)) {
-            continue;
-          }
+            // Skip empty lines and closing tag
+            if (!trimmed || trimmed.startsWith(`</${jsxNode.name}`)) {
+              continue;
+            }
 
-          // If not indented, add operation
-          if (!line.startsWith('  ')) {
-            operations.push({
-              type: 'indentLine',
-              startLine: i,
-              indent: '  ',
-            });
+            // If not indented, add operation
+            if (!line.startsWith('  ')) {
+              operations.push({
+                type: 'indentLine',
+                startLine: i,
+                indent: '  ',
+              });
+            }
           }
         }
       }
     });
   }
 
-  collectBlockJsxEmptyLineOperations(operations) {
+  collectBlockJsxEmptyLineOperations(operations: FormatterOperation[]): void {
     const blockComponents = this.settings.addEmptyLinesInBlockJsx.blockComponents || [];
 
     // Initialize HTML formatter to check if elements are HTML
@@ -940,92 +998,97 @@ export class HybridFormatter {
     // Get components to ignore
     const ignoreComponents = this.settings.formatMultiLineJsx.ignoreComponents || [];
 
-    visit(this.ast, (node) => {
+    visit(this.ast, (node: Node) => {
       if (
         (node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') &&
-        blockComponents.includes(node.name) &&
-        node.position &&
-        // Skip HTML elements - they are handled by HTML formatter
-        !htmlFormatter.isHtmlElement(node.name) &&
-        // Skip ignored components
-        !ignoreComponents.includes(node.name)
+        node.position
       ) {
-        const startLine = node.position.start.line - 1;
-        const endLine = node.position.end.line - 1;
+        const jsxNode = node as MdxJsxElement;
+        if (
+          blockComponents.includes(jsxNode.name || '') &&
+          // Skip HTML elements - they are handled by HTML formatter
+          !htmlFormatter.isHtmlElement(jsxNode.name || '') &&
+          // Skip ignored components
+          !ignoreComponents.includes(jsxNode.name || '')
+        ) {
+          const startLine = jsxNode.position!.start.line - 1;
+          const endLine = jsxNode.position!.end.line - 1;
 
-        // Handle single-line components
-        if (startLine === endLine) {
-          // For single-line components, we need to expand them first
-          const line = this.lines[startLine];
-          if (line.includes(`<${node.name}`) && line.includes(`</${node.name}>`)) {
-            // Extract opening tag, content, and closing tag
-            const openingTagEnd = line.indexOf('>') + 1;
-            const closingTagStart = line.lastIndexOf(`</${node.name}`);
+          // Handle single-line components
+          if (startLine === endLine) {
+            // For single-line components, we need to expand them first
+            const line = this.lines[startLine];
+            if (line.includes(`<${jsxNode.name}`) && line.includes(`</${jsxNode.name}>`)) {
+              // Extract opening tag, content, and closing tag
+              const openingTagEnd = line.indexOf('>') + 1;
+              const closingTagStart = line.lastIndexOf(`</${jsxNode.name}`);
 
-            if (openingTagEnd > 0 && closingTagStart > openingTagEnd) {
-              const openingTag = line.substring(0, openingTagEnd).trim();
-              const content = line.substring(openingTagEnd, closingTagStart).trim();
-              const closingTag = line.substring(closingTagStart).trim();
+              if (openingTagEnd > 0 && closingTagStart > openingTagEnd) {
+                const openingTag = line.substring(0, openingTagEnd).trim();
+                const content = line.substring(openingTagEnd, closingTagStart).trim();
+                const closingTag = line.substring(closingTagStart).trim();
 
-              // Replace with multi-line format with empty lines
+                // Replace with multi-line format with empty lines
+                operations.push({
+                  type: 'replaceLines',
+                  startLine: startLine,
+                  endLine: startLine,
+                  lines: [openingTag, '', content, '', closingTag],
+                });
+              }
+            }
+            return;
+          }
+
+          // Check if there's an empty line after the opening tag
+          if (startLine + 1 < this.lines.length) {
+            const lineAfterOpening = this.lines[startLine + 1];
+            if (lineAfterOpening.trim() !== '') {
+              // Add empty line after opening tag
               operations.push({
-                type: 'replaceLines',
-                startLine: startLine,
-                endLine: startLine,
-                lines: [openingTag, '', content, '', closingTag],
+                type: 'insertLine',
+                startLine: startLine + 1,
+                content: '',
               });
             }
           }
-          return;
-        }
 
-        // Check if there's an empty line after the opening tag
-        if (startLine + 1 < this.lines.length) {
-          const lineAfterOpening = this.lines[startLine + 1];
-          if (lineAfterOpening.trim() !== '') {
-            // Add empty line after opening tag
-            operations.push({
-              type: 'insertLine',
-              startLine: startLine + 1,
-              content: '',
-            });
-          }
-        }
-
-        // Check if there's an empty line before the closing tag
-        if (endLine > startLine + 1) {
-          const lineBeforeClosing = this.lines[endLine - 1];
-          // Make sure the line before closing tag is not already empty and is not the closing tag itself
-          if (
-            lineBeforeClosing.trim() !== '' &&
-            !lineBeforeClosing.trim().startsWith(`</${node.name}`)
-          ) {
-            // Add empty line before closing tag
-            operations.push({
-              type: 'insertLine',
-              startLine: endLine,
-              content: '',
-            });
+          // Check if there's an empty line before the closing tag
+          if (endLine > startLine + 1) {
+            const lineBeforeClosing = this.lines[endLine - 1];
+            // Make sure the line before closing tag is not already empty and is not the closing tag itself
+            if (
+              lineBeforeClosing.trim() !== '' &&
+              !lineBeforeClosing.trim().startsWith(`</${jsxNode.name}`)
+            ) {
+              // Add empty line before closing tag
+              operations.push({
+                type: 'insertLine',
+                startLine: endLine,
+                content: '',
+              });
+            }
           }
         }
       }
     });
   }
 
-  collectYamlFormatOperations(operations) {
+  collectYamlFormatOperations(operations: FormatterOperation[]): void {
     const yamlSettings = this.settings.formatYamlFrontmatter;
 
-    visit(this.ast, (node) => {
+    visit(this.ast, (node: Node) => {
       if (node.type === 'yaml' && node.position) {
+        const yamlNode = node as YamlNode;
         try {
           // Parse the YAML content
-          const parsed = yaml.load(node.value);
+          const parsed = yaml.load(yamlNode.value);
 
           // Format it back with proper formatting
           const formatted = yaml.dump(parsed, {
             indent: yamlSettings.indent || 2,
             lineWidth: yamlSettings.lineWidth || 100,
-            quotingType: yamlSettings.quotingType || '"',
+            quotingType: (yamlSettings.quotingType || '"') as '"' | "'",
             forceQuotes: yamlSettings.forceQuotes || false,
             noCompatMode: yamlSettings.noCompatMode !== false, // Default true
             // Additional options for cleaner output
@@ -1038,9 +1101,9 @@ export class HybridFormatter {
           const cleanFormatted = formatted.replace(/\n$/, '');
 
           // Only apply if different from original
-          if (cleanFormatted !== node.value) {
-            const startLine = node.position.start.line - 1;
-            const endLine = node.position.end.line - 1;
+          if (cleanFormatted !== yamlNode.value) {
+            const startLine = yamlNode.position.start.line - 1;
+            const endLine = yamlNode.position.end.line - 1;
 
             // The YAML frontmatter includes the --- markers
             // We need to replace just the content between them
@@ -1060,7 +1123,7 @@ export class HybridFormatter {
     });
   }
 
-  getLineAtPosition(charPos) {
+  getLineAtPosition(charPos: number): number {
     for (let i = 0; i < this.positionMap.length; i++) {
       if (charPos >= this.positionMap[i].start && charPos <= this.positionMap[i].end) {
         return i;
@@ -1069,34 +1132,38 @@ export class HybridFormatter {
     return this.positionMap.length - 1;
   }
 
-  applyOperation(lines, op) {
+  applyOperation(lines: string[], op: FormatterOperation): void {
     switch (op.type) {
       case 'insertLine':
         lines.splice(op.startLine, 0, op.content);
         break;
 
-      case 'replaceLines':
+      case 'replaceLines': {
         const deleteCount = op.endLine - op.startLine + 1;
         lines.splice(op.startLine, deleteCount, ...op.lines);
         break;
+      }
 
-      case 'indentLine':
+      case 'indentLine': {
         const trimmed = lines[op.startLine].trim();
         lines[op.startLine] = op.indent + trimmed;
         break;
+      }
 
-      case 'fixListIndent':
+      case 'fixListIndent': {
         // NEW: Handle list indentation fix
         const listLine = lines[op.startLine].trim();
         lines[op.startLine] = op.indent + listLine;
         break;
+      }
 
-      case 'replaceHtmlBlock':
+      case 'replaceHtmlBlock': {
         // NEW: Replace HTML block with formatted content
         const formattedLines = op.content.split('\n');
         // Remove old lines
         lines.splice(op.startLine, op.endLine - op.startLine + 1, ...formattedLines);
         break;
+      }
     }
   }
 }

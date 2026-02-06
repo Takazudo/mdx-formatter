@@ -6,7 +6,9 @@
  * need the original component names to verify behavior.
  */
 
-export const testSettings = {
+import type { DeepPartial, FormatterSettings } from '../src/types.js';
+
+export const testSettings: DeepPartial<FormatterSettings> = {
   addEmptyLinesInBlockJsx: {
     blockComponents: ['Outro', 'InfoBox', 'LayoutDivideItem', 'Column'],
   },

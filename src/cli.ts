@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 
+import { readFileSync } from 'fs';
 import { program } from 'commander';
 import { glob } from 'glob';
-import { createRequire } from 'module';
 import chalk from 'chalk';
 import { formatFile, checkFile } from './index.js';
+import type { FormatOptions } from './types.js';
 
-const require = createRequire(import.meta.url);
-const { version } = require('../package.json');
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8')) as {
+  version: string;
+};
 
 program
   .name('mdx-formatter')
   .description('AST-based markdown and MDX formatter')
-  .version(version)
+  .version(pkg.version)
   .argument('[patterns...]', 'Glob patterns for files to format', ['**/*.{md,mdx}'])
   .option('-w, --write', 'Write formatted files in place')
   .option('-c, --check', 'Check if files need formatting')
@@ -22,33 +24,40 @@ program
     'Comma-separated patterns to ignore',
     'node_modules/**,dist/**,build/**,.git/**,worktrees/**',
   )
-  .action(async (patterns, options) => {
-    try {
-      await main(patterns, options);
-    } catch (error) {
-      console.error(chalk.red('Error:'), error.message);
-      process.exit(1);
-    }
-  });
+  .action(
+    async (
+      patterns: string[],
+      options: { write?: boolean; check?: boolean; config?: string; ignore: string },
+    ) => {
+      try {
+        await main(patterns, options);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(chalk.red('Error:'), message);
+        process.exit(1);
+      }
+    },
+  );
 
 program.parse();
 
 /**
  * Main CLI function
- * @param {string[]} patterns - File patterns to process
- * @param {Object} options - CLI options
  */
-async function main(patterns, options) {
+async function main(
+  patterns: string[],
+  options: { write?: boolean; check?: boolean; config?: string; ignore: string },
+): Promise<void> {
   const ignorePatterns = options.ignore.split(',').map((p) => p.trim());
 
   // Build format options from CLI flags
-  const formatOptions = {};
+  const formatOptions: FormatOptions = {};
   if (options.config) {
     formatOptions.config = options.config;
   }
 
   // Find all matching files
-  const files = [];
+  const files: string[] = [];
   for (const pattern of patterns) {
     const matches = await glob(pattern, {
       ignore: ignorePatterns,
@@ -100,7 +109,8 @@ async function main(patterns, options) {
       }
     } catch (error) {
       errorCount++;
-      console.error(chalk.red('✗'), chalk.gray(file), chalk.red(error.message));
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(chalk.red('✗'), chalk.gray(file), chalk.red(message));
     }
   }
 

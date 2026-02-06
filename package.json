@@ -3,25 +3,30 @@
   "version": "0.1.0",
   "description": "AST-based markdown and MDX formatter with Japanese text support",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
-    ".": "./src/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "bin": {
-    "mdx-formatter": "./src/cli.js"
+    "mdx-formatter": "dist/cli.js"
   },
   "files": [
-    "src/",
+    "dist/",
     "format-stdin.js",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
+    "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest --coverage",
-    "format": "node src/cli.js --write \"**/*.{md,mdx}\"",
-    "format:check": "node src/cli.js --check \"**/*.{md,mdx}\"",
+    "format": "npx tsx src/cli.ts --write \"**/*.{md,mdx}\"",
+    "format:check": "npx tsx src/cli.ts --check \"**/*.{md,mdx}\"",
     "prettier": "prettier --check .",
     "prettier:fix": "prettier --write .",
     "lint": "eslint .",
@@ -29,10 +34,10 @@
     "check": "prettier --check . && eslint .",
     "check:fix": "prettier --write . && eslint --fix .",
     "prepare": "husky",
-    "prepublishOnly": "vitest run"
+    "prepublishOnly": "tsc && vitest run"
   },
   "lint-staged": {
-    "*.{js,mjs}": [
+    "*.{js,mjs,ts}": [
       "prettier --write",
       "eslint --fix"
     ],
@@ -79,10 +84,18 @@
     "unist-util-visit": "^5.0.0"
   },
   "devDependencies": {
+    "@types/hast": "^3.0.4",
+    "@types/js-yaml": "^4.0.9",
+    "@types/mdast": "^4.0.4",
+    "@types/node": "^25.2.1",
+    "@types/unist": "^3.0.3",
     "@vitest/coverage-v8": "^4.0.17",
     "eslint": "^9.39.2",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.54.0",
+    "vfile": "^6.0.3",
     "vitest": "^4.0.17"
   },
   "engines": {

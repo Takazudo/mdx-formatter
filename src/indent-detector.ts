@@ -3,8 +3,17 @@
  * Analyzes content to determine the most likely indentation style and size
  */
 
+import type { IndentStats, IndentPattern } from './types.js';
+
 export class IndentDetector {
-  constructor(content) {
+  content: string;
+  lines: string[];
+  indentType: 'space' | 'tab';
+  indentSize: number;
+  confidence: number;
+  stats: IndentStats;
+
+  constructor(content: string) {
     this.content = content || '';
     this.lines = this.content.split('\n');
 
@@ -29,15 +38,15 @@ export class IndentDetector {
   /**
    * Main detection algorithm
    */
-  detect() {
+  detect(): void {
     if (!this.content || this.content.trim() === '') {
       // No content, use defaults
       this.confidence = 0;
       return;
     }
 
-    const indentCounts = new Map();
-    const indentPatterns = [];
+    const indentCounts = new Map<string, number>();
+    const indentPatterns: IndentPattern[] = [];
     let inCodeBlock = false;
     let inFrontmatter = false;
 
@@ -104,7 +113,7 @@ export class IndentDetector {
   /**
    * Get the indentation string of a line
    */
-  getLineIndent(line) {
+  getLineIndent(line: string): string {
     const match = line.match(/^(\s*)/);
     return match ? match[1] : '';
   }
@@ -112,7 +121,7 @@ export class IndentDetector {
   /**
    * Increment pattern count in statistics
    */
-  incrementPatternCount(pattern, count) {
+  incrementPatternCount(pattern: string, count: number): void {
     if (!this.stats.patterns[pattern]) {
       this.stats.patterns[pattern] = 0;
     }
@@ -122,7 +131,7 @@ export class IndentDetector {
   /**
    * Analyze collected patterns to determine indentation
    */
-  analyzePatterns(patterns, _indentCounts) {
+  analyzePatterns(patterns: IndentPattern[], _indentCounts: Map<string, number>): void {
     if (patterns.length === 0) {
       this.confidence = 0;
       return;
@@ -155,9 +164,9 @@ export class IndentDetector {
   /**
    * Find the most likely indent size using GCD and frequency analysis
    */
-  findCommonIndentSize(sizes) {
+  findCommonIndentSize(sizes: number[]): number {
     // Count frequency of each size
-    const sizeFreq = new Map();
+    const sizeFreq = new Map<number, number>();
     sizes.forEach((size) => {
       sizeFreq.set(size, (sizeFreq.get(size) || 0) + 1);
     });
@@ -211,10 +220,10 @@ export class IndentDetector {
   /**
    * Calculate GCD of an array of numbers
    */
-  gcdArray(numbers) {
+  gcdArray(numbers: number[]): number {
     if (numbers.length === 0) return 0;
 
-    const gcd = (a, b) => {
+    const gcd = (a: number, b: number): number => {
       while (b !== 0) {
         const temp = b;
         b = a % b;
@@ -229,7 +238,7 @@ export class IndentDetector {
   /**
    * Calculate confidence score based on pattern consistency
    */
-  calculateConfidence(patterns) {
+  calculateConfidence(patterns: IndentPattern[]): void {
     if (patterns.length === 0) {
       this.confidence = 0;
       return;
@@ -240,7 +249,7 @@ export class IndentDetector {
     const sizesArray = Array.from(uniqueSizes).sort((a, b) => a - b);
 
     // Count frequency of each size
-    const sizeFrequencies = new Map();
+    const sizeFrequencies = new Map<number, number>();
     patterns
       .filter((p) => p.type === 'space')
       .forEach((p) => {
@@ -356,21 +365,21 @@ export class IndentDetector {
   /**
    * Get the detected indent size
    */
-  getIndentSize() {
+  getIndentSize(): number {
     return this.indentSize;
   }
 
   /**
    * Get the detected indent type ('space' or 'tab')
    */
-  getIndentType() {
+  getIndentType(): string {
     return this.indentType;
   }
 
   /**
    * Get the actual indent string to use
    */
-  getIndentString() {
+  getIndentString(): string {
     if (this.indentType === 'tab') {
       return '\t';
     } else {
@@ -381,33 +390,29 @@ export class IndentDetector {
   /**
    * Get the confidence score (0-1)
    */
-  getConfidence() {
+  getConfidence(): number {
     return this.confidence;
   }
 
   /**
    * Get detailed statistics about the detection
    */
-  getStatistics() {
+  getStatistics(): IndentStats {
     return this.stats;
   }
 
   /**
    * Format a string with the detected indentation
-   * @param {string} text - The text to indent
-   * @param {number} level - The indentation level
    */
-  formatWithIndent(text, level) {
+  formatWithIndent(text: string, level: number): string {
     const indent = this.getIndentString().repeat(level);
     return indent + text;
   }
 
   /**
    * Get the indentation level of a line
-   * @param {string} line - The line to analyze
-   * @returns {number} The indentation level
    */
-  getLineIndentLevel(line) {
+  getLineIndentLevel(line: string): number {
     const indent = this.getLineIndent(line);
 
     if (!indent) {

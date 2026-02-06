@@ -8,7 +8,7 @@
  * markdown/MDX content via shell pipelines.
  */
 
-import { format } from './src/index.js';
+import { format } from './dist/index.js';
 
 // Read from stdin
 async function readStdin() {

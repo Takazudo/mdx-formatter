@@ -2,7 +2,7 @@
  * Plugin to fix paragraph and JSX spacing issues
  * This runs as a post-processing step after stringify
  */
-export function fixParagraphSpacing(content) {
+export function fixParagraphSpacing(content: string): string {
   let fixed = content;
 
   // Fix 0: Split collapsed JSX components (most critical fix)
@@ -17,7 +17,7 @@ export function fixParagraphSpacing(content) {
   // Fix 1: Ensure blank lines between paragraphs
   // Split content by lines and process
   const lines = fixed.split('\n');
-  const processedLines = [];
+  const processedLines: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -64,14 +64,17 @@ export function fixParagraphSpacing(content) {
 
   // Fix 5: Split merged paragraphs (Japanese text specific)
   // Pattern: 。text should be 。\ntext when it's a new sentence
-  fixed = fixed.replace(/([。！？])([ぁ-んァ-ヶー一-龠]+)/g, (match, punct, text) => {
-    // Check if the text after punctuation looks like a new sentence
-    // (starts with a capital-like character or common sentence starters)
-    if (/^[こそたなはまやらわがざだばぱ]/.test(text)) {
-      return `${punct}\n${text}`;
-    }
-    return match;
-  });
+  fixed = fixed.replace(
+    /([。！？])([ぁ-んァ-ヶー一-龠]+)/g,
+    (match, punct: string, text: string) => {
+      // Check if the text after punctuation looks like a new sentence
+      // (starts with a capital-like character or common sentence starters)
+      if (/^[こそたなはまやらわがざだばぱ]/.test(text)) {
+        return `${punct}\n${text}`;
+      }
+      return match;
+    },
+  );
 
   // Fix 6: Preserve space after question mark in Japanese
   fixed = fixed.replace(/([？！])([^ \n])/g, '$1 $2');
@@ -81,15 +84,18 @@ export function fixParagraphSpacing(content) {
 
   // Fix 8: Fix JSX indentation issues
   // When we have closing tags that lost one space of indentation
-  fixed = fixed.replace(/\n( +)<\/([A-Z][^>]+)>/g, (match, spaces, tag) => {
+  fixed = fixed.replace(/\n( +)<\/([A-Z][^>]+)>/g, (match, spaces: string, tag: string) => {
     // Check if the opening tag had more indentation
     const openingPattern = new RegExp(`\\n(\\s+)<${tag}[^>]*>`, 'g');
     const openingMatch = fixed.match(openingPattern);
     if (openingMatch && openingMatch[0]) {
-      const openingSpaces = openingMatch[0].match(/\n(\s+)</)[1];
-      if (openingSpaces.length === spaces.length + 1) {
-        // The opening tag has one more space, so add it to closing tag
-        return '\n' + spaces + ' </' + tag + '>';
+      const openingSpacesMatch = openingMatch[0].match(/\n(\s+)</);
+      if (openingSpacesMatch) {
+        const openingSpaces = openingSpacesMatch[1];
+        if (openingSpaces.length === spaces.length + 1) {
+          // The opening tag has one more space, so add it to closing tag
+          return '\n' + spaces + ' </' + tag + '>';
+        }
       }
     }
     return match;
@@ -97,7 +103,7 @@ export function fixParagraphSpacing(content) {
 
   // Fix 9: Fix Outro component spacing specifically
   // Ensure content inside Outro has proper spacing
-  fixed = fixed.replace(/<Outro>([\s\S]*?)<\/Outro>/g, (match, content) => {
+  fixed = fixed.replace(/<Outro>([\s\S]*?)<\/Outro>/g, (match, content: string) => {
     // Check if there's content
     const trimmedContent = content.trim();
     if (trimmedContent) {

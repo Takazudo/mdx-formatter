@@ -1,9 +1,12 @@
+import type { Root } from 'mdast';
+import type { VFile } from 'vfile';
+
 /**
  * Pre-processing plugin to normalize Japanese text before parsing
  * This runs on the raw text before the markdown parser
  */
 export function preprocessJapanesePlugin() {
-  return function (tree, file) {
+  return function (_tree: Root, file: VFile) {
     // Work on the raw content before parsing
     const content = String(file);
 
@@ -12,6 +15,6 @@ export function preprocessJapanesePlugin() {
     const processed = content.replace(urlInParensPattern, '[$1]($2)');
 
     // Update the file content
-    file.value = processed;
+    (file as unknown as { value: string }).value = processed;
   };
 }
