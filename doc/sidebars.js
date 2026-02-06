@@ -46,6 +46,7 @@ const sidebars = {
     'formatting/html-blocks',
     'formatting/docusaurus-admonitions',
   ],
+  changelogSidebar: ['changelog/index'],
   inboxSidebar: ['inbox/index'],
 };
 

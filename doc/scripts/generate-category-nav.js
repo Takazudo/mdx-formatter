@@ -18,6 +18,7 @@ const CATEGORY_STRUCTURE = {
   overview: [],
   options: [],
   formatting: [],
+  changelog: [],
   inbox: [],
 };
 

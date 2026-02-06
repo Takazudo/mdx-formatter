@@ -90,6 +90,12 @@ const config = {
           },
           {
             type: 'doc',
+            docId: 'changelog/index',
+            position: 'left',
+            label: 'Changelog',
+          },
+          {
+            type: 'doc',
             docId: 'inbox/index',
             position: 'left',
             label: 'INBOX',
