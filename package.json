@@ -44,6 +44,9 @@
     "*.{json,yml,yaml}": [
       "prettier --write"
     ],
+    ".claude/**/*.md": [
+      "prettier --write"
+    ],
     "doc/docs/**/*.{md,mdx}": [
       "npx tsx src/cli.ts --write"
     ]

@@ -2,7 +2,7 @@
 description: Bump package version, generate changelog doc, tag, and publish to npm
 user-invocable: true
 disable-model-invocation: true
-argument-description: "Optional: major, minor, or patch to skip the proposal step"
+argument-description: 'Optional: major, minor, or patch to skip the proposal step'
 ---
 
 # /version-increment
@@ -80,7 +80,7 @@ Create `doc/docs/changelog/v{VERSION}.mdx` with this format:
 
 ```mdx
 ---
-sidebar_position: {computed}
+sidebar_position: { computed }
 ---
 
 # v{VERSION}
