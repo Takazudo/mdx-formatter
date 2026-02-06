@@ -125,7 +125,13 @@
     "subcategories": []
   },
   "changelog": {
-    "pages": [],
+    "pages": [
+      {
+        "docId": "changelog/v0.1.0",
+        "title": "v0.1.0",
+        "position": 9900
+      }
+    ],
     "subcategories": []
   },
   "inbox": {
