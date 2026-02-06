@@ -75,6 +75,13 @@
   margin-bottom: 0.75rem;
 }
 
+.linkIcon {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  margin-right: 0.4em;
+}
+
 .linksList a {
   color: var(--ifm-color-primary);
   text-decoration: none;

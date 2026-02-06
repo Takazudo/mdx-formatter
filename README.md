@@ -49,7 +49,7 @@ console.log(formatted); // '# Hello\n\nWorld'
 
 ## Documentation
 
-For full documentation including configuration, options reference, formatting rules, and API reference, visit the [documentation site](https://takazudo.github.io/mdx-formatter/).
+For full documentation including configuration, options reference, formatting rules, and API reference, visit the [documentation site](https://takazudomodular.com/pj/mdx-formatter/).
 
 ## Development
 
