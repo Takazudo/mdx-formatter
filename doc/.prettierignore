@@ -10,3 +10,4 @@ package-lock.json
 *.svg
 .next
 out
+docs/
