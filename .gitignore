@@ -1,0 +1,21 @@
+node_modules/
+dist/
+build/
+coverage/
+.DS_Store
+*.log
+.env
+.env.local
+.vscode/
+.idea/
+
+# Temporary test/debug files (root only)
+/test-*.md
+/test-*.js
+/debug-*.js
+/*.test.md
+
+# Temporary files
+__inbox/
+tmp/
+temp/

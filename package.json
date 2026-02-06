@@ -1,0 +1,91 @@
+{
+  "name": "@takazudo/mdx-formatter",
+  "version": "0.1.0",
+  "description": "AST-based markdown and MDX formatter with Japanese text support",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "bin": {
+    "mdx-formatter": "./src/cli.js"
+  },
+  "files": [
+    "src/",
+    "format-stdin.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest --coverage",
+    "format": "node src/cli.js --write \"**/*.{md,mdx}\"",
+    "format:check": "node src/cli.js --check \"**/*.{md,mdx}\"",
+    "prettier": "prettier --check .",
+    "prettier:fix": "prettier --write .",
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "check": "prettier --check . && eslint .",
+    "check:fix": "prettier --write . && eslint --fix .",
+    "prepare": "husky",
+    "prepublishOnly": "vitest run"
+  },
+  "lint-staged": {
+    "*.{js,mjs}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "keywords": [
+    "markdown",
+    "mdx",
+    "formatter",
+    "remark",
+    "unified",
+    "japanese",
+    "docusaurus",
+    "jsx",
+    "ast",
+    "gfm"
+  ],
+  "author": "Takazudo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Takazudo/mdx-formatter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Takazudo/mdx-formatter/issues"
+  },
+  "homepage": "https://github.com/Takazudo/mdx-formatter#readme",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^14.0.3",
+    "glob": "^13.0.1",
+    "js-yaml": "^4.1.1",
+    "prettier": "^3.8.0",
+    "remark": "^15.0.1",
+    "remark-directive": "^3.0.0",
+    "remark-frontmatter": "^5.0.0",
+    "remark-gfm": "^4.0.0",
+    "remark-mdx": "^3.0.0",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
+    "unified": "^11.0.4",
+    "unist-util-visit": "^5.0.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.17",
+    "eslint": "^9.39.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "vitest": "^4.0.17"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
