@@ -17,13 +17,13 @@ AST-based markdown and MDX formatter with Japanese text support. Built on top of
 ## Installation
 
 ```bash
-pnpm add @takazudo/mdx-formatter
+npm install @takazudo/mdx-formatter
 ```
 
-Or use directly with pnpm dlx:
+Or use directly with npx:
 
 ```bash
-pnpm dlx @takazudo/mdx-formatter --write "**/*.md"
+npx @takazudo/mdx-formatter --write "**/*.md"
 ```
 
 ## Usage
