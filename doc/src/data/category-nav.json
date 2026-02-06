@@ -127,6 +127,11 @@
   "changelog": {
     "pages": [
       {
+        "docId": "changelog/v0.1.1",
+        "title": "v0.1.1",
+        "position": 9899
+      },
+      {
         "docId": "changelog/v0.1.0",
         "title": "v0.1.0",
         "position": 9900
