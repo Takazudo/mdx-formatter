@@ -47,6 +47,9 @@
     ".claude/**/*.md": [
       "prettier --write"
     ],
+    "doc/src/**/*.{ts,tsx,js,jsx,css}": [
+      "prettier --write"
+    ],
     "doc/docs/**/*.{md,mdx}": [
       "npx tsx src/cli.ts --write"
     ]

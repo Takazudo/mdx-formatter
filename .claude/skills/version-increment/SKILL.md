@@ -161,18 +161,32 @@ pnpm build && pnpm test
 
 If anything fails, stop and tell the user. Do not proceed with tagging or publishing.
 
-## Tag and push
+## Push and wait for CI
 
-**Ask the user for confirmation before tagging and pushing.**
+Push the commits first (without the tag) and wait for CI to pass:
+
+```bash
+git push
+```
+
+Then check CI status with `gh run list --branch main --limit 2`. Poll every 30 seconds until both CI and Production Deploy show `completed success`. If CI fails, fix the issue, commit, and push again before proceeding.
+
+**Do not tag or publish until CI is green.**
+
+## Tag and push tag
+
+**Ask the user for confirmation before tagging.**
 
 ```bash
 git tag v{VERSION}
-git push && git push --tags
+git push --tags
 ```
 
 ## Publish to npm
 
 **Ask the user for confirmation before publishing.**
+
+The user will run `npm publish` manually (it requires browser-based 2FA). Tell the user to run:
 
 ```bash
 npm publish
