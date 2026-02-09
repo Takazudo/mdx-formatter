@@ -21,6 +21,7 @@ const sidebars = {
     'overview/usage',
     'overview/configuration',
     'overview/api',
+    'overview/contribution',
   ],
   optionsSidebar: [
     'options/index',
