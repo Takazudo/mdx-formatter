@@ -11,7 +11,9 @@ sidebar_position: 7
 | `-w, --write`         | Write formatted files in place                                                                        |
 | `-c, --check`         | Check if files need formatting (for CI)                                                               |
 | `--config <path>`     | Path to config file                                                                                   |
-| `--ignore <patterns>` | Comma-separated patterns to ignore (default: `node_modules/**,dist/**,build/**,.git/**,worktrees/**`). Merged with `exclude` patterns from config file |
+| `--ignore <patterns>` | Comma-separated patterns to ignore (default: `node_modules/**,dist/**,build/**,.git/**,worktrees/**`) |
+
+The `--ignore` patterns are merged with [`exclude`](/docs/overview/configuration#excluding-files) patterns from the config file.
 
 ## `format(content, options?)`
 
@@ -21,6 +23,8 @@ Format markdown/MDX content.
 - `options.config` (`string`) - Path to config file
 - `options.settings` (`object`) - Direct settings overrides (see [Options Reference](/docs/options))
 - Returns `Promise<string>` - Formatted content (returns original on error)
+
+> The `exclude` config option is CLI-only. When using the programmatic API (`format`, `formatFile`, `checkFile`), handle file filtering in your own code.
 
 ## `formatFile(filePath, options?)`
 
