@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync, unlinkSync, existsSync } from 'fs';
 import { resolve } from 'path';
-import { loadExcludePatterns, loadConfig } from '../src/load-config.js';
+import { loadExcludePatterns, loadConfig, loadFullConfig } from '../src/load-config.js';
 
 describe('loadExcludePatterns', () => {
   const tempConfigPath = resolve('__test-config.json');
@@ -73,5 +73,36 @@ describe('loadConfig', () => {
     const settings = loadConfig({ config: tempConfigPath });
     expect(settings).not.toHaveProperty('exclude');
     expect(settings.formatMultiLineJsx.ignoreComponents).toEqual(['CodeBlock']);
+  });
+});
+
+describe('loadFullConfig', () => {
+  const tempConfigPath = resolve('__test-config.json');
+
+  afterEach(() => {
+    if (existsSync(tempConfigPath)) {
+      unlinkSync(tempConfigPath);
+    }
+  });
+
+  it('should return both settings and exclude patterns from a single read', () => {
+    const config = {
+      exclude: ['generated/**', 'tmp/**'],
+      formatMultiLineJsx: { ignoreComponents: ['CodeBlock'] },
+    };
+    writeFileSync(tempConfigPath, JSON.stringify(config));
+    const { settings, excludePatterns } = loadFullConfig({ config: tempConfigPath });
+    expect(settings).not.toHaveProperty('exclude');
+    expect(settings.formatMultiLineJsx.ignoreComponents).toEqual(['CodeBlock']);
+    expect(excludePatterns).toEqual(['generated/**', 'tmp/**']);
+  });
+
+  it('should return empty excludePatterns when config has no exclude key', () => {
+    const config = {
+      formatMultiLineJsx: { enabled: true },
+    };
+    writeFileSync(tempConfigPath, JSON.stringify(config));
+    const { excludePatterns } = loadFullConfig({ config: tempConfigPath });
+    expect(excludePatterns).toEqual([]);
   });
 });

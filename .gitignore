@@ -17,6 +17,7 @@ coverage/
 
 # Temporary files
 __inbox/
+__test-config.json
 tmp/
 temp/
 
