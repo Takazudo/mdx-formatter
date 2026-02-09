@@ -64,6 +64,19 @@ function findConfigFile(configPath?: string): Record<string, unknown> | null {
 }
 
 /**
+ * Load exclude patterns from config file.
+ * These are glob patterns for files the CLI should skip.
+ * Kept separate from loadConfig() since exclude patterns are not formatter settings.
+ */
+export function loadExcludePatterns(configPath?: string): string[] {
+  const fileConfig = findConfigFile(configPath);
+  if (fileConfig && Array.isArray(fileConfig.exclude)) {
+    return fileConfig.exclude.filter((item): item is string => typeof item === 'string');
+  }
+  return [];
+}
+
+/**
  * Load and merge all configuration layers
  */
 export function loadConfig(options: FormatOptions = {}): FormatterSettings {
@@ -73,7 +86,10 @@ export function loadConfig(options: FormatOptions = {}): FormatterSettings {
   // Layer 2: Config file
   const fileConfig = findConfigFile(options.config);
   if (fileConfig) {
-    settings = mergeSettings(settings, fileConfig);
+    // Strip exclude from config before merging into formatter settings
+    const formatterConfig = { ...fileConfig };
+    delete formatterConfig.exclude;
+    settings = mergeSettings(settings, formatterConfig);
   }
 
   // Layer 3: Programmatic options

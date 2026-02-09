@@ -5,6 +5,7 @@ import { program } from 'commander';
 import { glob } from 'glob';
 import chalk from 'chalk';
 import { formatFile, checkFile } from './index.js';
+import { loadConfig, loadExcludePatterns } from './load-config.js';
 import type { FormatOptions } from './types.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8')) as {
@@ -48,13 +49,20 @@ async function main(
   patterns: string[],
   options: { write?: boolean; check?: boolean; config?: string; ignore: string },
 ): Promise<void> {
-  const ignorePatterns = options.ignore.split(',').map((p) => p.trim());
+  const cliIgnorePatterns = options.ignore.split(',').map((p) => p.trim());
 
-  // Build format options from CLI flags
-  const formatOptions: FormatOptions = {};
+  // Merge CLI ignore patterns with config file exclude patterns
+  const configExcludes = loadExcludePatterns(options.config);
+  const ignorePatterns = [...new Set([...cliIgnorePatterns, ...configExcludes])];
+
+  // Pre-resolve settings once to avoid re-reading config file per-file
+  const configOption: FormatOptions = {};
   if (options.config) {
-    formatOptions.config = options.config;
+    configOption.config = options.config;
   }
+  const formatOptions: FormatOptions = {
+    settings: loadConfig(configOption),
+  };
 
   // Find all matching files
   const files: string[] = [];

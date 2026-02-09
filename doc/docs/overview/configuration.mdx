@@ -39,3 +39,28 @@ Or add an `"mdx-formatter"` key to your `package.json`:
   }
 }
 ```
+
+## Excluding Files
+
+You can add an `exclude` array to your config file to skip files matching the given glob patterns. These patterns are merged with the CLI `--ignore` option.
+
+```json
+{
+  "exclude": ["doc/docs/claude/**", "generated/**/*.md"],
+  "formatMultiLineJsx": {
+    "ignoreComponents": ["CodeBlock"]
+  }
+}
+```
+
+This is useful for excluding auto-generated files that don't need formatting, without adding patterns to every CLI invocation.
+
+The `exclude` key also works in `package.json`:
+
+```json
+{
+  "mdx-formatter": {
+    "exclude": ["doc/docs/claude/**"]
+  }
+}
+```
