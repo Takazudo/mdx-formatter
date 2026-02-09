@@ -64,16 +64,30 @@ function findConfigFile(configPath?: string): Record<string, unknown> | null {
 }
 
 /**
- * Load and merge all configuration layers
+ * Load config file once and return both formatter settings and exclude patterns.
+ * This avoids reading the config file multiple times in the CLI path.
  */
-export function loadConfig(options: FormatOptions = {}): FormatterSettings {
+export function loadFullConfig(options: FormatOptions = {}): {
+  settings: FormatterSettings;
+  excludePatterns: string[];
+} {
   // Layer 1: Built-in defaults
   let settings = deepCloneSettings(formatterSettings);
 
   // Layer 2: Config file
   const fileConfig = findConfigFile(options.config);
+
+  // Extract exclude patterns (CLI concern, not formatter settings)
+  let excludePatterns: string[] = [];
   if (fileConfig) {
-    settings = mergeSettings(settings, fileConfig);
+    if (Array.isArray(fileConfig.exclude)) {
+      excludePatterns = fileConfig.exclude.filter(
+        (item): item is string => typeof item === 'string',
+      );
+    }
+    const formatterConfig = { ...fileConfig };
+    delete formatterConfig.exclude;
+    settings = mergeSettings(settings, formatterConfig);
   }
 
   // Layer 3: Programmatic options
@@ -81,5 +95,20 @@ export function loadConfig(options: FormatOptions = {}): FormatterSettings {
     settings = mergeSettings(settings, options.settings as Record<string, unknown>);
   }
 
-  return settings;
+  return { settings, excludePatterns };
+}
+
+/**
+ * Load exclude patterns from config file.
+ * These are glob patterns for files the CLI should skip.
+ */
+export function loadExcludePatterns(configPath?: string): string[] {
+  return loadFullConfig({ config: configPath }).excludePatterns;
+}
+
+/**
+ * Load and merge all configuration layers
+ */
+export function loadConfig(options: FormatOptions = {}): FormatterSettings {
+  return loadFullConfig(options).settings;
 }
