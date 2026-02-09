@@ -20,6 +20,11 @@
         "docId": "overview/api",
         "title": "API Reference",
         "position": 7
+      },
+      {
+        "docId": "overview/contribution",
+        "title": "Contribution",
+        "position": 8
       }
     ],
     "subcategories": []
@@ -126,6 +131,11 @@
   },
   "changelog": {
     "pages": [
+      {
+        "docId": "changelog/v0.2.0",
+        "title": "v0.2.0",
+        "position": 9800
+      },
       {
         "docId": "changelog/v0.1.1",
         "title": "v0.1.1",
