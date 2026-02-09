@@ -47,7 +47,13 @@ const sidebars = {
     'formatting/html-blocks',
     'formatting/docusaurus-admonitions',
   ],
-  changelogSidebar: ['changelog/index', 'changelog/v0.2.0', 'changelog/v0.1.2', 'changelog/v0.1.1', 'changelog/v0.1.0'],
+  changelogSidebar: [
+    'changelog/index',
+    'changelog/v0.2.0',
+    'changelog/v0.1.2',
+    'changelog/v0.1.1',
+    'changelog/v0.1.0',
+  ],
   inboxSidebar: ['inbox/index'],
 };
 
