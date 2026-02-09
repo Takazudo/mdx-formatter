@@ -135,6 +135,11 @@
         "docId": "changelog/v0.1.0",
         "title": "v0.1.0",
         "position": 9900
+      },
+      {
+        "docId": "changelog/v0.1.2",
+        "title": "v0.1.2",
+        "position": 9998
       }
     ],
     "subcategories": []
