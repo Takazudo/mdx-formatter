@@ -33,6 +33,7 @@
     "lint:fix": "eslint --fix .",
     "check": "prettier --check . && eslint .",
     "check:fix": "prettier --write . && eslint --fix .",
+    "doc:start": "pnpm --dir doc start",
     "prepare": "husky",
     "prepublishOnly": "tsc && vitest run"
   },
