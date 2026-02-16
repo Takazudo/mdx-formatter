@@ -49,6 +49,7 @@ const sidebars = {
   ],
   changelogSidebar: [
     'changelog/index',
+    'changelog/v0.2.1',
     'changelog/v0.2.0',
     'changelog/v0.1.2',
     'changelog/v0.1.1',
