@@ -1,11 +1,9 @@
 import type { ReactNode } from 'react';
 import useBaseUrl from '@docusaurus/useBaseUrl';
+import categoryNav from '@site/src/data/category-nav.json';
 import styles from './styles.module.css';
 
-// Use require for auto-generated JSON to avoid TypeScript errors when file doesn't exist yet
-const categoryNav = require('@site/src/data/category-nav.json');
-
-type CategoryKey = string;
+type CategoryKey = keyof typeof categoryNav;
 
 interface Page {
   docId: string;
