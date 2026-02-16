@@ -27,7 +27,11 @@ pnpm check:fix      # Prettier + ESLint autofix
 
 ## Conventions
 
-- **Commits**: Conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`, `ci:`)
+- **Commits**: Start with a scope prefix, then a short description:
+  - `[formatter] ` - main formatter script (src/, test/, build, CLI)
+  - `[doc] ` - documentation site related updates (doc/)
+  - `[claude] ` - Claude Code related tweaks (.claude/, CLAUDE.md)
+  - `[misc] ` - other things (CI, dependencies, config, etc.)
 - **Unused vars**: Prefix with `_` (enforced by ESLint `argsIgnorePattern: '^_'`)
 - **Imports**: Always use `.js` extension in TypeScript imports (required for ESM with Node16 resolution)
 - **Console**: `no-console` is `warn` everywhere except `src/cli.ts` and `format-stdin.js`
