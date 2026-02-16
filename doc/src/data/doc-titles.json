@@ -1,5 +1,9 @@
 {
   "changelog/index": "Changelog",
+  "changelog/v0.1.0": "v0.1.0",
+  "changelog/v0.1.1": "v0.1.1",
+  "changelog/v0.1.2": "v0.1.2",
+  "changelog/v0.2.0": "v0.2.0",
   "formatting/code-blocks": "Code Blocks",
   "formatting/docusaurus-admonitions": "Docusaurus Admonitions",
   "formatting/headings": "Headings",
@@ -23,6 +27,7 @@
   "options/preserve-admonitions": "preserveAdmonitions",
   "overview/api": "API Reference",
   "overview/configuration": "Configuration",
+  "overview/contribution": "Contribution",
   "overview/index": "Overview",
   "overview/installation": "Installation",
   "overview/usage": "Usage"
