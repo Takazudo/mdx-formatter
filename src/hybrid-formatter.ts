@@ -1085,8 +1085,8 @@ export class HybridFormatter {
 
     for (const line of lines) {
       // Match a YAML mapping entry: optional indent, key, colon, space, value
-      // Skip lines that are comments, array items, empty, or have no value
-      const match = line.match(/^(\s*)([\w][\w\s.-]*?):\s+(.+)$/);
+      // Keys must start with a word char, may contain word chars, dots, hyphens
+      const match = line.match(/^(\s*)([\w][\w.-]*):\s+(.+)$/);
       if (match) {
         const [, indent, key, value] = match;
         const trimmedValue = value.trim();
@@ -1109,22 +1109,16 @@ export class HybridFormatter {
           continue;
         }
 
-        let needsQuoting = false;
-
-        // Colon-space in value: YAML interprets as nested mapping
-        if (trimmedValue.includes(': ')) {
-          needsQuoting = true;
+        // Skip block scalar indicators (>, |, >-, |-, >+, |+)
+        if (/^[|>][-+]?$/.test(trimmedValue)) {
+          result.push(line);
+          continue;
         }
 
-        // Hash preceded by space: YAML interprets as inline comment
-        if (trimmedValue.includes(' #')) {
-          needsQuoting = true;
-        }
-
-        // Values starting with YAML indicators that cause parse errors
-        if (/^[!&*|>%@`]/.test(trimmedValue)) {
-          needsQuoting = true;
-        }
+        const needsQuoting =
+          trimmedValue.includes(': ') ||
+          trimmedValue.includes(' #') ||
+          /^[!&*%@`]/.test(trimmedValue);
 
         if (needsQuoting) {
           const escaped = trimmedValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"');

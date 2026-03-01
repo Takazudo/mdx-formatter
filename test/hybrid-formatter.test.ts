@@ -1155,6 +1155,43 @@ Content`;
       expect(result).toBe(expected);
     });
 
+    test('should handle block scalar indicators in frontmatter without errors', async () => {
+      const input = `---
+title: Test
+description: >
+  This is a
+  folded value
+---
+
+Content`;
+
+      // yaml.load/dump round-trip normalizes folded (>) to literal (|)
+      // and folds the content into a single line. The key point is no crash.
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toContain('description:');
+      expect(result).toContain('This is a folded value');
+      expect(result).not.toContain('">"');
+    });
+
+    test('should properly escape values with both colons and embedded quotes', async () => {
+      const input = `---
+title: He said "hello: world"
+---
+
+Content`;
+
+      const expected = `---
+title: "He said \\"hello: world\\""
+---
+
+Content`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
     test('should skip unsafe value fixing when fixUnsafeValues is false', async () => {
       const settingsWithoutFix = loadConfig({
         settings: {
