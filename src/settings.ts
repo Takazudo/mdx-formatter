@@ -69,6 +69,7 @@ export const formatterSettings: FormatterSettings = {
     quotingType: '"', // Quote type for strings that need quoting: '"' or "'"
     forceQuotes: false, // Force quotes on all string values
     noCompatMode: true, // Use YAML 1.2 spec (not 1.1)
+    fixUnsafeValues: true, // Pre-process YAML to quote values containing special characters like colons
   },
 
   // Rule 8: Preserve Docusaurus admonitions

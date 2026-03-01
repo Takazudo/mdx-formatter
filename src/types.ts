@@ -130,6 +130,7 @@ export interface FormatYamlFrontmatterSetting {
   quotingType: string;
   forceQuotes: boolean;
   noCompatMode: boolean;
+  fixUnsafeValues: boolean;
 }
 
 export interface PreserveAdmonitionsSetting {
