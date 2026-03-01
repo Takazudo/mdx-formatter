@@ -1074,6 +1074,71 @@ export class HybridFormatter {
     });
   }
 
+  /**
+   * Pre-process YAML text to fix values that would cause parsing failures
+   * or silent data corruption. Detects unquoted values containing special
+   * YAML characters and wraps them in double quotes.
+   */
+  preprocessYamlForParsing(yamlText: string): string {
+    const lines = yamlText.split('\n');
+    const result: string[] = [];
+
+    for (const line of lines) {
+      // Match a YAML mapping entry: optional indent, key, colon, space, value
+      // Skip lines that are comments, array items, empty, or have no value
+      const match = line.match(/^(\s*)([\w][\w\s.-]*?):\s+(.+)$/);
+      if (match) {
+        const [, indent, key, value] = match;
+        const trimmedValue = value.trim();
+
+        // Skip if already quoted
+        if (
+          (trimmedValue.startsWith('"') && trimmedValue.endsWith('"')) ||
+          (trimmedValue.startsWith("'") && trimmedValue.endsWith("'"))
+        ) {
+          result.push(line);
+          continue;
+        }
+
+        // Skip if the value is a flow sequence [...] or flow mapping {...}
+        if (
+          (trimmedValue.startsWith('[') && trimmedValue.endsWith(']')) ||
+          (trimmedValue.startsWith('{') && trimmedValue.endsWith('}'))
+        ) {
+          result.push(line);
+          continue;
+        }
+
+        let needsQuoting = false;
+
+        // Colon-space in value: YAML interprets as nested mapping
+        if (trimmedValue.includes(': ')) {
+          needsQuoting = true;
+        }
+
+        // Hash preceded by space: YAML interprets as inline comment
+        if (trimmedValue.includes(' #')) {
+          needsQuoting = true;
+        }
+
+        // Values starting with YAML indicators that cause parse errors
+        if (/^[!&*|>%@`]/.test(trimmedValue)) {
+          needsQuoting = true;
+        }
+
+        if (needsQuoting) {
+          const escaped = trimmedValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          result.push(`${indent}${key}: "${escaped}"`);
+          continue;
+        }
+      }
+
+      result.push(line);
+    }
+
+    return result.join('\n');
+  }
+
   collectYamlFormatOperations(operations: FormatterOperation[]): void {
     const yamlSettings = this.settings.formatYamlFrontmatter;
 
@@ -1081,11 +1146,21 @@ export class HybridFormatter {
       if (node.type === 'yaml' && node.position) {
         const yamlNode = node as YamlNode;
         try {
-          // Parse the YAML content
-          const parsed = yaml.load(yamlNode.value);
+          let yamlToParse = yamlNode.value;
 
-          // Format it back with proper formatting
+          // Pre-process YAML to fix unsafe values (e.g., unquoted colons)
+          if (yamlSettings.fixUnsafeValues !== false) {
+            yamlToParse = this.preprocessYamlForParsing(yamlToParse);
+          }
+
+          // Parse the YAML content using JSON_SCHEMA to prevent silent
+          // data corruption (e.g., dates parsed as Date objects, octals)
+          const parsed = yaml.load(yamlToParse, { schema: yaml.JSON_SCHEMA });
+
+          // Format it back with proper formatting using JSON_SCHEMA
+          // to preserve string representations (dates, etc.)
           const formatted = yaml.dump(parsed, {
+            schema: yaml.JSON_SCHEMA,
             indent: yamlSettings.indent || 2,
             lineWidth: yamlSettings.lineWidth || 100,
             quotingType: (yamlSettings.quotingType || '"') as '"' | "'",

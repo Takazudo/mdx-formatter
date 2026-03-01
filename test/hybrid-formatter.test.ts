@@ -968,5 +968,173 @@ Content`;
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
+
+    test('should auto-quote frontmatter values containing colons', async () => {
+      const input = `---
+title: Claude Codeの/batchとAgent Teams: 2つのエージェント並列実行の比較
+---
+
+Content here`;
+
+      const expected = `---
+title: "Claude Codeの/batchとAgent Teams: 2つのエージェント並列実行の比較"
+---
+
+Content here`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
+    test('should auto-quote multiple frontmatter values containing colons', async () => {
+      const input = `---
+title: foo: bar
+description: A normal description
+subtitle: key: value pair here
+---
+
+Content`;
+
+      const expected = `---
+title: "foo: bar"
+description: A normal description
+subtitle: "key: value pair here"
+---
+
+Content`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
+    test('should not double-quote already quoted values with colons', async () => {
+      const input = `---
+title: "Already quoted: value"
+---
+
+Content`;
+
+      const expected = `---
+title: "Already quoted: value"
+---
+
+Content`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
+    test('should format YAML frontmatter with blank lines in arrays (4-space indent)', async () => {
+      const input = `---
+title: foo
+description: bar
+tags:
+    - foo
+    - mew
+
+    - moo
+
+---
+
+Content here`;
+
+      const expected = `---
+title: foo
+description: bar
+tags:
+  - foo
+  - mew
+  - moo
+---
+
+Content here`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
+    test('should preserve hash characters in frontmatter values', async () => {
+      const input = `---
+title: My Post # Draft
+description: Section #1 of the guide
+---
+
+Content`;
+
+      const expected = `---
+title: "My Post # Draft"
+description: "Section #1 of the guide"
+---
+
+Content`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
+    test('should preserve date strings without converting to ISO format', async () => {
+      const input = `---
+title: Test
+date: 2024-01-15
+---
+
+Content`;
+
+      const expected = `---
+title: Test
+date: 2024-01-15
+---
+
+Content`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
+    test('should quote values starting with YAML indicators', async () => {
+      const input = `---
+tag: "!important"
+ref: "*main"
+---
+
+Content`;
+
+      const expected = `---
+tag: "!important"
+ref: "*main"
+---
+
+Content`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
+    test('should preserve leading zeros in numeric values', async () => {
+      const input = `---
+code: "00123"
+zip: "00750"
+---
+
+Content`;
+
+      const expected = `---
+code: "00123"
+zip: "00750"
+---
+
+Content`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
   });
 });
