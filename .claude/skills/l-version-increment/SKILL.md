@@ -5,7 +5,7 @@ disable-model-invocation: true
 argument-description: 'Optional: major, minor, or patch to skip the proposal step'
 ---
 
-# /version-increment
+# /l-version-increment
 
 Bump the version of `@takazudo/mdx-formatter`, generate a changelog doc page, commit, tag, and publish to npm.
 

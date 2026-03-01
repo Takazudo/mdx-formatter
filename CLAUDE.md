@@ -41,4 +41,4 @@ pnpm check:fix      # Prettier + ESLint autofix
 - Scoped package: `@takazudo/mdx-formatter`
 - `files` field limits published content to: `dist/`, `format-stdin.js`, `README.md`, `LICENSE`
 - `prepublishOnly` runs `tsc && vitest run` automatically
-- Use `/version-increment` skill for releases
+- Use `/l-version-increment` skill for releases

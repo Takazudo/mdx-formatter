@@ -33,4 +33,4 @@ Each doc category has its own sidebar in `sidebars.js` (e.g., `overviewSidebar`,
 
 ## Adding a Changelog Entry
 
-Use the `/version-increment` skill, which automates creating the changelog doc, updating `sidebars.js`, and regenerating category nav.
+Use the `/l-version-increment` skill, which automates creating the changelog doc, updating `sidebars.js`, and regenerating category nav.

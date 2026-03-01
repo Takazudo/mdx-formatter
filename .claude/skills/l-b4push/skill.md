@@ -1,5 +1,5 @@
 ---
-name: b4push
+name: l-b4push
 description: >-
   Run comprehensive pre-push validation covering code quality, builds, tests, and doc site.
   Use when: (1) Completing a PR or feature implementation, (2) Before pushing significant changes,
