@@ -1117,6 +1117,24 @@ Content`;
       expect(result).toBe(expected);
     });
 
+    test('should auto-quote unquoted values starting with YAML indicators', async () => {
+      const input = `---
+tag: !important
+---
+
+Content`;
+
+      const expected = `---
+tag: "!important"
+---
+
+Content`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
     test('should preserve leading zeros in numeric values', async () => {
       const input = `---
 code: "00123"
@@ -1135,6 +1153,28 @@ Content`;
       const formatter = new HybridFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
+    });
+
+    test('should skip unsafe value fixing when fixUnsafeValues is false', async () => {
+      const settingsWithoutFix = loadConfig({
+        settings: {
+          ...testSettings,
+          formatYamlFrontmatter: { fixUnsafeValues: false },
+        },
+      });
+
+      // With fixUnsafeValues disabled, the colon value won't be quoted
+      // and yaml.load() will fail, so the frontmatter is left unchanged
+      const input = `---
+title: foo: bar
+---
+
+Content`;
+
+      const formatter = new HybridFormatter(input, settingsWithoutFix);
+      const result = await formatter.format();
+      // Should be unchanged since yaml.load() fails without preprocessing
+      expect(result).toBe(input);
     });
   });
 });
