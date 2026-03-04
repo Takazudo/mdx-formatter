@@ -624,9 +624,8 @@ export class HybridFormatter {
 
           // Check if this is a template literal expression (backtick string)
           // Template literal content has meaningful indentation that must be preserved
-          const preserveTemplateLiteral =
-            this.settings.formatMultiLineJsx.preserveTemplateLiteralIndent !== false;
-          const isTemplateLiteral = preserveTemplateLiteral && attrLines[0].includes('={`');
+          const isTemplateLiteral =
+            this.shouldPreserveTemplateLiteral() && attrLines[0].includes('={`');
 
           // Add subsequent lines with additional indentation for expression content
           for (let i = 1; i < attrLines.length; i++) {
@@ -690,6 +689,13 @@ export class HybridFormatter {
     return lines.join('\n');
   }
 
+  /**
+   * Check if template literal indentation should be preserved based on settings.
+   */
+  shouldPreserveTemplateLiteral(): boolean {
+    return this.settings.formatMultiLineJsx.preserveTemplateLiteralIndent !== false;
+  }
+
   getAttributeString(attr: MdxJsxAttribute, originalText: string): string {
     if (!attr || !attr.name) return '';
 
@@ -705,9 +711,11 @@ export class HybridFormatter {
 
         // For template literals, prefer extracting from original text to preserve
         // internal indentation (AST normalizes/strips leading whitespace)
-        const preserveTemplateLiteral =
-          this.settings.formatMultiLineJsx.preserveTemplateLiteralIndent !== false;
-        if (preserveTemplateLiteral && exprValue && exprValue.includes('`')) {
+        if (
+          this.shouldPreserveTemplateLiteral() &&
+          exprValue &&
+          exprValue.trimStart().startsWith('`')
+        ) {
           const extracted = this.extractAttributeExpression(attr.name, originalText);
           if (extracted) {
             result = extracted;

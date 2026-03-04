@@ -1275,6 +1275,43 @@ Content`;
       expect(result).toBe(input);
     });
 
+    it('should preserve template literal with interpolation expressions', async () => {
+      const input = `<CssPreview
+  title="test"
+  html={\`<div class="\${styles.demo}">
+  <div class="\${styles.inner}">
+    <p>Hello</p>
+  </div>
+</div>\`}
+  height={320} />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
+    it('should handle single-line template literal without breaking', async () => {
+      const input = `<CssPreview
+  title="test"
+  html={\`<p>Simple</p>\`}
+  height={320} />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
+    it('should handle empty template literal without breaking', async () => {
+      const input = `<CssPreview
+  title="test"
+  html={\`\`}
+  height={320} />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
     it('should flatten template literal indentation when preserveTemplateLiteralIndent is false', async () => {
       const input = `<CssPreview
   title="test"
