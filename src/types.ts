@@ -90,6 +90,7 @@ export interface FormatMultiLineJsxSetting {
   indentSize: number;
   indentType?: string;
   ignoreComponents: string[];
+  preserveTemplateLiteralIndent: boolean;
 }
 
 export interface FormatHtmlBlocksInMdxSetting {

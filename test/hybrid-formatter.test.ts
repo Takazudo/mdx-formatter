@@ -2,6 +2,7 @@ import { describe, it, expect, test } from 'vitest';
 import { HybridFormatter } from '../src/hybrid-formatter.js';
 import { testSettings } from './test-helpers.js';
 import { loadConfig } from '../src/load-config.js';
+import type { DeepPartial, FormatterSettings } from '../src/types.js';
 
 const settings = loadConfig({ settings: testSettings });
 
@@ -1212,6 +1213,129 @@ Content`;
       const result = await formatter.format();
       // Should be unchanged since yaml.load() fails without preprocessing
       expect(result).toBe(input);
+    });
+  });
+
+  describe('Template literal indentation preservation', () => {
+    it('should preserve indentation inside template literal JSX attributes', async () => {
+      const input = `<CssPreview
+  title="test"
+  html={\`<div class="demo">
+  <div class="inner">
+    <p>Hello</p>
+  </div>
+</div>\`}
+  height={320} />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
+    it('should preserve CSS indentation inside template literal attributes', async () => {
+      const input = `<CssPreview
+  title="test"
+  css={\`.demo {
+  color: red;
+  .inner {
+    padding: 8px;
+  }
+}\`}
+  height={320} />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
+    it('should preserve indentation in multiple template literal attributes', async () => {
+      const input = `<CssPreview
+  title="test"
+  html={\`<div class="card">
+  <div class="card__header">
+    <h2>Title</h2>
+  </div>
+  <div class="card__body">
+    <p>Content</p>
+  </div>
+</div>\`}
+  css={\`.card {
+  border: 1px solid hsl(0 0% 80%);
+  .card__header {
+    padding: 8px 16px;
+  }
+  .card__body {
+    padding: 16px;
+  }
+}\`}
+  height={400} />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
+    it('should preserve template literal with interpolation expressions', async () => {
+      const input = `<CssPreview
+  title="test"
+  html={\`<div class="\${styles.demo}">
+  <div class="\${styles.inner}">
+    <p>Hello</p>
+  </div>
+</div>\`}
+  height={320} />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
+    it('should handle single-line template literal without breaking', async () => {
+      const input = `<CssPreview
+  title="test"
+  html={\`<p>Simple</p>\`}
+  height={320} />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
+    it('should handle empty template literal without breaking', async () => {
+      const input = `<CssPreview
+  title="test"
+  html={\`\`}
+  height={320} />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
+    it('should flatten template literal indentation when preserveTemplateLiteralIndent is false', async () => {
+      const input = `<CssPreview
+  title="test"
+  html={\`<div class="demo">
+  <div class="inner">
+    <p>Hello</p>
+  </div>
+</div>\`}
+  height={320} />`;
+
+      const disabledSettings: DeepPartial<FormatterSettings> = {
+        ...testSettings,
+        formatMultiLineJsx: {
+          ...testSettings.formatMultiLineJsx,
+          preserveTemplateLiteralIndent: false,
+        },
+      };
+
+      const formatter = new HybridFormatter(input, loadConfig({ settings: disabledSettings }));
+      const result = await formatter.format();
+      // When disabled, the formatter flattens template literal indentation
+      expect(result).not.toBe(input);
+      // The inner HTML lines should be trimmed and uniformly re-indented (indent + 2 = 4 spaces)
+      expect(result).toContain('    <div class="inner">');
     });
   });
 });
