@@ -8,11 +8,12 @@ Format multi-line JSX/HTML components with proper indentation. The closing `/>` 
 
 ## Options
 
-| Property           | Type       | Default | Description                                               |
-| ------------------ | ---------- | ------- | --------------------------------------------------------- |
-| `enabled`          | `boolean`  | `true`  | Enable/disable this rule                                  |
-| `indentSize`       | `number`   | `2`     | Number of spaces for indentation                          |
-| `ignoreComponents` | `string[]` | `[]`    | Component names to skip (preserve their formatting as-is) |
+| Property                          | Type       | Default | Description                                                                      |
+| --------------------------------- | ---------- | ------- | -------------------------------------------------------------------------------- |
+| `enabled`                         | `boolean`  | `true`  | Enable/disable this rule                                                         |
+| `indentSize`                      | `number`   | `2`     | Number of spaces for indentation                                                 |
+| `ignoreComponents`                | `string[]` | `[]`    | Component names to skip (preserve their formatting as-is)                        |
+| `preserveTemplateLiteralIndent`   | `boolean`  | `true`  | Preserve indentation inside template literal JSX attributes (backtick strings)   |
 
 ## Config
 
@@ -21,7 +22,8 @@ Format multi-line JSX/HTML components with proper indentation. The closing `/>` 
   "formatMultiLineJsx": {
     "enabled": true,
     "indentSize": 2,
-    "ignoreComponents": ["CodeBlock", "RawHTML"]
+    "ignoreComponents": ["CodeBlock", "RawHTML"],
+    "preserveTemplateLiteralIndent": true
   }
 }
 ```
@@ -81,3 +83,29 @@ title="example.jsx"
 ````
 
 This stays exactly as-is — no reformatting applied.
+
+### Template literal indentation preservation
+
+When `preserveTemplateLiteralIndent` is `true` (the default), indentation inside template literal JSX attributes is preserved as-is. This is important for components like `CssPreview` where the `html` and `css` props contain meaningful indentation:
+
+````markdown
+<CssPreview
+  title="Demo"
+  html={`<div class="card">
+  <div class="card__header">
+    <h2>Title</h2>
+  </div>
+  <div class="card__body">
+    <p>Content</p>
+  </div>
+</div>`}
+  css={`.card {
+  border: 1px solid hsl(0 0% 80%);
+  .card__header {
+    padding: 8px 16px;
+  }
+}`}
+  height={300} />
+````
+
+Without this option, the formatter would flatten all lines inside the template literals to a uniform indent depth, destroying the HTML nesting structure and CSS formatting.

@@ -2,6 +2,7 @@ import { describe, it, expect, test } from 'vitest';
 import { HybridFormatter } from '../src/hybrid-formatter.js';
 import { testSettings } from './test-helpers.js';
 import { loadConfig } from '../src/load-config.js';
+import type { DeepPartial, FormatterSettings } from '../src/types.js';
 
 const settings = loadConfig({ settings: testSettings });
 
@@ -1272,6 +1273,32 @@ Content`;
       const formatter = new HybridFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(input);
+    });
+
+    it('should flatten template literal indentation when preserveTemplateLiteralIndent is false', async () => {
+      const input = `<CssPreview
+  title="test"
+  html={\`<div class="demo">
+  <div class="inner">
+    <p>Hello</p>
+  </div>
+</div>\`}
+  height={320} />`;
+
+      const disabledSettings: DeepPartial<FormatterSettings> = {
+        ...testSettings,
+        formatMultiLineJsx: {
+          ...testSettings.formatMultiLineJsx,
+          preserveTemplateLiteralIndent: false,
+        },
+      };
+
+      const formatter = new HybridFormatter(input, loadConfig({ settings: disabledSettings }));
+      const result = await formatter.format();
+      // When disabled, the formatter flattens template literal indentation
+      expect(result).not.toBe(input);
+      // The inner HTML lines should be trimmed and uniformly re-indented (indent + 2 = 4 spaces)
+      expect(result).toContain('    <div class="inner">');
     });
   });
 });

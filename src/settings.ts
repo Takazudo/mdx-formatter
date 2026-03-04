@@ -19,6 +19,8 @@ export const formatterSettings: FormatterSettings = {
     indentSize: 2,
     // Components to ignore (preserve their formatting completely)
     ignoreComponents: [],
+    // Preserve indentation inside template literal JSX attributes (html={`...`}, css={`...`})
+    preserveTemplateLiteralIndent: true,
   },
 
   // Rule 3: Format all HTML blocks within MDX using Prettier
