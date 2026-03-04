@@ -1214,4 +1214,64 @@ Content`;
       expect(result).toBe(input);
     });
   });
+
+  describe('Template literal indentation preservation', () => {
+    it('should preserve indentation inside template literal JSX attributes', async () => {
+      const input = `<CssPreview
+  title="test"
+  html={\`<div class="demo">
+  <div class="inner">
+    <p>Hello</p>
+  </div>
+</div>\`}
+  height={320} />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
+    it('should preserve CSS indentation inside template literal attributes', async () => {
+      const input = `<CssPreview
+  title="test"
+  css={\`.demo {
+  color: red;
+  .inner {
+    padding: 8px;
+  }
+}\`}
+  height={320} />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
+    it('should preserve indentation in multiple template literal attributes', async () => {
+      const input = `<CssPreview
+  title="test"
+  html={\`<div class="card">
+  <div class="card__header">
+    <h2>Title</h2>
+  </div>
+  <div class="card__body">
+    <p>Content</p>
+  </div>
+</div>\`}
+  css={\`.card {
+  border: 1px solid hsl(0 0% 80%);
+  .card__header {
+    padding: 8px 16px;
+  }
+  .card__body {
+    padding: 16px;
+  }
+}\`}
+  height={400} />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+  });
 });

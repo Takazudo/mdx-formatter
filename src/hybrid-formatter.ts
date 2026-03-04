@@ -617,16 +617,23 @@ export class HybridFormatter {
       for (const attr of attributes) {
         const attrStr = this.getAttributeString(attr, originalText);
 
-        // Handle multi-line expression values (like arrays)
+        // Handle multi-line expression values (like arrays, template literals)
         if (attrStr.includes('\n')) {
           const attrLines = attrStr.split('\n');
           lines.push(`${indent}${attrLines[0]}`);
 
+          // Check if this is a template literal expression (backtick string)
+          // Template literal content has meaningful indentation that must be preserved
+          const isTemplateLiteral = attrLines[0].includes('={`');
+
           // Add subsequent lines with additional indentation for expression content
           for (let i = 1; i < attrLines.length; i++) {
-            // Check if this line is part of the expression or the closing
             const line = attrLines[i];
-            if (line.trim().endsWith(']}') || line.trim() === ']}') {
+
+            if (isTemplateLiteral) {
+              // Preserve original indentation inside template literals
+              lines.push(line);
+            } else if (line.trim().endsWith(']}') || line.trim() === ']}') {
               // Closing of array expression
               lines.push(`${indent}${line.trim()}`);
             } else {
@@ -693,7 +700,17 @@ export class HybridFormatter {
       } else if (attr.value && attr.value.type === 'mdxJsxAttributeValueExpression') {
         // Expression value
         const exprValue = this.extractExpressionValue(attr.value as MdxJsxAttributeValueExpression);
-        if (exprValue) {
+
+        // For template literals, prefer extracting from original text to preserve
+        // internal indentation (AST normalizes/strips leading whitespace)
+        if (exprValue && exprValue.includes('`')) {
+          const extracted = this.extractAttributeExpression(attr.name, originalText);
+          if (extracted) {
+            result = extracted;
+          } else {
+            result += `={${exprValue}}`;
+          }
+        } else if (exprValue) {
           result += `={${exprValue}}`;
         } else {
           // Try to extract from original text
