@@ -1338,4 +1338,58 @@ Content`;
       expect(result).toContain('    <div class="inner">');
     });
   });
+
+  describe('Table with inline JSX elements', () => {
+    it('should not insert empty lines between table rows containing inline JSX elements', async () => {
+      const input = `| Key | Action |
+| --- | ------ |
+| <kbd>Tab</kbd> | Move focus |
+| <kbd>Enter</kbd> | Activate |
+| <kbd>Escape</kbd> | Close |`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
+    it('should not insert empty lines between table rows with mixed inline HTML elements', async () => {
+      const input = `| Element | Description |
+| --- | --- |
+| <code>const</code> | Variable declaration |
+| <strong>bold</strong> | Bold text |
+| <em>italic</em> | Italic text |`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+
+    it('should still add spacing after JSX components outside tables', async () => {
+      const input = `<ExternalLink url="https://example.com" />
+Some text after the component.`;
+
+      const expected = `<ExternalLink url="https://example.com" />
+
+Some text after the component.`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
+    it('should maintain spacing around tables with headings and paragraphs', async () => {
+      const input = `## Keyboard Shortcuts
+
+| Key | Action |
+| --- | ------ |
+| <kbd>Tab</kbd> | Move focus |
+| <kbd>Enter</kbd> | Activate |
+
+Some text after the table.`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(input);
+    });
+  });
 });

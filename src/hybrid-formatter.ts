@@ -327,6 +327,11 @@ export class HybridFormatter {
           return;
         }
         const endLine = jsxNode.position!.end.line - 1;
+        // Skip JSX elements inside table rows
+        const currentLineContent = this.lines[endLine];
+        if (currentLineContent && currentLineContent.trim().startsWith('|')) {
+          return;
+        }
         if (endLine < this.lines.length - 1) {
           const nextLine = this.lines[endLine + 1];
           // Check if next line is text (not empty, not heading)
