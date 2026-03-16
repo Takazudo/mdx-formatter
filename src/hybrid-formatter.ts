@@ -1119,9 +1119,16 @@ export class HybridFormatter {
           // Find the actual end of the opening tag (may span multiple lines
           // for elements with attributes like <Danger\n  title="..."\n>)
           let openingTagEndLine = startLine;
+          let braceDepth = 0;
           for (let i = startLine; i <= endLine; i++) {
-            const trimmed = this.lines[i].trim();
-            if (trimmed.endsWith('>') && !trimmed.endsWith('/>')) {
+            const line = this.lines[i];
+            // Track brace depth to avoid matching > inside expressions like {a > b}
+            for (const ch of line) {
+              if (ch === '{') braceDepth++;
+              if (ch === '}') braceDepth--;
+            }
+            const trimmed = line.trim();
+            if (braceDepth === 0 && trimmed.endsWith('>') && !trimmed.endsWith('/>')) {
               openingTagEndLine = i;
               break;
             }
