@@ -1116,14 +1116,25 @@ export class HybridFormatter {
             return;
           }
 
+          // Find the actual end of the opening tag (may span multiple lines
+          // for elements with attributes like <Danger\n  title="..."\n>)
+          let openingTagEndLine = startLine;
+          for (let i = startLine; i <= endLine; i++) {
+            const trimmed = this.lines[i].trim();
+            if (trimmed.endsWith('>') && !trimmed.endsWith('/>')) {
+              openingTagEndLine = i;
+              break;
+            }
+          }
+
           // Check if there's an empty line after the opening tag
-          if (startLine + 1 < this.lines.length) {
-            const lineAfterOpening = this.lines[startLine + 1];
+          if (openingTagEndLine + 1 < this.lines.length) {
+            const lineAfterOpening = this.lines[openingTagEndLine + 1];
             if (lineAfterOpening.trim() !== '') {
               // Add empty line after opening tag
               operations.push({
                 type: 'insertLine',
-                startLine: startLine + 1,
+                startLine: openingTagEndLine + 1,
                 content: '',
               });
             }
