@@ -27,3 +27,4 @@ doc/build/
 doc/node_modules/
 doc/src/data/doc-titles.json
 doc/src/data/category-nav.json
+worktrees/
