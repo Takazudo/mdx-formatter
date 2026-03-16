@@ -1682,6 +1682,53 @@ npm install zudo-doc
       expect(result2).toBe(result);
     });
 
+    it('should be idempotent for multi-line opening tag in block component (oscillation bug)', async () => {
+      // When a block component has a multi-line opening tag, the formatter
+      // should converge — formatting twice must produce the same output.
+      const input = `<Danger
+  title="Color Anti-Patterns"
+>
+
+Content here.
+
+</Danger>`;
+
+      const formatter1 = new HybridFormatter(input, blockSettings);
+      const result1 = await formatter1.format();
+
+      // Second pass must be identical (no oscillation)
+      const formatter2 = new HybridFormatter(result1, blockSettings);
+      const result2 = await formatter2.format();
+      expect(result2).toBe(result1);
+
+      // Third pass for good measure
+      const formatter3 = new HybridFormatter(result2, blockSettings);
+      const result3 = await formatter3.format();
+      expect(result3).toBe(result2);
+    });
+
+    it('should be idempotent for multi-line opening tag block component without initial empty lines', async () => {
+      // Same bug but starting without empty lines — formatJsxElement adds them,
+      // then collectBlockJsxEmptyLineOperations should not re-add on next pass.
+      const input = `<Danger
+  title="Color Anti-Patterns"
+>
+Content here.
+</Danger>`;
+
+      const formatter1 = new HybridFormatter(input, blockSettings);
+      const result1 = await formatter1.format();
+
+      // Must have empty lines after opening tag and before closing tag
+      expect(result1).toContain('>\n\nContent');
+      expect(result1).toContain('Content here.\n\n</Danger>');
+
+      // Second pass must be identical
+      const formatter2 = new HybridFormatter(result1, blockSettings);
+      const result2 = await formatter2.format();
+      expect(result2).toBe(result1);
+    });
+
     it('should handle self-closing elements inside block components', async () => {
       const input = `<InfoBox>
 
