@@ -1121,7 +1121,7 @@ export class HybridFormatter {
           let openingTagEndLine = startLine;
           for (let i = startLine; i <= endLine; i++) {
             const trimmed = this.lines[i].trim();
-            if (trimmed.endsWith('>') && !trimmed.endsWith('/>')) {
+            if (trimmed.endsWith('>') && !trimmed.endsWith('/>') && !trimmed.startsWith('</')) {
               openingTagEndLine = i;
               break;
             }
