@@ -173,13 +173,20 @@ Then check CI status with `gh run list --branch main --limit 2`. Poll every 30 s
 
 **Do not tag or publish until CI is green.**
 
-## Tag and push tag
+## Tag, push tag, and create GitHub release
 
 **Ask the user for confirmation before tagging.**
 
 ```bash
 git tag v{VERSION}
 git push --tags
+```
+
+After pushing the tag, create a GitHub release using the changelog content (with YAML frontmatter and `# v{VERSION}` heading stripped, since the release title already shows the version):
+
+```bash
+NOTES=$(awk 'BEGIN{s=0;f=0}/^---$/{if(!f){f=1;s=1;next}else if(s){s=0;next}}/^# v/{next}!s{print}' doc/docs/changelog/v{VERSION}.mdx)
+gh release create v{VERSION} --title "v{VERSION}" --notes "$NOTES"
 ```
 
 ## Publish to npm
