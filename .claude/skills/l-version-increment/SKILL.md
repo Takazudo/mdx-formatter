@@ -185,7 +185,7 @@ git push --tags
 After pushing the tag, create a GitHub release using the changelog content (with YAML frontmatter and `# v{VERSION}` heading stripped, since the release title already shows the version):
 
 ```bash
-NOTES=$(awk 'BEGIN{s=0;f=0}/^---$/{if(!f){f=1;s=1;next}else if(s){s=0;next}}/^# v/{next}!s{print}' doc/docs/changelog/v{VERSION}.mdx)
+NOTES=$(sed -n '/^Released:/,$ p' doc/docs/changelog/v{VERSION}.mdx)
 gh release create v{VERSION} --title "v{VERSION}" --notes "$NOTES"
 ```
 
