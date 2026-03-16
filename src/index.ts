@@ -24,8 +24,15 @@ export function detectMdx(content: string): boolean {
 export async function format(content: string, options: FormatOptions = {}): Promise<string> {
   try {
     const settings = loadConfig(options);
-    const formatter = new HybridFormatter(content, settings);
-    return formatter.format();
+    let result = content;
+    const MAX_ITERATIONS = 3;
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
+      const formatter = new HybridFormatter(result, settings);
+      const formatted = await formatter.format();
+      if (formatted === result) break;
+      result = formatted;
+    }
+    return result;
   } catch {
     // Silently return original content if formatting fails
     // This is expected for files with certain JSX patterns that remark-mdx doesn't like
