@@ -60,6 +60,7 @@ export class HybridFormatter {
   private ast: Root;
   private positionMap: PositionMapEntry[];
   private indentDetector: IndentDetectorLike | null;
+  private readonly htmlFormatter: HtmlBlockFormatter;
 
   constructor(content: string, settings: FormatterSettings | null = null) {
     this.originalContent = content;
@@ -67,6 +68,7 @@ export class HybridFormatter {
     this.lines = this.content.split('\n');
     this.settings = settings ? deepCloneSettings(settings) : deepCloneSettings(formatterSettings);
     this.indentDetector = null;
+    this.htmlFormatter = new HtmlBlockFormatter(this.settings.formatHtmlBlocksInMdx || {});
 
     // Auto-detect indentation if enabled
     if (this.settings.autoDetectIndent && this.settings.autoDetectIndent.enabled) {
@@ -144,6 +146,33 @@ export class HybridFormatter {
     }
 
     return map;
+  }
+
+  /**
+   * Get the list of components to ignore during formatting.
+   */
+  private get ignoreComponents(): string[] {
+    return this.settings.formatMultiLineJsx.ignoreComponents || [];
+  }
+
+  /**
+   * Check if a JSX node should be processed (correct type, has position, not HTML, not ignored).
+   */
+  private isFormattableJsxNode(node: Node): node is MdxJsxElement {
+    if (
+      (node.type !== 'mdxJsxFlowElement' && node.type !== 'mdxJsxTextElement') ||
+      !node.position
+    ) {
+      return false;
+    }
+    const jsxNode = node as MdxJsxElement;
+    if (jsxNode.name && this.htmlFormatter.isHtmlElement(jsxNode.name)) {
+      return false;
+    }
+    if (jsxNode.name && this.ignoreComponents.includes(jsxNode.name)) {
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -255,9 +284,38 @@ export class HybridFormatter {
       await this.collectHtmlBlockOperations(operations);
     }
 
+    // When parent and child JSX elements both produce replaceLines operations
+    // with overlapping ranges, keep only the wider range (parent).
+    this.filterOverlappingReplacements(operations);
+
+    // Collect line ranges covered by replaceLines/replaceHtmlBlock operations.
+    // Other operations (insertLine, indentLine) that fall within these ranges
+    // must be dropped to prevent duplication — the replacement already rewrites
+    // the entire range.
+    const replacedRanges: [number, number][] = [];
+    for (const op of operations) {
+      if ((op.type === 'replaceLines' || op.type === 'replaceHtmlBlock') && 'endLine' in op) {
+        replacedRanges.push([op.startLine, op.endLine]);
+      }
+    }
+
+    const isInsideReplacedRange = (line: number): boolean => {
+      return replacedRanges.some(([start, end]) => line >= start && line <= end);
+    };
+
+    // Filter out operations that conflict with replaceLines ranges
+    const filteredOperations = operations.filter((op) => {
+      if (op.type === 'replaceLines' || op.type === 'replaceHtmlBlock') {
+        return true; // Always keep replacement operations
+      }
+      // Drop insertLine / indentLine / fixListIndent if they target a line
+      // inside a range that will be completely replaced
+      return !isInsideReplacedRange(op.startLine);
+    });
+
     // Sort operations by position (reverse order to preserve positions)
     // Also sort by operation type to ensure replacements happen before insertions at the same line
-    operations.sort((a, b) => {
+    filteredOperations.sort((a, b) => {
       if (b.startLine !== a.startLine) {
         return b.startLine - a.startLine;
       }
@@ -276,7 +334,7 @@ export class HybridFormatter {
     const resultLines = [...this.lines];
     const appliedOperations = new Set<string>();
 
-    for (const op of operations) {
+    for (const op of filteredOperations) {
       // Create a unique key for this operation
       const endLine = 'endLine' in op ? op.endLine : op.startLine;
       const opKey = `${op.type}-${op.startLine}-${endLine}`;
@@ -296,9 +354,6 @@ export class HybridFormatter {
   }
 
   collectSpacingOperations(operations: FormatterOperation[]): void {
-    // Initialize HTML formatter to check if elements are HTML
-    const htmlFormatter = new HtmlBlockFormatter(this.settings.formatHtmlBlocksInMdx || {});
-
     visit(this.ast, (node: Node) => {
       // Add spacing after headings
       if (node.type === 'heading' && node.position) {
@@ -317,15 +372,8 @@ export class HybridFormatter {
       }
 
       // FIXED: Add spacing after JSX components when followed by text or another JSX component
-      if (
-        (node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') &&
-        node.position
-      ) {
-        const jsxNode = node as MdxJsxElement;
-        // Skip HTML elements - they will be handled by HTML formatter
-        if (jsxNode.name && htmlFormatter.isHtmlElement(jsxNode.name)) {
-          return;
-        }
+      if (this.isFormattableJsxNode(node)) {
+        const jsxNode = node;
         const endLine = jsxNode.position!.end.line - 1;
         // Skip JSX elements inside table rows
         const currentLineContent = this.lines[endLine];
@@ -456,25 +504,9 @@ export class HybridFormatter {
   }
 
   collectJsxFormatOperations(operations: FormatterOperation[]): void {
-    // Initialize HTML formatter to check if elements are HTML
-    const htmlFormatter = new HtmlBlockFormatter(this.settings.formatHtmlBlocksInMdx || {});
-
     visit(this.ast, (node: Node) => {
-      if (
-        (node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') &&
-        node.position
-      ) {
-        const jsxNode = node as MdxJsxElement;
-        // Skip HTML elements - they will be handled by HTML formatter
-        if (jsxNode.name && htmlFormatter.isHtmlElement(jsxNode.name)) {
-          return;
-        }
-
-        // Skip components in the ignore list
-        const ignoreComponents = this.settings.formatMultiLineJsx.ignoreComponents || [];
-        if (jsxNode.name && ignoreComponents.includes(jsxNode.name)) {
-          return;
-        }
+      if (this.isFormattableJsxNode(node)) {
+        const jsxNode = node;
 
         const startLine = jsxNode.position!.start.line - 1;
         const endLine = jsxNode.position!.end.line - 1;
@@ -501,8 +533,7 @@ export class HybridFormatter {
 
   needsJsxFormatting(node: MdxJsxElement, originalText: string): boolean {
     // Check if component is in ignore list
-    const ignoreComponents = this.settings.formatMultiLineJsx.ignoreComponents || [];
-    if (node.name && ignoreComponents.includes(node.name)) {
+    if (node.name && this.ignoreComponents.includes(node.name)) {
       return false;
     }
 
@@ -526,6 +557,30 @@ export class HybridFormatter {
       const expectedIndent = this.indentDetector
         ? this.indentDetector.getIndentString()
         : ' '.repeat(this.settings.formatMultiLineJsx.indentSize || 2);
+
+      // Determine where the opening tag ends so we only check attribute lines.
+      // For self-closing elements the opening tag ends at /> or the last line.
+      // For non-self-closing elements the opening tag ends at the first line
+      // containing a bare > (not />).
+      let openingTagEndLine = lines.length - 1;
+      const hasClosingTag = originalText.includes(`</${node.name}>`);
+      if (hasClosingTag) {
+        let braceDepth = 0;
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          // Track brace depth to avoid matching > inside expressions like {a > b}
+          for (const ch of line) {
+            if (ch === '{') braceDepth++;
+            if (ch === '}') braceDepth--;
+          }
+          const trimmed = line.trim();
+          if (braceDepth === 0 && trimmed.endsWith('>') && !trimmed.endsWith('/>')) {
+            openingTagEndLine = i;
+            break;
+          }
+        }
+      }
+
       // Check for attributes split across lines incorrectly
       // Like: <ExImg src="..." className="..."
       //         alt="..." />
@@ -535,19 +590,14 @@ export class HybridFormatter {
         return true;
       }
 
-      // Check if /> is on its own line (this is always incorrect)
-      for (let i = 1; i < lines.length; i++) {
+      // Only check lines within the opening tag (not children content)
+      for (let i = 1; i <= openingTagEndLine; i++) {
         const trimmed = lines[i].trim();
+
+        // Check if /> is on its own line (this is always incorrect)
         if (trimmed === '/>') {
-          // /> should never be on its own line in JSX/MDX
           return true;
         }
-      }
-
-      // Check indentation on subsequent lines
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i];
-        const trimmed = line.trim();
 
         // Skip empty lines or closing tag
         if (!trimmed || trimmed.startsWith(`</${node.name}`)) {
@@ -556,6 +606,7 @@ export class HybridFormatter {
 
         // Check proper indentation for attribute lines
         // Attributes should be indented by exactly one indent level
+        const line = lines[i];
         if (!line.startsWith(expectedIndent)) {
           return true;
         }
@@ -667,9 +718,22 @@ export class HybridFormatter {
 
     // Add children content if not self-closing
     if (!selfClosing) {
+      // Check if this is a block component that needs empty lines
+      const blockComponents = this.settings.addEmptyLinesInBlockJsx?.blockComponents || [];
+      const isBlockComponent =
+        this.settings.addEmptyLinesInBlockJsx?.enabled !== false && blockComponents.includes(name);
+
       // Extract children content from original
       const childrenText = this.extractChildrenText(node, originalText);
       if (childrenText) {
+        // Add empty line after opening tag for block components
+        if (isBlockComponent) {
+          const firstContentLine = childrenText.split('\n')[0];
+          if (firstContentLine && firstContentLine.trim() !== '') {
+            lines.push('');
+          }
+        }
+
         // Check if this is a container component that needs indented content
         const containerComponents = this.settings.indentJsxContent.containerComponents || [];
         const isContainer = containerComponents.includes(name);
@@ -684,6 +748,14 @@ export class HybridFormatter {
           }
         } else {
           lines.push(...childrenText.split('\n'));
+        }
+
+        // Add empty line before closing tag for block components
+        if (isBlockComponent) {
+          const lastContentLine = lines[lines.length - 1];
+          if (lastContentLine && lastContentLine.trim() !== '') {
+            lines.push('');
+          }
         }
       }
 
@@ -906,9 +978,6 @@ export class HybridFormatter {
    * Collect HTML block formatting operations using HtmlBlockFormatter
    */
   async collectHtmlBlockOperations(operations: FormatterOperation[]): Promise<void> {
-    // Initialize the HTML formatter
-    const htmlFormatter = new HtmlBlockFormatter(this.settings.formatHtmlBlocksInMdx);
-
     // Collect all HTML nodes first, tracking parent-child relationships
     const htmlNodes: MdxJsxElement[] = [];
     const processedRanges: [number, number][] = [];
@@ -916,7 +985,7 @@ export class HybridFormatter {
     visit(this.ast, 'mdxJsxFlowElement', (node: Node) => {
       const jsxNode = node as MdxJsxElement;
       // Check if this is an HTML element (not a JSX component)
-      if (jsxNode.name && htmlFormatter.isHtmlElement(jsxNode.name)) {
+      if (jsxNode.name && this.htmlFormatter.isHtmlElement(jsxNode.name)) {
         const startLine = jsxNode.position!.start.line;
         const endLine = jsxNode.position!.end.line;
 
@@ -944,7 +1013,7 @@ export class HybridFormatter {
 
       if (htmlContent) {
         // Format just this HTML block using Prettier
-        const formatted = await htmlFormatter.formatWithPrettier(htmlContent);
+        const formatted = await this.htmlFormatter.formatWithPrettier(htmlContent);
 
         // Only add operation if formatting changed the content
         if (formatted !== htmlContent) {
@@ -980,22 +1049,10 @@ export class HybridFormatter {
   collectJsxIndentOperations(operations: FormatterOperation[]): void {
     const containerNames = this.settings.indentJsxContent.containerComponents || [];
 
-    // Initialize HTML formatter to check if elements are HTML
-    const htmlFormatter = new HtmlBlockFormatter(this.settings.formatHtmlBlocksInMdx || {});
-
-    // Get components to ignore
-    const ignoreComponents = this.settings.formatMultiLineJsx.ignoreComponents || [];
-
     visit(this.ast, (node: Node) => {
-      if (node.type === 'mdxJsxFlowElement' && node.position) {
-        const jsxNode = node as MdxJsxElement;
-        if (
-          containerNames.includes(jsxNode.name || '') &&
-          // Skip HTML elements - they are handled by HTML formatter
-          !htmlFormatter.isHtmlElement(jsxNode.name || '') &&
-          // Skip ignored components
-          !ignoreComponents.includes(jsxNode.name || '')
-        ) {
+      if (this.isFormattableJsxNode(node)) {
+        const jsxNode = node;
+        if (containerNames.includes(jsxNode.name || '')) {
           const startLine = jsxNode.position!.start.line - 1;
           const endLine = jsxNode.position!.end.line - 1;
 
@@ -1026,25 +1083,10 @@ export class HybridFormatter {
   collectBlockJsxEmptyLineOperations(operations: FormatterOperation[]): void {
     const blockComponents = this.settings.addEmptyLinesInBlockJsx.blockComponents || [];
 
-    // Initialize HTML formatter to check if elements are HTML
-    const htmlFormatter = new HtmlBlockFormatter(this.settings.formatHtmlBlocksInMdx || {});
-
-    // Get components to ignore
-    const ignoreComponents = this.settings.formatMultiLineJsx.ignoreComponents || [];
-
     visit(this.ast, (node: Node) => {
-      if (
-        (node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') &&
-        node.position
-      ) {
-        const jsxNode = node as MdxJsxElement;
-        if (
-          blockComponents.includes(jsxNode.name || '') &&
-          // Skip HTML elements - they are handled by HTML formatter
-          !htmlFormatter.isHtmlElement(jsxNode.name || '') &&
-          // Skip ignored components
-          !ignoreComponents.includes(jsxNode.name || '')
-        ) {
+      if (this.isFormattableJsxNode(node)) {
+        const jsxNode = node;
+        if (blockComponents.includes(jsxNode.name || '')) {
           const startLine = jsxNode.position!.start.line - 1;
           const endLine = jsxNode.position!.end.line - 1;
 
@@ -1224,6 +1266,44 @@ export class HybridFormatter {
         }
       }
     });
+  }
+
+  /**
+   * Remove replaceLines/replaceHtmlBlock operations that are strictly contained
+   * within a wider replacement range (parent wins over child). Mutates the array in place.
+   */
+  private filterOverlappingReplacements(operations: FormatterOperation[]): void {
+    type ReplaceOp = FormatterOperation & { endLine: number };
+    const replaceOps: ReplaceOp[] = [];
+
+    for (const op of operations) {
+      if ((op.type === 'replaceLines' || op.type === 'replaceHtmlBlock') && 'endLine' in op) {
+        replaceOps.push(op as ReplaceOp);
+      }
+    }
+
+    // Find ops that are strictly contained within another op's range
+    const dropped = new Set<FormatterOperation>();
+    for (const inner of replaceOps) {
+      for (const outer of replaceOps) {
+        if (inner === outer) continue;
+        if (
+          inner.startLine >= outer.startLine &&
+          inner.endLine <= outer.endLine &&
+          (inner.startLine !== outer.startLine || inner.endLine !== outer.endLine)
+        ) {
+          dropped.add(inner);
+          break;
+        }
+      }
+    }
+
+    // Remove dropped operations in place
+    for (let i = operations.length - 1; i >= 0; i--) {
+      if (dropped.has(operations[i])) {
+        operations.splice(i, 1);
+      }
+    }
   }
 
   getLineAtPosition(charPos: number): number {

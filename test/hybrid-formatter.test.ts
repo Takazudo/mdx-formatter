@@ -7,6 +7,27 @@ import type { DeepPartial, FormatterSettings } from '../src/types.js';
 const settings = loadConfig({ settings: testSettings });
 
 describe('HybridFormatter - AST-based MDX Formatter', () => {
+  const tabSettings = loadConfig({
+    settings: {
+      ...testSettings,
+      addEmptyLinesInBlockJsx: {
+        blockComponents: ['Tabs', 'TabItem'],
+      },
+      indentJsxContent: {
+        containerComponents: ['Tabs', 'TabItem'],
+      },
+    },
+  });
+
+  const blockSettings = loadConfig({
+    settings: {
+      ...testSettings,
+      addEmptyLinesInBlockJsx: {
+        blockComponents: ['Outro', 'InfoBox', 'LayoutDivideItem', 'Column', 'Danger'],
+      },
+    },
+  });
+
   describe('Critical: Multi-line JSX Detection and Formatting', () => {
     it('should detect and format multi-line JSX with improper line breaks', async () => {
       const input = `<ExImg src="/images/p/oxi-one-display-select-type" className="mx-auto md:ml-0 md:mr-auto" restrictedWidth="500"
@@ -1390,6 +1411,300 @@ Some text after the table.`;
       const formatter = new HybridFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(input);
+    });
+  });
+
+  describe('Bug fix: TabItem closing tag duplication', () => {
+    it('should not duplicate closing tags when formatting TabItem with attributes', async () => {
+      const input = `<Tabs>
+  <TabItem label="npm" value="npm" default>
+    \`\`\`bash
+    npm install zudo-doc
+    \`\`\`
+  </TabItem>
+  <TabItem label="pnpm" value="pnpm">
+    \`\`\`bash
+    pnpm add zudo-doc
+    \`\`\`
+  </TabItem>
+</Tabs>`;
+
+      const formatter = new HybridFormatter(input, tabSettings);
+      const result = await formatter.format();
+
+      // The closing tags should NOT be duplicated
+      const tabItemCloseCount = (result.match(/<\/TabItem>/g) || []).length;
+      expect(tabItemCloseCount).toBe(2);
+
+      const tabsCloseCount = (result.match(/<\/Tabs>/g) || []).length;
+      expect(tabsCloseCount).toBe(1);
+    });
+
+    it('should be idempotent when formatting TabItem components', async () => {
+      const input = `<Tabs>
+  <TabItem label="npm" value="npm" default>
+    \`\`\`bash
+    npm install zudo-doc
+    \`\`\`
+  </TabItem>
+  <TabItem label="pnpm" value="pnpm">
+    \`\`\`bash
+    pnpm add zudo-doc
+    \`\`\`
+  </TabItem>
+</Tabs>`;
+
+      const formatter1 = new HybridFormatter(input, tabSettings);
+      const result1 = await formatter1.format();
+
+      const formatter2 = new HybridFormatter(result1, tabSettings);
+      const result2 = await formatter2.format();
+
+      // Second formatting pass should produce the same result (idempotent)
+      expect(result2).toBe(result1);
+    });
+  });
+
+  describe('Bug fix: trailing blank line oscillation in block JSX', () => {
+    it('should not oscillate trailing blank line before closing tag of block component at end of file', async () => {
+      const input = `Some content before.
+
+<Outro>
+
+This is the outro content.
+Multiple lines here.
+
+</Outro>`;
+
+      const formatter1 = new HybridFormatter(input, settings);
+      const result1 = await formatter1.format();
+
+      const formatter2 = new HybridFormatter(result1, settings);
+      const result2 = await formatter2.format();
+
+      // Must be idempotent - second pass should produce same result
+      expect(result2).toBe(result1);
+    });
+
+    it('should not oscillate when file ends with block JSX containing a code block', async () => {
+      const input = `<Danger title="Color Anti-Patterns">
+
+**Don't use Tailwind defaults**
+
+\`\`\`html
+<!-- example -->
+\`\`\`
+
+</Danger>`;
+
+      const formatter1 = new HybridFormatter(input, blockSettings);
+      const result1 = await formatter1.format();
+
+      const formatter2 = new HybridFormatter(result1, blockSettings);
+      const result2 = await formatter2.format();
+
+      // Must be idempotent
+      expect(result2).toBe(result1);
+    });
+
+    it('should produce stable output for block JSX with code block and no trailing blank line', async () => {
+      const input = `<Danger title="Anti-Patterns">
+
+**Some bold text**
+
+\`\`\`html
+<!-- example -->
+\`\`\`
+</Danger>`;
+
+      const formatter1 = new HybridFormatter(input, blockSettings);
+      const result1 = await formatter1.format();
+
+      const formatter2 = new HybridFormatter(result1, blockSettings);
+      const result2 = await formatter2.format();
+
+      // Must be idempotent
+      expect(result2).toBe(result1);
+    });
+  });
+
+  describe('Exact output assertions', () => {
+    it('should produce exact output for single TabItem with attributes', async () => {
+      const input = `<TabItem label="npm" value="npm" default>
+
+\`\`\`bash
+npm install zudo-doc
+\`\`\`
+
+</TabItem>`;
+
+      const expected = `<TabItem label="npm" value="npm" default>
+
+\`\`\`bash
+npm install zudo-doc
+\`\`\`
+
+</TabItem>`;
+
+      const formatter = new HybridFormatter(input, tabSettings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
+    it('should produce exact output for nested Tabs > TabItem formatting', async () => {
+      const input = `<Tabs>
+  <TabItem label="npm" value="npm" default>
+    \`\`\`bash
+    npm install zudo-doc
+    \`\`\`
+  </TabItem>
+  <TabItem label="pnpm" value="pnpm">
+    \`\`\`bash
+    pnpm add zudo-doc
+    \`\`\`
+  </TabItem>
+</Tabs>`;
+
+      const expected = `<Tabs>
+
+  <TabItem label="npm" value="npm" default>
+
+    \`\`\`bash
+    npm install zudo-doc
+    \`\`\`
+
+  </TabItem>
+
+  <TabItem label="pnpm" value="pnpm">
+
+    \`\`\`bash
+    pnpm add zudo-doc
+    \`\`\`
+
+  </TabItem>
+
+</Tabs>`;
+
+      const formatter = new HybridFormatter(input, tabSettings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
+    it('should produce exact output for Danger block with code block', async () => {
+      const input = `<Danger title="Color Anti-Patterns">
+
+**Do not use Tailwind defaults**
+
+\`\`\`html
+<!-- example -->
+\`\`\`
+
+</Danger>`;
+
+      const expected = `<Danger title="Color Anti-Patterns">
+
+**Do not use Tailwind defaults**
+
+\`\`\`html
+<!-- example -->
+\`\`\`
+
+</Danger>`;
+
+      const formatter = new HybridFormatter(input, blockSettings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+  });
+
+  describe('Edge cases', () => {
+    it('should handle expression attributes containing > correctly', async () => {
+      const input = `<Component
+  condition={a > b}
+  name="test" />`;
+
+      const expected = `<Component
+  condition={a > b}
+  name="test" />`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+    });
+
+    it('should handle deeply nested JSX (Tabs > TabItem > Note) without duplication', async () => {
+      const deepSettings = loadConfig({
+        settings: {
+          ...testSettings,
+          addEmptyLinesInBlockJsx: {
+            blockComponents: ['Tabs', 'TabItem', 'Note'],
+          },
+          indentJsxContent: {
+            containerComponents: ['Tabs', 'TabItem', 'Note'],
+          },
+        },
+      });
+
+      const input = `<Tabs>
+  <TabItem label="first" value="first">
+    <Note>
+      Important info
+    </Note>
+  </TabItem>
+</Tabs>`;
+
+      const expected = `<Tabs>
+
+  <TabItem label="first" value="first">
+
+    <Note>
+
+      Important info
+
+    </Note>
+
+  </TabItem>
+
+</Tabs>`;
+
+      const formatter = new HybridFormatter(input, deepSettings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+
+      // Verify no closing tag duplication
+      expect((result.match(/<\/Tabs>/g) || []).length).toBe(1);
+      expect((result.match(/<\/TabItem>/g) || []).length).toBe(1);
+      expect((result.match(/<\/Note>/g) || []).length).toBe(1);
+
+      // Verify idempotency
+      const formatter2 = new HybridFormatter(result, deepSettings);
+      const result2 = await formatter2.format();
+      expect(result2).toBe(result);
+    });
+
+    it('should handle self-closing elements inside block components', async () => {
+      const input = `<InfoBox>
+
+Some text
+
+<ExImg src="/test.jpg" alt="test" />
+
+</InfoBox>`;
+
+      const expected = `<InfoBox>
+
+Some text
+
+<ExImg src="/test.jpg" alt="test" />
+
+</InfoBox>`;
+
+      const formatter = new HybridFormatter(input, settings);
+      const result = await formatter.format();
+      expect(result).toBe(expected);
+
+      // Verify InfoBox tags are not duplicated
+      expect((result.match(/<\/InfoBox>/g) || []).length).toBe(1);
     });
   });
 });
