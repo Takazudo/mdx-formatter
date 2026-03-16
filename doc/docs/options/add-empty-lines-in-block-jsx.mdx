@@ -80,6 +80,38 @@ Important information
 </InfoBox>
 ````
 
+### Admonition-like components (recommended use case)
+
+This option is particularly useful for admonition-style components (`<Note>`, `<Warning>`, `<Danger>`, etc.) commonly used in documentation frameworks like Docusaurus and Astro.
+
+In MDX, content inside JSX tags **requires blank lines** to be parsed as markdown. Without them, the content may be treated as raw text — headings, lists, bold, and other markdown syntax won't render.
+
+With `blockComponents: ["Note", "Warning", "Danger"]`:
+
+Before (markdown not parsed):
+
+````markdown
+<Note>
+**Important:** This text won't be bold.
+
+- This won't render as a list
+</Note>
+````
+
+After (markdown parsed correctly):
+
+````markdown
+<Note>
+
+**Important:** This text will be bold.
+
+- This renders as a list
+
+</Note>
+````
+
+The blank line after `<Note>` is what tells the MDX parser to treat the content as markdown.
+
 ### Non-listed components are not affected
 
 Components not in `blockComponents` are left alone:
@@ -91,3 +123,7 @@ Content without extra empty lines.
 ````
 
 This stays unchanged.
+
+## Caution with indentJsxContent
+
+If you also use [`indentJsxContent`](./indent-jsx-content) on the same components, be careful. Indenting markdown content inside admonitions can break rendering — in standard markdown, 4 or more spaces of indentation creates a code block. See the [indentJsxContent caution section](./indent-jsx-content#caution-with-markdown-content) for details.
