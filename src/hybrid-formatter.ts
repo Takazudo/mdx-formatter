@@ -255,9 +255,34 @@ export class HybridFormatter {
       await this.collectHtmlBlockOperations(operations);
     }
 
+    // Collect line ranges covered by replaceLines/replaceHtmlBlock operations.
+    // Other operations (insertLine, indentLine) that fall within these ranges
+    // must be dropped to prevent duplication — the replacement already rewrites
+    // the entire range.
+    const replacedRanges: [number, number][] = [];
+    for (const op of operations) {
+      if ((op.type === 'replaceLines' || op.type === 'replaceHtmlBlock') && 'endLine' in op) {
+        replacedRanges.push([op.startLine, op.endLine]);
+      }
+    }
+
+    const isInsideReplacedRange = (line: number): boolean => {
+      return replacedRanges.some(([start, end]) => line >= start && line <= end);
+    };
+
+    // Filter out operations that conflict with replaceLines ranges
+    const filteredOperations = operations.filter((op) => {
+      if (op.type === 'replaceLines' || op.type === 'replaceHtmlBlock') {
+        return true; // Always keep replacement operations
+      }
+      // Drop insertLine / indentLine / fixListIndent if they target a line
+      // inside a range that will be completely replaced
+      return !isInsideReplacedRange(op.startLine);
+    });
+
     // Sort operations by position (reverse order to preserve positions)
     // Also sort by operation type to ensure replacements happen before insertions at the same line
-    operations.sort((a, b) => {
+    filteredOperations.sort((a, b) => {
       if (b.startLine !== a.startLine) {
         return b.startLine - a.startLine;
       }
@@ -276,7 +301,7 @@ export class HybridFormatter {
     const resultLines = [...this.lines];
     const appliedOperations = new Set<string>();
 
-    for (const op of operations) {
+    for (const op of filteredOperations) {
       // Create a unique key for this operation
       const endLine = 'endLine' in op ? op.endLine : op.startLine;
       const opKey = `${op.type}-${op.startLine}-${endLine}`;
@@ -526,6 +551,23 @@ export class HybridFormatter {
       const expectedIndent = this.indentDetector
         ? this.indentDetector.getIndentString()
         : ' '.repeat(this.settings.formatMultiLineJsx.indentSize || 2);
+
+      // Determine where the opening tag ends so we only check attribute lines.
+      // For self-closing elements the opening tag ends at /> or the last line.
+      // For non-self-closing elements the opening tag ends at the first line
+      // containing a bare > (not />).
+      let openingTagEndLine = lines.length - 1;
+      const hasClosingTag = originalText.includes(`</${node.name}>`);
+      if (hasClosingTag) {
+        for (let i = 0; i < lines.length; i++) {
+          const trimmed = lines[i].trim();
+          if (trimmed.endsWith('>') && !trimmed.endsWith('/>')) {
+            openingTagEndLine = i;
+            break;
+          }
+        }
+      }
+
       // Check for attributes split across lines incorrectly
       // Like: <ExImg src="..." className="..."
       //         alt="..." />
@@ -535,19 +577,14 @@ export class HybridFormatter {
         return true;
       }
 
-      // Check if /> is on its own line (this is always incorrect)
-      for (let i = 1; i < lines.length; i++) {
+      // Only check lines within the opening tag (not children content)
+      for (let i = 1; i <= openingTagEndLine; i++) {
         const trimmed = lines[i].trim();
+
+        // Check if /> is on its own line (this is always incorrect)
         if (trimmed === '/>') {
-          // /> should never be on its own line in JSX/MDX
           return true;
         }
-      }
-
-      // Check indentation on subsequent lines
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i];
-        const trimmed = line.trim();
 
         // Skip empty lines or closing tag
         if (!trimmed || trimmed.startsWith(`</${node.name}`)) {
@@ -556,6 +593,7 @@ export class HybridFormatter {
 
         // Check proper indentation for attribute lines
         // Attributes should be indented by exactly one indent level
+        const line = lines[i];
         if (!line.startsWith(expectedIndent)) {
           return true;
         }
@@ -667,9 +705,22 @@ export class HybridFormatter {
 
     // Add children content if not self-closing
     if (!selfClosing) {
+      // Check if this is a block component that needs empty lines
+      const blockComponents = this.settings.addEmptyLinesInBlockJsx?.blockComponents || [];
+      const isBlockComponent =
+        this.settings.addEmptyLinesInBlockJsx?.enabled && blockComponents.includes(name);
+
       // Extract children content from original
       const childrenText = this.extractChildrenText(node, originalText);
       if (childrenText) {
+        // Add empty line after opening tag for block components
+        if (isBlockComponent) {
+          const firstContentLine = childrenText.split('\n')[0];
+          if (firstContentLine && firstContentLine.trim() !== '') {
+            lines.push('');
+          }
+        }
+
         // Check if this is a container component that needs indented content
         const containerComponents = this.settings.indentJsxContent.containerComponents || [];
         const isContainer = containerComponents.includes(name);
@@ -684,6 +735,14 @@ export class HybridFormatter {
           }
         } else {
           lines.push(...childrenText.split('\n'));
+        }
+
+        // Add empty line before closing tag for block components
+        if (isBlockComponent) {
+          const lastContentLine = lines[lines.length - 1];
+          if (lastContentLine && lastContentLine.trim() !== '') {
+            lines.push('');
+          }
         }
       }
 

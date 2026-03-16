@@ -1392,4 +1392,160 @@ Some text after the table.`;
       expect(result).toBe(input);
     });
   });
+
+  describe('Bug fix: TabItem closing tag duplication', () => {
+    it('should not duplicate closing tags when formatting TabItem with attributes', async () => {
+      const tabSettings = loadConfig({
+        settings: {
+          ...testSettings,
+          addEmptyLinesInBlockJsx: {
+            blockComponents: ['Tabs', 'TabItem'],
+          },
+          indentJsxContent: {
+            containerComponents: ['Tabs', 'TabItem'],
+          },
+        },
+      });
+
+      const input = `<Tabs>
+  <TabItem label="npm" value="npm" default>
+    \`\`\`bash
+    npm install zudo-doc
+    \`\`\`
+  </TabItem>
+  <TabItem label="pnpm" value="pnpm">
+    \`\`\`bash
+    pnpm add zudo-doc
+    \`\`\`
+  </TabItem>
+</Tabs>`;
+
+      const formatter = new HybridFormatter(input, tabSettings);
+      const result = await formatter.format();
+
+      // The closing tags should NOT be duplicated
+      const tabItemCloseCount = (result.match(/<\/TabItem>/g) || []).length;
+      expect(tabItemCloseCount).toBe(2);
+
+      const tabsCloseCount = (result.match(/<\/Tabs>/g) || []).length;
+      expect(tabsCloseCount).toBe(1);
+    });
+
+    it('should be idempotent when formatting TabItem components', async () => {
+      const tabSettings = loadConfig({
+        settings: {
+          ...testSettings,
+          addEmptyLinesInBlockJsx: {
+            blockComponents: ['Tabs', 'TabItem'],
+          },
+          indentJsxContent: {
+            containerComponents: ['Tabs', 'TabItem'],
+          },
+        },
+      });
+
+      const input = `<Tabs>
+  <TabItem label="npm" value="npm" default>
+    \`\`\`bash
+    npm install zudo-doc
+    \`\`\`
+  </TabItem>
+  <TabItem label="pnpm" value="pnpm">
+    \`\`\`bash
+    pnpm add zudo-doc
+    \`\`\`
+  </TabItem>
+</Tabs>`;
+
+      const formatter1 = new HybridFormatter(input, tabSettings);
+      const result1 = await formatter1.format();
+
+      const formatter2 = new HybridFormatter(result1, tabSettings);
+      const result2 = await formatter2.format();
+
+      // Second formatting pass should produce the same result (idempotent)
+      expect(result2).toBe(result1);
+    });
+  });
+
+  describe('Bug fix: trailing blank line oscillation in block JSX', () => {
+    it('should not oscillate trailing blank line before closing tag of block component at end of file', async () => {
+      const input = `Some content before.
+
+<Outro>
+
+This is the outro content.
+Multiple lines here.
+
+</Outro>`;
+
+      const formatter1 = new HybridFormatter(input, settings);
+      const result1 = await formatter1.format();
+
+      const formatter2 = new HybridFormatter(result1, settings);
+      const result2 = await formatter2.format();
+
+      // Must be idempotent - second pass should produce same result
+      expect(result2).toBe(result1);
+    });
+
+    it('should not oscillate when file ends with block JSX containing a code block', async () => {
+      const blockSettings = loadConfig({
+        settings: {
+          ...testSettings,
+          addEmptyLinesInBlockJsx: {
+            blockComponents: ['Outro', 'InfoBox', 'LayoutDivideItem', 'Column', 'Danger'],
+          },
+        },
+      });
+
+      const input = `<Danger title="Color Anti-Patterns">
+
+**Don't use Tailwind defaults**
+
+\`\`\`html
+<!-- example -->
+\`\`\`
+
+</Danger>`;
+
+      const formatter1 = new HybridFormatter(input, blockSettings);
+      const result1 = await formatter1.format();
+
+      const formatter2 = new HybridFormatter(result1, blockSettings);
+      const result2 = await formatter2.format();
+
+      // Must be idempotent
+      expect(result2).toBe(result1);
+    });
+
+    it('should produce stable output for block JSX with code block and no trailing blank line', async () => {
+      const blockSettings = loadConfig({
+        settings: {
+          ...testSettings,
+          addEmptyLinesInBlockJsx: {
+            blockComponents: ['Outro', 'InfoBox', 'LayoutDivideItem', 'Column', 'Danger'],
+          },
+        },
+      });
+
+      const input = `<Danger title="Anti-Patterns">
+
+**Some bold text**
+
+\`\`\`html
+<!-- example -->
+\`\`\`
+</Danger>`;
+
+      const formatter1 = new HybridFormatter(input, blockSettings);
+      const result1 = await formatter1.format();
+
+      const formatter2 = new HybridFormatter(result1, blockSettings);
+      const result2 = await formatter2.format();
+
+      // Must be idempotent
+      expect(result2).toBe(result1);
+    });
+  });
 });
