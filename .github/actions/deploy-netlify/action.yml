@@ -78,6 +78,7 @@ runs:
             --auth="${{ inputs.netlify-auth-token }}" \
             --prod \
             --json \
+            --no-build \
             --message="${{ inputs.deploy-message }}" 2>&1) || {
             echo "❌ Deployment failed"
             echo "$DEPLOY_OUTPUT"
@@ -91,6 +92,7 @@ runs:
             --auth="${{ inputs.netlify-auth-token }}" \
             --alias="${{ inputs.deploy-alias }}" \
             --json \
+            --no-build \
             --message="${{ inputs.deploy-message }}" 2>&1) || {
             echo "❌ Deployment failed"
             echo "$DEPLOY_OUTPUT"
