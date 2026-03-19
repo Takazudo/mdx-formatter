@@ -25,7 +25,7 @@ export const settings = {
   } satisfies ColorModeConfig,
   siteName: 'mdx-formatter',
   siteDescription: 'AST-based markdown and MDX formatter' as string,
-  base: '/',
+  base: '/pj/mdx-formatter/',
   trailingSlash: false as boolean,
   noindex: false as boolean,
   editUrl: false as string | false,
