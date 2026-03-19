@@ -50,7 +50,7 @@ const pathForMatch = isNonDefaultLocale
 
   <a
     href={withBase(isNonDefaultLocale ? `/${lang}/` : "/")}
-    class="flex items-center gap-2 whitespace-nowrap text-subheading font-bold text-fg hover:underline focus:underline"
+    class="flex items-center gap-2 whitespace-nowrap text-subheading font-normal font-futura text-fg hover:underline focus:underline"
   >
     <span
       class="inline-block h-7 w-7 shrink-0"
@@ -81,7 +81,7 @@ const pathForMatch = isNonDefaultLocale
               href={href}
               aria-current={isActive ? "page" : undefined}
               class:list={[
-                "px-hsp-md py-vsp-2xs text-small font-medium transition-colors",
+                "px-hsp-md py-vsp-2xs text-small font-medium font-futura transition-colors",
                 isActive
                   ? "bg-fg text-bg"
                   : "text-muted hover:underline focus:underline",
