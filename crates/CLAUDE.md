@@ -19,6 +19,7 @@ cargo build -p mdx-formatter-napi  # Build just the napi module
 ## Architecture
 
 Uses the same hybrid approach as the TypeScript implementation:
+
 1. Parse markdown/MDX into mdast via `markdown::to_mdast()` (with MDX, GFM, frontmatter)
 2. Walk AST to collect line-based `FormatterOperation` values
 3. Apply operations to original source lines (not AST round-trip)
