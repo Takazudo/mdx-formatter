@@ -36,16 +36,41 @@ export const settings = {
   sitemap: false,
   docMetainfo: false,
   docTags: false,
-  llmsTxt: false,
+  llmsTxt: true,
   math: false,
   aiAssistant: false as boolean,
-  docHistory: false,
+  docHistory: true,
   colorTweakPanel: false as boolean,
   htmlPreview: undefined as HtmlPreviewConfig | undefined,
-  versions: false as VersionConfig[] | false,
-  claudeResources: false as { claudeDir: string; projectRoot?: string } | false,
-  footer: false as FooterConfig | false,
+  versions: [] as VersionConfig[],
+  claudeResources: { claudeDir: '../.claude', projectRoot: '..' } as { claudeDir: string; projectRoot?: string } | false,
+  footer: {
+    links: [
+      {
+        title: 'Docs',
+        items: [
+          { label: 'Getting Started', href: '/docs/getting-started' },
+        ],
+      },
+      {
+        title: 'Links',
+        items: [
+          { label: 'GitHub', href: 'https://github.com/Takazudo/mdx-formatter' },
+          { label: 'npm', href: 'https://www.npmjs.com/package/@takazudo/mdx-formatter' },
+        ],
+      },
+      {
+        title: 'More',
+        items: [
+          { label: 'Takazudo Modular', href: 'https://takazudomodular.com/' },
+        ],
+      },
+    ],
+    copyright: '&copy; 2025 Takazudo. MIT License.',
+  } satisfies FooterConfig,
   headerNav: [
     { label: 'Getting Started', path: '/docs/getting-started', categoryMatch: 'getting-started' },
+    { label: 'Changelog', path: '/docs/changelog', categoryMatch: 'changelog' },
+    { label: 'Claude', path: '/docs/claude', categoryMatch: 'claude' },
   ] satisfies HeaderNavItem[],
 };

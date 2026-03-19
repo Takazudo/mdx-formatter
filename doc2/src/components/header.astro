@@ -50,8 +50,13 @@ const pathForMatch = isNonDefaultLocale
 
   <a
     href={withBase(isNonDefaultLocale ? `/${lang}/` : "/")}
-    class="whitespace-nowrap text-subheading font-bold text-fg hover:underline focus:underline"
+    class="flex items-center gap-2 whitespace-nowrap text-subheading font-bold text-fg hover:underline focus:underline"
   >
+    <span
+      class="inline-block h-7 w-7 shrink-0 bg-current"
+      style={`-webkit-mask-image: url(${withBase("/img/logo.svg")}); mask-image: url(${withBase("/img/logo.svg")}); -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;`}
+      aria-hidden="true"
+    ></span>
     {settings.siteName}
   </a>
 

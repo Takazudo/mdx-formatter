@@ -12,6 +12,7 @@ import { rehypeCodeTitle } from './src/plugins/rehype-code-title';
 import { rehypeHeadingLinks } from './src/plugins/rehype-heading-links';
 import { rehypeMermaid } from './src/plugins/rehype-mermaid';
 import { rehypeStripMdExtension } from './src/plugins/rehype-strip-md-extension';
+import { claudeResourcesIntegration } from './src/integrations/claude-resources';
 
 const activeScheme = colorSchemes[settings.colorScheme];
 const shikiTheme = activeScheme?.shikiTheme ?? 'dracula';
@@ -35,7 +36,14 @@ const shikiConfig = settings.colorMode
 export default defineConfig({
   output: 'static',
   base: settings.base,
-  integrations: [mdx(), react(), searchIndexIntegration()],
+  integrations: [
+    mdx(),
+    react(),
+    searchIndexIntegration(),
+    ...(settings.claudeResources
+      ? [claudeResourcesIntegration(settings.claudeResources)]
+      : []),
+  ],
   vite: {
     plugins: [tailwindcss()],
   },
