@@ -1,4 +1,6 @@
-# doc/ — Docusaurus Documentation Site
+# doc/ — Docusaurus Documentation Site (LEGACY)
+
+> **Note**: This is the legacy doc site. The new documentation is in `doc2/` (zudo-doc/Astro). This site will be removed once doc2/ is fully deployed.
 
 ## Setup
 

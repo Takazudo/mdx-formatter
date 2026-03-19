@@ -10,7 +10,8 @@ AST-based markdown and MDX formatter built on the unified/remark ecosystem. Publ
 - **Test framework**: vitest
 - **Linting**: ESLint (flat config) + Prettier + lint-staged (via husky)
 - **Build**: `tsc` (output to `dist/`)
-- **Doc site**: Docusaurus (separate workspace in `doc/`)
+- **Doc site**: zudo-doc / Astro (workspace in `doc2/`, legacy Docusaurus in `doc/`)
+- **Rust POC**: Experimental Rust rewrite in `crates/` (markdown-rs + napi-rs)
 
 ## Commands
 
@@ -41,4 +42,6 @@ pnpm check:fix      # Prettier + ESLint autofix
 - Scoped package: `@takazudo/mdx-formatter`
 - `files` field limits published content to: `dist/`, `format-stdin.js`, `README.md`, `LICENSE`
 - `prepublishOnly` runs `tsc && vitest run` automatically
-- Use `/l-version-increment` skill for releases
+- Use `/l-version-increment` for stable releases
+- Use `/l-version-next` for prerelease (`@next` dist-tag)
+- Use `/l-version-promote` to promote a next version to stable
