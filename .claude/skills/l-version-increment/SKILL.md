@@ -76,10 +76,11 @@ Only show sections that have entries. **Wait for user confirmation before procee
 
 ## Create changelog doc
 
-Create `doc/docs/changelog/v{VERSION}.mdx` with this format:
+Create `doc2/src/content/docs/changelog/v{VERSION}.mdx` with this format:
 
 ```mdx
 ---
+title: 'v{VERSION}'
 sidebar_position: { computed }
 ---
 
@@ -107,38 +108,14 @@ Released: {YYYY-MM-DD}
 Rules:
 
 - Only include sections that have entries
-- `sidebar_position` = `10000 - (MAJOR * 1000 + MINOR * 100 + PATCH)` — newer versions get lower numbers and appear first in the sidebar
+- `sidebar_position` = `MAJOR * 1000 + MINOR * 100 + PATCH` — the changelog category uses `sortOrder: "desc"`, so higher values appear first (newer versions on top)
 - Use today's date for the release date
 - Each entry should be the commit subject with the short hash in parentheses
-
-## Update sidebars.js
-
-In `doc/sidebars.js`, add the new changelog doc to `changelogSidebar`. Insert it after `'changelog/index'` so entries are listed in the array. Keep entries sorted with newer versions first (lower sidebar_position = listed first in the array).
-
-For example, after adding v0.2.0:
-
-```js
-changelogSidebar: ['changelog/index', 'changelog/v0.2.0'],
-```
-
-After adding v0.3.0:
-
-```js
-changelogSidebar: ['changelog/index', 'changelog/v0.3.0', 'changelog/v0.2.0'],
-```
-
-## Regenerate category nav
-
-Run the category nav generation script so the changelog index page picks up the new entry:
-
-```bash
-cd doc && node scripts/generate-category-nav.js
-```
 
 ## Commit changelog
 
 ```bash
-git add doc/docs/changelog/v{VERSION}.mdx doc/sidebars.js doc/src/data/category-nav.json
+git add doc2/src/content/docs/changelog/v{VERSION}.mdx
 git commit -m "docs: Add changelog for v{VERSION}"
 ```
 
@@ -185,7 +162,7 @@ git push --tags
 After pushing the tag, create a GitHub release using the changelog content (with YAML frontmatter and `# v{VERSION}` heading stripped, since the release title already shows the version):
 
 ```bash
-NOTES=$(sed -n '/^Released:/,$ p' doc/docs/changelog/v{VERSION}.mdx)
+NOTES=$(sed -n '/^Released:/,$ p' doc2/src/content/docs/changelog/v{VERSION}.mdx)
 gh release create v{VERSION} --title "v{VERSION}" --notes "$NOTES"
 ```
 
