@@ -26,12 +26,12 @@ const groupedTree = groupSatelliteNodes(tree, categoryOrder);
     <div
       class="flex flex-col items-center text-center gap-hsp-md lg:flex-row lg:text-left lg:gap-hsp-xl"
     >
-      <div
-        class="w-[80%] aspect-square lg:h-[10.5rem] lg:w-[10.5rem] bg-fg shrink-0"
-        style={`-webkit-mask: url(${logoUrl}) center/contain no-repeat; mask: url(${logoUrl}) center/contain no-repeat;`}
+      <img
+        src={logoUrl}
+        alt=""
+        class="h-[8rem] w-[8rem] lg:h-[10.5rem] lg:w-[10.5rem] shrink-0 dark:invert"
         aria-hidden="true"
-      >
-      </div>
+      />
       <div>
         <h1 class="text-heading font-normal mb-vsp-2xs">{settings.siteName}</h1>
         <p class="text-muted text-small mb-vsp-sm">
