@@ -1,0 +1,51 @@
+name: 'Build Astro Documentation Site'
+description: 'Setup environment and build the zudo-doc (Astro) documentation site'
+
+inputs:
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '20'
+  pnpm-version:
+    description: 'pnpm version to use'
+    required: false
+    default: '10'
+  working-directory:
+    description: 'Working directory containing the Astro project'
+    required: false
+    default: 'doc'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'pnpm'
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+      shell: bash
+
+    - name: Build Astro site
+      run: pnpm build
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - name: Verify build output
+      run: |
+        if [ ! -d "dist" ]; then
+          echo "❌ Error: dist/ directory not found"
+          exit 1
+        fi
+        HTML_COUNT=$(find dist -name "*.html" | wc -l)
+        echo "📄 HTML pages: $HTML_COUNT"
+        echo "✅ Build output verified"
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}

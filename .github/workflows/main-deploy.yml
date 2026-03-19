@@ -1,0 +1,95 @@
+name: Production Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  deployments: write
+  statuses: write
+
+jobs:
+  build:
+    name: Build Documentation Site
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build Astro site
+        uses: ./.github/actions/build-astro
+        with:
+          node-version: '20'
+          pnpm-version: '10'
+          working-directory: 'doc'
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: astro-build-production
+          path: doc/dist/
+          include-hidden-files: true
+          retention-days: 1
+
+  deploy:
+    name: Deploy to Production
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: astro-build-production
+          path: doc/dist
+
+      - name: Restructure build for base path
+        run: |
+          mkdir -p deploy-dir/pj/mdx-formatter
+          cp -r doc/dist/* deploy-dir/pj/mdx-formatter/
+          echo "/ /pj/mdx-formatter/ 301" > deploy-dir/_redirects
+
+      - name: Deploy to Netlify Production
+        id: deploy
+        uses: ./.github/actions/deploy-netlify
+        with:
+          netlify-site-id: ${{ secrets.NETLIFY_SITE_ID }}
+          netlify-auth-token: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          deploy-production: 'true'
+          deploy-message: 'Production deploy: ${{ github.sha }}'
+          build-dir: 'deploy-dir'
+
+      - name: Create deployment record
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deployment = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+              environment: 'production',
+              description: 'Production deployment to Netlify',
+              production_environment: true,
+              auto_merge: false,
+              required_contexts: []
+            });
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deployment.data.id,
+              state: 'success',
+              environment_url: '${{ steps.deploy.outputs.deploy-url }}',
+              description: 'Deployment successful'
+            });
