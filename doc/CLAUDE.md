@@ -1,38 +1,39 @@
-# doc/ — Docusaurus Documentation Site (LEGACY)
+# doc/ — zudo-doc Documentation Site
 
-> **Note**: This is the legacy doc site. The new documentation is in `doc2/` (zudo-doc/Astro). This site will be removed once doc2/ is fully deployed.
+Documentation site built with zudo-doc (Astro-based).
 
-## Setup
-
-This is a separate pnpm workspace. Install and build independently:
+## Dev Commands
 
 ```bash
-cd doc && pnpm install
-pnpm start           # Dev server at http://mdx-formatter.localhost:33771
-pnpm build           # Production build (runs generate scripts first)
+pnpm --dir doc dev               # Dev server on port 3518
+pnpm --dir doc dev:network       # Dev server on 0.0.0.0:3518 (network accessible)
+pnpm --dir doc build             # Production build
 ```
 
 ## Structure
 
-- `docs/` — Markdown/MDX content organized by category: `overview/`, `options/`, `formatting/`, `changelog/`, `inbox/`
-- `src/components/` — Custom React components (`CategoryNav`, `DocsSitemap`)
-- `src/data/` — Auto-generated JSON (`doc-titles.json`, `category-nav.json`) — do not edit manually
-- `scripts/` — Node.js generators that run before build:
-  - `generate-doc-titles.js` — Extracts titles from all docs into `src/data/doc-titles.json`
-  - `generate-category-nav.js` — Builds category navigation data into `src/data/category-nav.json`
-- `plugins/` — Custom remark plugins (e.g., `remark-creation-date.js`)
+- `src/content/docs/` — MDX documentation content
+  - `overview/` — Installation, usage, API, configuration
+  - `formatting/` — Formatting rules documentation
+  - `options/` — Per-rule configuration options
+  - `architecture/` — Architecture and Rust rewrite docs
+  - `changelog/` — Version release notes (descending sort)
+  - `claude/`, `claude-md/`, `claude-skills/` — Auto-generated Claude Code resources
+- `src/config/settings.ts` — Site configuration (nav, footer, features, color scheme)
+- `src/styles/global.css` — Theme tokens and styles (Futura headings, Noto Sans body)
+- `src/integrations/claude-resources/` — Auto-generates docs from `.claude/` directory
+- `public/img/` — Static assets (logo SVG)
 
-## Sidebar Convention
+## Features Enabled
 
-Each doc category has its own sidebar in `sidebars.js` (e.g., `overviewSidebar`, `optionsSidebar`, `changelogSidebar`). Navbar items in `docusaurus.config.js` link to each category's `index` doc.
+- Search (Pagefind), sidebar filter, light/dark theme
+- Claude resources integration (CLAUDE.md, skills)
+- llms.txt generation, doc history, versioning (empty)
+- Futura + Noto Sans JP font stack
 
-## Adding a New Category
+## Adding Documentation
 
-1. Create `docs/{category}/index.mdx` with `sidebar_position` and `CategoryNav` component
-2. Add `{category}Sidebar` array to `sidebars.js`
-3. Add navbar item to `docusaurus.config.js`
-4. Add entry to `CATEGORY_STRUCTURE` in `scripts/generate-category-nav.js`
-
-## Adding a Changelog Entry
-
-Use the `/l-version-increment` skill, which automates creating the changelog doc, updating `sidebars.js`, and regenerating category nav.
+- Each category needs `_category_.json` with `label` and `position`
+- All MDX files require `title` in frontmatter (schema enforced)
+- Changelog uses `sortOrder: "desc"` — higher `sidebar_position` = newer = first
+- Header nav is configured in `src/config/settings.ts` → `headerNav`

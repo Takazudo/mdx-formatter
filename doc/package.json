@@ -1,71 +1,38 @@
 {
-  "name": "doc",
-  "version": "0.0.0",
+  "name": "mdx-formatter-doc",
+  "version": "0.0.1",
   "private": true,
+  "type": "module",
   "scripts": {
-    "docusaurus": "docusaurus",
-    "generate-doc-titles": "node scripts/generate-doc-titles.js",
-    "generate-category-nav": "node scripts/generate-category-nav.js",
-    "start": "docusaurus start --port 33771 --host mdx-formatter.localhost",
-    "build": "npm run generate-doc-titles && npm run generate-category-nav && docusaurus build",
-    "swizzle": "docusaurus swizzle",
-    "deploy": "docusaurus deploy",
-    "clear": "docusaurus clear",
-    "serve": "docusaurus serve",
-    "write-translations": "docusaurus write-translations",
-    "write-heading-ids": "docusaurus write-heading-ids",
-    "lint": "eslint src --ext .ts,.tsx,.js,.jsx",
-    "lint:fix": "eslint src --ext .ts,.tsx,.js,.jsx --fix",
-    "typecheck": "tsc --noEmit",
-    "format": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md,mdx}\" \"!node_modules/**\" \"!.docusaurus/**\" \"!build/**\"",
-    "format:fix": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md,mdx}\" \"!node_modules/**\" \"!.docusaurus/**\" \"!build/**\"",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run format",
-    "check:fix": "pnpm run lint:fix && pnpm run format:fix"
+    "dev": "lsof -ti:3518 | xargs kill -9 2>/dev/null; astro dev --port 3518",
+    "dev:network": "lsof -ti:3518 | xargs kill -9 2>/dev/null; astro dev --host 0.0.0.0 --port 3518",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
   },
   "dependencies": {
-    "@docusaurus/core": "3.9.2",
-    "@docusaurus/plugin-content-docs": "3.9.2",
-    "@docusaurus/preset-classic": "3.9.2",
-    "@docusaurus/theme-common": "3.9.2",
-    "@docusaurus/theme-mermaid": "^3.9.2",
-    "@mdx-js/react": "^3.1.1",
-    "clsx": "^2.1.1",
-    "prism-react-renderer": "^2.4.1",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3"
+    "@astrojs/mdx": "^4.3.0",
+    "@astrojs/react": "^4.4.0",
+    "@shikijs/transformers": "^4.0.0",
+    "astro": "^5.18.0",
+    "clsx": "^2.1.0",
+    "github-slugger": "^2.0.0",
+    "gray-matter": "^4.0.0",
+    "mermaid": "^11.13.0",
+    "minisearch": "^7.2.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "remark-directive": "^3.0.0",
+    "shiki": "^4.0.2",
+    "unist-util-visit": "^5.1.0"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "3.9.2",
-    "@docusaurus/types": "3.9.2",
-    "@eslint/js": "^9.39.2",
-    "@types/react": "^19.2.8",
-    "@types/react-dom": "^19.2.3",
-    "@typescript-eslint/eslint-plugin": "^8.53.0",
-    "@typescript-eslint/parser": "^8.53.0",
-    "eslint": "^9.39.2",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-prettier": "^5.5.4",
-    "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "globals": "^17.0.0",
-    "gray-matter": "^4.0.3",
-    "lint-staged": "^16.2.7",
-    "prettier": "^3.7.4",
-    "typescript": "^5.9.3"
-  },
-  "browserslist": {
-    "production": [
-      ">0.5%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 3 chrome version",
-      "last 3 firefox version",
-      "last 5 safari version"
-    ]
-  },
-  "engines": {
-    "node": ">=20.0"
+    "@astrojs/check": "^0.9.0",
+    "@tailwindcss/vite": "^4.2.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "pagefind": "^1.4.0",
+    "tailwindcss": "^4.2.0",
+    "typescript": "^5.9.0"
   }
 }
