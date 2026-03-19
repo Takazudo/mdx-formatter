@@ -34,3 +34,5 @@ doc2/dist/
 doc2/node_modules/
 
 worktrees/
+/target/
+*.node
