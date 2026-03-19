@@ -1,0 +1,71 @@
+---
+title: Browser Usage
+description: Using mdx-formatter in browser and WebView environments
+sidebar_position: 8
+---
+
+# Browser Usage
+
+For browser or WebView environments (Vite, Webpack, Tauri, etc.), use the `./browser` subpath export. This avoids pulling in Node.js `fs` and `path` dependencies that would break bundler builds.
+
+## Import
+
+```typescript
+import { format } from "@takazudo/mdx-formatter/browser";
+```
+
+## Formatting Content
+
+```typescript
+const content = "# Hello\nSome text without spacing";
+const formatted = await format(content);
+// "# Hello\n\nSome text without spacing"
+```
+
+The `format` function returns a `Promise<string>` with the formatted content. On error, it returns the original content unchanged.
+
+## Custom Settings
+
+The `format` function accepts an optional second argument to override individual settings:
+
+```typescript
+const formatted = await format(content, {
+  addEmptyLineBetweenElements: { enabled: false },
+  formatMultiLineJsx: { indentSize: 4 },
+});
+```
+
+## Browser Defaults
+
+The browser export uses the same defaults as the Node.js entry point, with one exception: **`formatHtmlBlocksInMdx` is disabled by default**. This rule requires prettier (a Node.js dependency) to format HTML blocks, and importing prettier would break browser/WebView bundles.
+
+When `formatHtmlBlocksInMdx` is disabled and the code path is never reached, bundlers can tree-shake the prettier import away.
+
+**Important:** Enabling `formatHtmlBlocksInMdx: true` in browser mode is not supported because it will attempt to import prettier at runtime, which is not available in browser environments.
+
+## Detecting MDX
+
+The browser export also provides `detectMdx` for checking if content is likely MDX:
+
+```typescript
+import { format, detectMdx } from "@takazudo/mdx-formatter/browser";
+
+if (detectMdx(content)) {
+  console.log("Content has MDX syntax");
+}
+```
+
+## Limitations
+
+Config file loading (`.mdx-formatter.json`) is not supported in browser mode because it requires Node.js file system access. Pass settings directly to the `format` function instead.
+
+The `formatHtmlBlocksInMdx` rule cannot be used in browser mode because it depends on prettier, which is a Node.js package.
+
+## Package Exports
+
+The package defines two entry points via the `exports` field in `package.json`:
+
+| Import path | Entry point | Environment |
+| --- | --- | --- |
+| `@takazudo/mdx-formatter` | `./dist/index.js` | Node.js |
+| `@takazudo/mdx-formatter/browser` | `./dist/browser.js` | Browser / WebView |

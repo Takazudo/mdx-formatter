@@ -6,17 +6,10 @@
 import { promises as fs } from 'fs';
 import { HybridFormatter } from './hybrid-formatter.js';
 import { loadConfig } from './load-config.js';
+import { detectMdx } from './detect-mdx.js';
 import type { FormatOptions } from './types.js';
 
-/**
- * Check if content is likely MDX
- */
-export function detectMdx(content: string): boolean {
-  // Check for MDX-specific features
-  const mdxPatterns = [/^import\s+/m, /^export\s+/m, /<[A-Z]\w*[^>]*>/, /^\s*---\s*$/m];
-
-  return mdxPatterns.some((pattern) => pattern.test(content));
-}
+export { detectMdx };
 
 /**
  * Format markdown/MDX content using hybrid AST approach
