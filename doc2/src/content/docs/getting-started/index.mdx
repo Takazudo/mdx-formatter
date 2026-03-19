@@ -33,10 +33,10 @@ Check formatting without modifying files:
 mdx-formatter --check "docs/**/*.md"
 ```
 
-Format via stdin/stdout:
+Format via stdin/stdout using the helper script:
 
 ```bash
-cat README.md | mdx-formatter --stdin
+cat README.md | npx @takazudo/mdx-formatter/format-stdin.js
 ```
 
 ## Features
