@@ -27,4 +27,10 @@ doc/build/
 doc/node_modules/
 doc/src/data/doc-titles.json
 doc/src/data/category-nav.json
+
+# zudo-doc
+doc2/.astro/
+doc2/dist/
+doc2/node_modules/
+
 worktrees/

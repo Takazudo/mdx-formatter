@@ -1,0 +1,51 @@
+export type {
+  HeaderNavItem,
+  ColorModeConfig,
+  HtmlPreviewConfig,
+  LocaleConfig,
+  VersionConfig,
+  FooterConfig,
+} from './settings-types';
+import type {
+  HeaderNavItem,
+  ColorModeConfig,
+  HtmlPreviewConfig,
+  LocaleConfig,
+  VersionConfig,
+  FooterConfig,
+} from './settings-types';
+
+export const settings = {
+  colorScheme: 'Default Dark',
+  colorMode: {
+    defaultMode: 'dark',
+    lightScheme: 'Default Light',
+    darkScheme: 'Default Dark',
+    respectPrefersColorScheme: true,
+  } satisfies ColorModeConfig,
+  siteName: 'mdx-formatter',
+  siteDescription: 'AST-based markdown and MDX formatter' as string,
+  base: '/',
+  trailingSlash: false as boolean,
+  noindex: false as boolean,
+  editUrl: false as string | false,
+  siteUrl: '' as string,
+  docsDir: 'src/content/docs',
+  locales: {} as Record<string, LocaleConfig>,
+  mermaid: true,
+  sitemap: false,
+  docMetainfo: false,
+  docTags: false,
+  llmsTxt: false,
+  math: false,
+  aiAssistant: false as boolean,
+  docHistory: false,
+  colorTweakPanel: false as boolean,
+  htmlPreview: undefined as HtmlPreviewConfig | undefined,
+  versions: false as VersionConfig[] | false,
+  claudeResources: false as { claudeDir: string; projectRoot?: string } | false,
+  footer: false as FooterConfig | false,
+  headerNav: [
+    { label: 'Getting Started', path: '/docs/getting-started', categoryMatch: 'getting-started' },
+  ] satisfies HeaderNavItem[],
+};

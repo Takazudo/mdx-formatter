@@ -1,0 +1,49 @@
+---
+title: Getting Started
+sidebar_position: 1
+---
+
+# Getting Started
+
+mdx-formatter is an AST-based markdown and MDX formatter built on the unified/remark ecosystem. It formats `.md` and `.mdx` files with support for Japanese text, GFM tables, frontmatter, JSX, and more.
+
+## Installation
+
+```bash
+npm install -g @takazudo/mdx-formatter
+```
+
+Or use it directly with npx:
+
+```bash
+npx @takazudo/mdx-formatter --write "**/*.md"
+```
+
+## Basic Usage
+
+Format files in place:
+
+```bash
+mdx-formatter --write "src/**/*.mdx"
+```
+
+Check formatting without modifying files:
+
+```bash
+mdx-formatter --check "docs/**/*.md"
+```
+
+Format via stdin/stdout:
+
+```bash
+cat README.md | mdx-formatter --stdin
+```
+
+## Features
+
+- AST-based formatting using unified/remark
+- Full MDX/JSX support
+- GFM tables and task lists
+- Frontmatter preservation
+- Directive syntax support
+- Japanese text handling
