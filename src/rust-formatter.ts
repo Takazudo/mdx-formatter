@@ -4,15 +4,19 @@
  * and exposes the same format() API as the TypeScript implementation.
  */
 
+import { createRequire } from 'module';
 import type { FormatOptions } from './types.js';
 import { loadConfig } from './load-config.js';
+
+const require = createRequire(import.meta.url);
 
 // Try to load the native module
 let nativeFormat: ((content: string, settingsJson: string) => string) | null = null;
 
 try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const native = require('../crates/mdx-formatter-napi/mdx-formatter-napi.node');
+  const native = require('../crates/mdx-formatter-napi/mdx-formatter-napi.node') as {
+    format: (content: string, settingsJson: string) => string;
+  };
   nativeFormat = native.format;
 } catch {
   // Native module not available - not built yet or wrong platform
