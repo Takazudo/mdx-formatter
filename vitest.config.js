@@ -1,9 +1,9 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    exclude: ['test/rust-formatter.test.ts', 'node_modules/**', 'worktrees/**'],
+    exclude: [...configDefaults.exclude, 'test/rust-formatter.test.ts', 'worktrees/**'],
   },
 });

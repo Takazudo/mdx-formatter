@@ -61,11 +61,11 @@ This is a proof of concept. Current capabilities:
 
 ### Working
 
-- [ ] Markdown parsing via markdown-rs (CommonMark + GFM + MDX + frontmatter)
-- [ ] Spacing rule (empty lines between elements)
-- [ ] List indentation normalization
-- [ ] Convergence loop
-- [ ] napi-rs bindings (format function)
+- [x] Markdown parsing via markdown-rs (CommonMark + GFM + MDX + frontmatter)
+- [x] Spacing rule (empty lines between root-level elements; nested elements not yet handled)
+- [x] List indentation normalization
+- [x] Convergence loop
+- [x] napi-rs bindings (format function — scaffold only, needs @napi-rs/cli to build .node)
 
 ### Not Yet Implemented
 
@@ -77,6 +77,13 @@ This is a proof of concept. Current capabilities:
 - [ ] Admonition preservation
 - [ ] Config file loading
 - [ ] CLI binary
+
+## Known Limitations (POC)
+
+- **Spacing only at root level**: `collect_spacing_operations` only handles direct children of Root, unlike the TS implementation's `unist-util-visit` which recurses into all depths (blockquotes, JSX containers, etc.)
+- **Partial settings deserialization**: `from_partial_json` only handles 5 of 10 settings fields; the rest are silently ignored. Should migrate to serde derive with `#[serde(default)]`
+- **No content in dedup key**: Two different `InsertLine` operations targeting the same line would collide. The TS implementation doesn't have this issue because it uses more specific keys
+- **Unused description fields**: Each settings struct carries a `description: String` that's never consumed at runtime — inherited from the TS structure but adds unnecessary heap allocation in Rust
 
 ## npm Distribution Plan
 
