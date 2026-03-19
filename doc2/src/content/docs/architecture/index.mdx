@@ -1,0 +1,122 @@
+---
+title: Architecture Overview
+sidebar_position: 1
+---
+
+# Architecture Overview
+
+mdx-formatter uses a **hybrid formatter** approach: it parses markdown/MDX into an AST for structural analysis, then applies targeted line-based operations to the original source text. This design preserves formatting details that AST round-trip serialization would destroy.
+
+## Why Not AST Round-Trip?
+
+Most formatters follow a parse → transform → serialize pipeline. The problem with this approach for markdown/MDX is that serialization (AST back to text) is lossy:
+
+- Inline formatting choices (e.g., `*italic*` vs `_italic_`) may be normalized
+- Whitespace inside code blocks, template literals, and JSX expressions can be altered
+- Japanese text line breaks and spacing get mangled
+- Docusaurus admonitions (`:::note`) aren't part of the standard AST
+
+By keeping the original source lines and only modifying specific locations, mdx-formatter avoids these problems entirely.
+
+## The Hybrid Approach
+
+The formatter works in three phases:
+
+```
+Phase 1: Parse          Phase 2: Analyze         Phase 3: Apply
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│ Source text      │    │ Walk AST         │    │ Sort operations  │
+│       ↓         │    │       ↓          │    │ (reverse order)  │
+│ remark/mdx      │───>│ Collect line-    │───>│       ↓          │
+│ parser          │    │ based operations │    │ Apply to source  │
+│       ↓         │    │ (insert, replace,│    │ lines            │
+│ mdast AST       │    │  indent, fix)    │    │       ↓          │
+└─────────────────┘    └──────────────────┘    │ Normalize empty  │
+                                               │ lines            │
+                                               └─────────────────┘
+```
+
+The key insight: the AST is used **only for analysis** (finding positions, understanding structure), never for output generation. All modifications happen on the original source lines.
+
+## The Convergence Loop
+
+Some formatting operations can create new formatting issues. For example, inserting an empty line after a heading might create three consecutive empty lines that need to be collapsed.
+
+The formatter handles this with a convergence loop:
+
+```
+Input → format_once() → Output₁
+        format_once() → Output₂
+        format_once() → Output₃ (max)
+```
+
+The loop runs `format_once()` up to **3 iterations**, stopping early when the output stabilizes (i.e., `format(x) === x`). This guarantees idempotency: formatting an already-formatted file produces identical output.
+
+## Formatting Operations
+
+Instead of mutating the AST or directly editing strings, the formatter collects a list of **operations** — structured instructions for modifying specific lines:
+
+| Operation | Description |
+| --- | --- |
+| `InsertLine` | Insert a new line at a given position |
+| `ReplaceLines` | Replace a range of lines with new content |
+| `IndentLine` | Add indentation to a specific line |
+| `FixListIndent` | Correct list item indentation |
+| `ReplaceHtmlBlock` | Replace an HTML block with Prettier-formatted output |
+
+Operations are collected from all rules, then applied in reverse line order (bottom-up) so that earlier line numbers remain valid as modifications are made.
+
+### Conflict Resolution
+
+When multiple operations target overlapping line ranges, the formatter resolves conflicts:
+
+1. **Overlapping replacements**: If a child JSX element and its parent both produce `ReplaceLines` operations, only the wider (parent) replacement is kept
+2. **Operations inside replaced ranges**: Any `InsertLine`, `IndentLine`, or `FixListIndent` that falls inside an already-replaced range is dropped
+3. **Deduplication**: Operations with identical type and line range are deduplicated via a string key
+
+## The 10 Formatting Rules
+
+Each rule is independently toggleable via `.mdx-formatter.json` configuration:
+
+| # | Rule | Default | Description |
+| --- | --- | --- | --- |
+| 1 | `addEmptyLineBetweenElements` | on | Add single empty line between markdown elements |
+| 2 | `formatMultiLineJsx` | on | Format multi-line JSX with proper indentation |
+| 3 | `formatHtmlBlocksInMdx` | on | Format HTML blocks using Prettier |
+| 4 | `expandSingleLineJsx` | off | Expand single-line JSX with multiple props |
+| 5 | `indentJsxContent` | off | Indent content inside JSX container components |
+| 6 | `addEmptyLinesInBlockJsx` | on | Add empty lines after opening/before closing tags |
+| 7 | `formatYamlFrontmatter` | on | Format YAML frontmatter |
+| 8 | `preserveAdmonitions` | on | Preserve Docusaurus `:::` syntax |
+| 9 | `errorHandling` | off | Throw on parse errors instead of returning original |
+| 10 | `autoDetectIndent` | off | Auto-detect indentation style from file content |
+
+Rules are applied in order during the operation collection phase. After all operations are collected, conflict resolution and deduplication happen before the operations are applied to the source lines.
+
+## Plugin System
+
+The formatter uses remark-compatible plugins for specialized transformations. These run during AST processing in `src/hybrid-formatter.ts`:
+
+| Plugin | Purpose |
+| --- | --- |
+| `preserve-jsx.ts` | Protect JSX elements from remark modifications |
+| `preserve-image-alt.ts` | Preserve image alt text formatting |
+| `fix-autolink-output.ts` | Fix remark's autolink serialization |
+| `docusaurus-admonitions.ts` | Preserve `:::note`, `:::tip` syntax |
+| `preprocess-japanese.ts` | Handle Japanese text spacing rules |
+| `japanese-text.ts` | Japanese punctuation and URL handling |
+| `normalize-lists.ts` | Normalize list formatting |
+| `html-definition-list.ts` | Handle `<dl>/<dt>/<dd>` in MDX |
+
+## Key Source Files
+
+| File | Role |
+| --- | --- |
+| `src/hybrid-formatter.ts` | Core formatter: parse AST, collect operations, apply |
+| `src/settings.ts` | Default settings for all 10 rules |
+| `src/types.ts` | All shared type definitions |
+| `src/html-block-formatter.ts` | Formats HTML blocks using Prettier |
+| `src/indent-detector.ts` | Auto-detects indentation style |
+| `src/index.ts` | Public API (`format()`, `formatFile()`, `checkFile()`) |
+| `src/cli.ts` | CLI entry point |
+| `src/load-config.ts` | Loads `.mdx-formatter.json` and merges with defaults |

@@ -70,6 +70,7 @@ export const settings = {
   } satisfies FooterConfig,
   headerNav: [
     { label: 'Getting Started', path: '/docs/getting-started', categoryMatch: 'getting-started' },
+    { label: 'Architecture', path: '/docs/architecture', categoryMatch: 'architecture' },
     { label: 'Changelog', path: '/docs/changelog', categoryMatch: 'changelog' },
     { label: 'Claude', path: '/docs/claude', categoryMatch: 'claude' },
   ] satisfies HeaderNavItem[],
