@@ -58,11 +58,13 @@ Instead of mutating the AST or directly editing strings, the formatter collects 
 
 | Operation | Description |
 | --- | --- |
-| `InsertLine` | Insert a new line at a given position |
-| `ReplaceLines` | Replace a range of lines with new content |
-| `IndentLine` | Add indentation to a specific line |
-| `FixListIndent` | Correct list item indentation |
-| `ReplaceHtmlBlock` | Replace an HTML block with Prettier-formatted output |
+| `insertLine` | Insert a new line at a given position |
+| `replaceLines` | Replace a range of lines with new content |
+| `indentLine` | Add indentation to a specific line |
+| `fixListIndent` | Correct list item indentation |
+| `replaceHtmlBlock` | Replace an HTML block with Prettier-formatted output |
+
+Operation names use camelCase in TypeScript (`insertLine`, `replaceLines`) and PascalCase in the Rust port (`InsertLine`, `ReplaceLines`) — both implement identical semantics.
 
 Operations are collected from all rules, then applied in reverse line order (bottom-up) so that earlier line numbers remain valid as modifications are made.
 
@@ -71,7 +73,7 @@ Operations are collected from all rules, then applied in reverse line order (bot
 When multiple operations target overlapping line ranges, the formatter resolves conflicts:
 
 1. **Overlapping replacements**: If a child JSX element and its parent both produce `ReplaceLines` operations, only the wider (parent) replacement is kept
-2. **Operations inside replaced ranges**: Any `InsertLine`, `IndentLine`, or `FixListIndent` that falls inside an already-replaced range is dropped
+2. **Operations inside replaced ranges**: Any `insertLine`, `indentLine`, or `fixListIndent` that falls inside an already-replaced range is dropped
 3. **Deduplication**: Operations with identical type and line range are deduplicated via a string key
 
 ## The 10 Formatting Rules
@@ -102,6 +104,8 @@ The formatter uses remark-compatible plugins for specialized transformations. Th
 | `preserve-jsx.ts` | Protect JSX elements from remark modifications |
 | `preserve-image-alt.ts` | Preserve image alt text formatting |
 | `fix-autolink-output.ts` | Fix remark's autolink serialization |
+| `fix-formatting-issues.ts` | Post-processing fixes for common formatting problems |
+| `fix-paragraph-spacing.ts` | Ensure correct blank lines between paragraphs |
 | `docusaurus-admonitions.ts` | Preserve `:::note`, `:::tip` syntax |
 | `preprocess-japanese.ts` | Handle Japanese text spacing rules |
 | `japanese-text.ts` | Japanese punctuation and URL handling |
