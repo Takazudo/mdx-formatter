@@ -65,10 +65,11 @@ export const settings = {
         title: 'More',
         items: [
           { label: 'Takazudo Modular', href: 'https://takazudomodular.com/' },
+          { label: 'zudo-paper', href: 'https://takazudomodular.com/pj/zpaper/' },
         ],
       },
     ],
-    copyright: '&copy; 2025 Takazudo. MIT License.',
+    copyright: 'Copyright &copy; 2026 Takazudo. Built with <a href="https://takazudomodular.com/pj/zudo-doc">zudo-doc</a>.',
   } satisfies FooterConfig,
   headerNav: [
     { label: 'Overview', path: '/docs/overview', categoryMatch: 'overview' },
