@@ -18,7 +18,8 @@ Every option can be set via [config file](/docs/overview/configuration) or progr
   "formatMultiLineJsx": {
     "enabled": true,
     "indentSize": 2,
-    "ignoreComponents": ["CodeBlock"]
+    "ignoreComponents": ["CodeBlock"],
+    "preserveTemplateLiteralIndent": true
   },
   "formatHtmlBlocksInMdx": {
     "enabled": true,
@@ -47,7 +48,8 @@ Every option can be set via [config file](/docs/overview/configuration) or progr
     "lineWidth": 100,
     "quotingType": "\"",
     "forceQuotes": false,
-    "noCompatMode": true
+    "noCompatMode": true,
+    "fixUnsafeValues": true
   },
   "preserveAdmonitions": {
     "enabled": true

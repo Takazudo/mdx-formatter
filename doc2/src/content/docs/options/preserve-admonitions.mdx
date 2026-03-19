@@ -6,17 +6,19 @@ sidebar_position: 9
 
 Keep Docusaurus admonitions (`:::note`, `:::tip`, `:::warning`, etc.) intact during formatting.
 
-Without this option, the `:::` syntax would be parsed as regular text and potentially reformatted incorrectly.
+The formatter preserves admonition syntax (`:::note`, `:::tip`, etc.) because its line-based approach does not modify content that isn't specifically targeted by a formatting rule. The admonition blocks pass through the AST processing via a dedicated plugin that recognizes them as container directives and preserves their structure.
 
 ## What is Docusaurus?
 
-[Docusaurus](https://docusaurus.io/) is a static site generator built by Meta for documentation websites. It uses MDX as its content format and provides a special "admonition" syntax using `:::` fences to render callout boxes (notes, tips, warnings, etc.) in documentation pages. This syntax is not part of standard markdown or MDX — it is a Docusaurus-specific extension, so generic markdown formatters would break it.
+[Docusaurus](https://docusaurus.io/) is a static site generator built by Meta for documentation websites. It uses MDX as its content format and provides a special "admonition" syntax using `:::` fences to render callout boxes (notes, tips, warnings, etc.) in documentation pages. This syntax is not part of standard markdown or MDX -- it is a Docusaurus-specific extension, so generic markdown formatters would break it.
 
 ## Options
 
 | Property  | Type      | Default | Description              |
 | --------- | --------- | ------- | ------------------------ |
 | `enabled` | `boolean` | `true`  | Enable/disable this rule |
+
+The `enabled` toggle exists for forward compatibility, but currently the preservation behavior is always active regardless of this setting. The admonition plugin runs during AST processing independently of this flag.
 
 ## Config
 
@@ -85,6 +87,10 @@ Tip content
 
 :::info
 Info content
+:::
+
+:::caution
+Caution content
 :::
 
 :::warning

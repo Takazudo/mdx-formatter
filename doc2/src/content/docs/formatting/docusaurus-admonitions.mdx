@@ -8,13 +8,14 @@ The formatter preserves [Docusaurus admonition](https://docusaurus.io/docs/markd
 
 Without this feature, the `:::` syntax would be parsed as regular text and potentially broken by the formatter.
 
+Admonition syntax is preserved as-is. The formatter does not modify content inside admonitions. This works because the formatter's line-based approach does not modify content it does not specifically target.
+
 ## Rules
 
 - Admonition fences (`:::`) are preserved exactly as written
 - Content inside admonitions is not reformatted
 - Admonition titles (`:::tip[Title]`) are preserved
-- Blank lines are added before and after admonition blocks when missing
-- All Docusaurus admonition types are supported: `note`, `tip`, `info`, `warning`, `danger`
+- All Docusaurus admonition types are supported: `note`, `tip`, `info`, `warning`, `danger`, `caution`
 
 ## Examples
 
@@ -56,30 +57,6 @@ dangerousOperation();
 
 The entire block is preserved, including nested lists and code blocks.
 
-### Blank lines added around admonitions
-
-Before:
-
-````markdown
-Text before
-:::note
-Note content
-:::
-Text after
-````
-
-After:
-
-````markdown
-Text before
-
-:::note
-Note content
-:::
-
-Text after
-````
-
 ### All admonition types
 
 ````markdown
@@ -102,6 +79,10 @@ Warning content
 :::danger
 Danger content
 :::
+
+:::caution
+Caution content
+:::
 ````
 
-All five types are preserved.
+All six types are preserved.

@@ -16,6 +16,7 @@ Format YAML frontmatter using proper YAML formatting rules.
 | `quotingType`  | `string`  | `"\""`  | Quote type for strings: `"\""` or `"'"` |
 | `forceQuotes`  | `boolean` | `false` | Force quotes on all string values       |
 | `noCompatMode` | `boolean` | `true`  | Use YAML 1.2 spec (not 1.1)             |
+| `fixUnsafeValues` | `boolean` | `true` | Pre-process YAML to quote values containing special characters (colons, hash signs) before parsing |
 
 ## Config
 
@@ -117,6 +118,15 @@ categories:
 draft: false
 ---
 ````
+
+## Unsafe Value Pre-processing
+
+When `fixUnsafeValues` is enabled (default), the formatter pre-processes YAML values before parsing to prevent data corruption. Values containing `: ` (colon-space), ` #` (space-hash), or starting with special characters (`!`, `&`, `*`, `%`, `@`, backtick) are automatically wrapped in double quotes.
+
+This prevents issues like:
+
+- `title: Acme: Best Products` being parsed as nested YAML
+- `note: See section #3` being truncated at the `#` comment marker
 
 ## Known Caveats
 

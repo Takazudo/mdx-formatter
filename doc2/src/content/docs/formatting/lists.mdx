@@ -4,14 +4,13 @@ description: How the formatter normalizes list indentation and spacing
 sidebar_position: 3
 ---
 
-The formatter normalizes list indentation and preserves list markers.
+The formatter normalizes list indentation. Spacing around lists is preserved as-is.
 
 ## Rules
 
 - List markers (`-`, `*`, `+`, `1.`) are preserved as-is
 - Leading spaces on top-level list items are removed
 - Nested lists are indented consistently
-- Blank lines are added before and after list blocks
 
 ## Examples
 
@@ -71,24 +70,3 @@ After:
 3. Third item
 ````
 
-### List surrounded by paragraphs
-
-Before:
-
-````markdown
-Some text
-- List item 1
-- List item 2
-Another paragraph
-````
-
-After:
-
-````markdown
-Some text
-
-- List item 1
-- List item 2
-
-Another paragraph
-````

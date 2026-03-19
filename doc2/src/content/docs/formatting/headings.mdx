@@ -4,13 +4,13 @@ description: How the formatter normalizes heading styles and spacing
 sidebar_position: 2
 ---
 
-The formatter normalizes headings to ATX-style (`#`) and ensures blank lines between headings and other block elements.
+The formatter ensures blank lines after headings when followed by non-heading content.
 
 ## Rules
 
-- ATX-style headings (`#`, `##`, `###`, etc.) are used
-- A blank line is inserted between a heading and the following content
-- A blank line is inserted between consecutive headings
+- A blank line is added after a heading when followed by non-heading content (paragraphs, lists, JSX, etc.)
+- Consecutive headings are left as-is without inserting blank lines between them
+- Blank lines are added *after* headings, not before them
 
 ## Examples
 
@@ -29,26 +29,6 @@ After:
 # Heading
 
 Content here
-````
-
-### Consecutive headings
-
-Before:
-
-````markdown
-# Heading 1
-## Heading 2
-### Heading 3
-````
-
-After:
-
-````markdown
-# Heading 1
-
-## Heading 2
-
-### Heading 3
 ````
 
 ### Heading followed by JSX

@@ -4,7 +4,7 @@ description: Special handling for Japanese (CJK) text formatting
 sidebar_position: 6
 ---
 
-The formatter has special handling for Japanese (CJK) text to avoid common formatting issues that generic markdown formatters cause.
+Japanese text is preserved as-is by the formatter. The formatter does not insert or remove spaces around Japanese punctuation. This works through the formatter's text-preservation approach -- the hybrid line-based formatter preserves original text for content it does not specifically transform.
 
 ## Rules
 
@@ -13,7 +13,6 @@ The formatter has special handling for Japanese (CJK) text to avoid common forma
 - Bold/emphasis markers work correctly with Japanese text
 - URLs and parenthetical expressions in Japanese text are preserved
 - Line breaks within Japanese paragraphs are not altered
-- Question marks followed by Japanese text get a space after them
 
 ## Examples
 
@@ -76,22 +75,6 @@ After (unchanged — parentheses around URL preserved):
 
 ````markdown
 詳細は (https://example.com) をご覧ください
-````
-
-### Question mark spacing
-
-A space is inserted after a question mark when followed by Japanese text:
-
-Before:
-
-````markdown
-シンセのDIYってどういうこと？自分で作れたり
-````
-
-After:
-
-````markdown
-シンセのDIYってどういうこと？ 自分で作れたり
 ````
 
 ### Multi-line Japanese paragraphs

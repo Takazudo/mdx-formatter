@@ -11,7 +11,8 @@ The formatter preserves MDX-specific syntax including JSX components, import/exp
 - JSX components are preserved
 - Import/export statements are maintained
 - Self-closing tags remain self-closing
-- Blank lines are inserted between consecutive JSX components
+- A blank line is added after a JSX component when followed by text content
+- Consecutive JSX components are not automatically separated unless configured as [`blockComponents`](/docs/options/block-components)
 - Multi-line JSX formatting is handled by the [formatMultiLineJsx](/docs/options/format-multi-line-jsx) option
 
 ## Examples
@@ -64,26 +65,6 @@ After (unchanged — exports preserved):
 export const meta = { title: "Test" };
 
 # Content
-````
-
-### Blank lines between consecutive JSX components
-
-Before:
-
-````markdown
-<Youtube url="https://youtu.be/59CxE076HDM" />
-<Youtube url="https://youtu.be/MsfVwQ3i4xg" />
-<Youtube url="https://youtu.be/-0dyIu5RekY" />
-````
-
-After:
-
-````markdown
-<Youtube url="https://youtu.be/59CxE076HDM" />
-
-<Youtube url="https://youtu.be/MsfVwQ3i4xg" />
-
-<Youtube url="https://youtu.be/-0dyIu5RekY" />
 ````
 
 ### JSX after text

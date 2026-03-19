@@ -4,42 +4,16 @@ description: How the formatter handles fenced code blocks
 sidebar_position: 4
 ---
 
-The formatter preserves code block content exactly as-is — no formatting is applied inside fenced code blocks.
+Code blocks are preserved exactly as written. The formatter does not modify content, language identifiers, or meta strings inside code blocks.
 
 ## Rules
 
-- Fenced code blocks (` ``` `) are used
+- Fenced code blocks (` ``` `) are preserved as-is
 - Language identifiers are preserved
 - Content inside code blocks is never modified
-- Blank lines are added before and after code blocks
+- Meta strings (e.g., `title="example.js"`) are preserved
 
 ## Examples
-
-### Code block with language
-
-Before:
-
-````markdown
-Some text
-```js
-const x = 1;
-const y = 2;
-```
-Next paragraph
-````
-
-After:
-
-````markdown
-Some text
-
-```js
-const x = 1;
-const y = 2;
-```
-
-Next paragraph
-````
 
 ### JSX content inside code blocks is not formatted
 

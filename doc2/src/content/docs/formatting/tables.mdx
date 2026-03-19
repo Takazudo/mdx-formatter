@@ -4,55 +4,14 @@ description: How the formatter handles GFM tables and HTML tables
 sidebar_position: 5
 ---
 
-The formatter supports GFM (GitHub Flavored Markdown) tables and normalizes their formatting. HTML tables are also handled by the [formatHtmlBlocksInMdx](/docs/options/format-html-blocks-in-mdx) option.
+GFM (pipe-style) tables are preserved as-is. The formatter does not modify GFM table alignment or padding. HTML tables are handled by the [formatHtmlBlocksInMdx](/docs/options/format-html-blocks-in-mdx) option.
 
 ## Rules
 
-- GFM table syntax is supported
-- Pipes are padded with spaces for readability
-- Column alignment markers (`:---`, `:---:`, `---:`) are preserved
+- GFM (pipe-style) tables are preserved as-is
+- The formatter does not modify GFM table alignment or padding
 
 ## Examples
-
-### GFM table normalization
-
-Before:
-
-````markdown
-|Name|Value|Description|
-|---|---|---|
-|foo|1|First item|
-|bar|2|Second item|
-````
-
-After:
-
-````markdown
-| Name | Value | Description |
-| ---- | ----- | ----------- |
-| foo  | 1     | First item  |
-| bar  | 2     | Second item |
-````
-
-### Table with alignment
-
-Before:
-
-````markdown
-|Left|Center|Right|
-|:---|:---:|---:|
-|a|b|c|
-|dd|ee|ff|
-````
-
-After:
-
-````markdown
-| Left | Center | Right |
-| :--- | :----: | ----: |
-| a    |   b    |     c |
-| dd   |   ee   |    ff |
-````
 
 ### HTML table indentation
 

@@ -6,13 +6,13 @@ sidebar_position: 11
 
 Configure how the formatter handles parsing errors.
 
-By default, the formatter returns the original content unchanged when a parsing error occurs. Set `throwOnError: true` to throw an error instead (useful for CI pipelines).
+By default, the formatter returns the original content unchanged when a parsing error occurs. The main `format()` function wraps all processing in a try/catch block, so errors during formatting never propagate to callers.
 
 ## Options
 
 | Property       | Type      | Default | Description                                                      |
 | -------------- | --------- | ------- | ---------------------------------------------------------------- |
-| `throwOnError` | `boolean` | `false` | If `true`, throw on errors. If `false`, return original content. |
+| `throwOnError` | `boolean` | `false` | Intended to throw on errors, but see note below |
 
 ## Config
 
@@ -24,11 +24,11 @@ By default, the formatter returns the original content unchanged when a parsing 
 }
 ```
 
-## Examples
+## Current Behavior
 
-### Graceful handling (default)
+### Default (throwOnError: false)
 
-With `throwOnError: false`, malformed content is returned as-is:
+When formatting encounters a parsing error, the original content is returned unchanged. This is the safe default for production use.
 
 Input:
 
@@ -41,21 +41,24 @@ Content without closing tag
 
 Output: the original content is returned unchanged, no error thrown.
 
-### Strict mode for CI
+### Limitation of throwOnError: true
 
-With `throwOnError: true`, the formatter throws an error on malformed content, which is useful for catching issues in CI pipelines:
+The `throwOnError` option is defined in the configuration and triggers internal MDX validation in the line-based formatter stage. However, the main `format()` function in `src/index.ts` catches all errors unconditionally and returns the original content. This means that even with `throwOnError: true`, errors do not propagate to the caller -- the original content is silently returned.
+
+This is a known limitation. The option exists in the settings schema but currently has no observable effect on the public API.
+
+### CI Validation with checkFile()
+
+For CI pipelines where you need to detect formatting issues, use the `checkFile()` API instead of relying on `throwOnError`. The `checkFile()` function returns `true` if the file needs formatting (content differs after formatting), which you can use to fail a CI check:
 
 ```javascript
-import { format } from '@takazudo/mdx-formatter';
+import { checkFile } from '@takazudo/mdx-formatter';
 
-try {
-  const result = await format(content, {
-    settings: {
-      errorHandling: { throwOnError: true },
-    },
-  });
-} catch (error) {
-  console.error('Formatting failed:', error.message);
+const needsFormatting = await checkFile('path/to/file.mdx');
+if (needsFormatting) {
+  console.error('File needs formatting: path/to/file.mdx');
   process.exit(1);
 }
 ```
+
+This approach reliably detects files that haven't been formatted, which covers the most common CI use case.

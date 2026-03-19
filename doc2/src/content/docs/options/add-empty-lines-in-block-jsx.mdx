@@ -112,6 +112,28 @@ After (markdown parsed correctly):
 
 The blank line after `<Note>` is what tells the MDX parser to treat the content as markdown.
 
+### Single-line component expansion
+
+When a component listed in `blockComponents` is written on a single line, the formatter expands it to multi-line with empty lines added.
+
+With `blockComponents: ["Note"]`:
+
+Before:
+
+````markdown
+<Note>Content here</Note>
+````
+
+After:
+
+````markdown
+<Note>
+
+Content here
+
+</Note>
+````
+
 ### Non-listed components are not affected
 
 Components not in `blockComponents` are left alone:
