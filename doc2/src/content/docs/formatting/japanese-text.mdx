@@ -1,0 +1,98 @@
+---
+title: Japanese Text
+description: Special handling for Japanese (CJK) text formatting
+sidebar_position: 6
+---
+
+Japanese text is preserved as-is by the formatter. The formatter does not insert or remove spaces around Japanese punctuation. This works through the formatter's text-preservation approach -- the hybrid line-based formatter preserves original text for content it does not specifically transform.
+
+## Rules
+
+- Japanese punctuation spacing is preserved
+- No extra spaces are inserted around Japanese characters
+- Bold/emphasis markers work correctly with Japanese text
+- URLs and parenthetical expressions in Japanese text are preserved
+- Line breaks within Japanese paragraphs are not altered
+
+## Examples
+
+### Japanese headings and content
+
+Before:
+
+````markdown
+# 日本語の見出し
+内容です。
+````
+
+After:
+
+````markdown
+# 日本語の見出し
+
+内容です。
+````
+
+### Bold text with Japanese
+
+Japanese bold text is preserved without unwanted space changes:
+
+Before:
+
+````markdown
+この値を **×2** します
+````
+
+After (unchanged):
+
+````markdown
+この値を **×2** します
+````
+
+### Image alt text with Japanese and colons
+
+Before:
+
+````markdown
+![図:VCAによるオーディオシグナルの減衰処理](/images/p/vca-exp-2)
+````
+
+After (unchanged — colons and Japanese in alt text preserved):
+
+````markdown
+![図:VCAによるオーディオシグナルの減衰処理](/images/p/vca-exp-2)
+````
+
+### URLs in parenthetical expressions
+
+Before:
+
+````markdown
+詳細は (https://example.com) をご覧ください
+````
+
+After (unchanged — parentheses around URL preserved):
+
+````markdown
+詳細は (https://example.com) をご覧ください
+````
+
+### Multi-line Japanese paragraphs
+
+Line breaks within Japanese paragraphs are preserved as-is:
+
+Before:
+
+````markdown
+こんにちは、Takazudo Modularです。
+Takazudo Modular Highlightsなどというメルマガの名前にしてみました。
+そんな年中送るかは分かりませんが……。
+````
+
+After (unchanged):
+
+````markdown
+こんにちは、Takazudo Modularです。
+Takazudo Modular Highlightsなどというメルマガの名前にしてみました。
+そんな年中送るかは分かりませんが……。
+````

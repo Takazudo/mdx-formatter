@@ -1,0 +1,72 @@
+---
+title: Lists
+description: How the formatter normalizes list indentation and spacing
+sidebar_position: 3
+---
+
+The formatter normalizes list indentation. Spacing around lists is preserved as-is.
+
+## Rules
+
+- List markers (`-`, `*`, `+`, `1.`) are preserved as-is
+- Leading spaces on top-level list items are removed
+- Nested lists are indented consistently
+
+## Examples
+
+### Remove leading spaces
+
+Before:
+
+````markdown
+  - First item
+  - Second item
+  - Third item
+````
+
+After:
+
+````markdown
+- First item
+- Second item
+- Third item
+````
+
+### Nested lists
+
+Before:
+
+````markdown
+  - Parent item
+    - Nested item 1
+    - Nested item 2
+  - Another parent
+````
+
+After:
+
+````markdown
+- Parent item
+  - Nested item 1
+  - Nested item 2
+- Another parent
+````
+
+### Numbered lists
+
+Before:
+
+````markdown
+  1. First item
+  2. Second item
+  3. Third item
+````
+
+After:
+
+````markdown
+1. First item
+2. Second item
+3. Third item
+````
+
