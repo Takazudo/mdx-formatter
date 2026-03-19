@@ -4,6 +4,6 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    exclude: ['test/rust-formatter.test.ts', 'node_modules/**'],
+    exclude: ['test/rust-formatter.test.ts', 'node_modules/**', 'worktrees/**'],
   },
 });
