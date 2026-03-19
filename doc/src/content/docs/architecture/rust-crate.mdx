@@ -10,11 +10,15 @@ The core formatting engine is available as a standalone Rust crate (`mdx-formatt
 
 ## Cargo Dependency
 
-Since the crate is not yet published to crates.io, add it as a Git dependency pointing to the subdirectory:
+Since the crate is not yet published to crates.io, use one of these dependency forms:
 
 ```toml
 [dependencies]
-mdx-formatter-core = { git = "https://github.com/Takazudo/mdx-formatter", path = "crates/mdx-formatter-core" }
+# Option 1: git dependency (Cargo finds the workspace member by crate name)
+mdx-formatter-core = { git = "https://github.com/Takazudo/mdx-formatter" }
+
+# Option 2: local path (for development)
+mdx-formatter-core = { path = "../mdx-formatter/crates/mdx-formatter-core" }
 ```
 
 ## Basic Usage
@@ -76,6 +80,8 @@ let settings = FormatterSettings::from_partial_json(&json);
 
 JSON field names use camelCase (matching the TypeScript/config file convention), while Rust struct fields use snake_case.
 
+**Note:** `from_partial_json` currently supports 5 of the 10 settings fields: `addEmptyLineBetweenElements`, `formatMultiLineJsx`, `addEmptyLinesInBlockJsx`, `formatYamlFrontmatter`, and `preserveAdmonitions`. The remaining fields (`expandSingleLineJsx`, `indentJsxContent`, `formatHtmlBlocksInMdx`, `errorHandling`, `autoDetectIndent`) are not yet parsed from JSON and will use their default values.
+
 ## Public Exports
 
 The crate re-exports through `lib.rs`:
@@ -83,10 +89,10 @@ The crate re-exports through `lib.rs`:
 | Symbol | Module | Description |
 | --- | --- | --- |
 | `format` | `formatter` | The main formatting function |
-| `FormatterSettings` | `types` | Settings struct (via `types` module) |
+| `FormatterSettings` | `types` | Settings struct (re-exported at crate root) |
 | `FormatterOperation` | `types` | Operation enum (for advanced use) |
 
-The `parser` and `types` modules are also public for consumers who need lower-level access to the AST parsing or operation types.
+Both `format` and `FormatterSettings` are re-exported at the crate root, so `use mdx_formatter_core::{format, FormatterSettings}` works directly. The `parser` and `types` modules are also public for consumers who need lower-level access to the AST parsing or operation types.
 
 ## Current Status
 
