@@ -1,0 +1,107 @@
+---
+title: MDX / JSX
+description: How the formatter handles MDX-specific syntax and JSX components
+sidebar_position: 7
+---
+
+The formatter preserves MDX-specific syntax including JSX components, import/export statements, and expressions. Several configurable options control JSX formatting — see the [Options](/docs/options) section.
+
+## Rules
+
+- JSX components are preserved
+- Import/export statements are maintained
+- Self-closing tags remain self-closing
+- A blank line is added after a JSX component when followed by text content
+- Consecutive JSX components are not automatically separated unless configured as [`blockComponents`](/docs/options/block-components)
+- Multi-line JSX formatting is handled by the [formatMultiLineJsx](/docs/options/format-multi-line-jsx) option
+
+## Examples
+
+### Self-closing JSX component
+
+Before:
+
+````markdown
+<Youtube url="https://example.com" />
+````
+
+After (unchanged):
+
+````markdown
+<Youtube url="https://example.com" />
+````
+
+### Import statements
+
+Before:
+
+````markdown
+import { Component } from "./component";
+
+# Content
+````
+
+After (unchanged — imports preserved):
+
+````markdown
+import { Component } from "./component";
+
+# Content
+````
+
+### Export statements
+
+Before:
+
+````markdown
+export const meta = { title: "Test" };
+
+# Content
+````
+
+After (unchanged — exports preserved):
+
+````markdown
+export const meta = { title: "Test" };
+
+# Content
+````
+
+### JSX after text
+
+Before:
+
+````markdown
+そんなわけで、以下がVol.1の内容となります。
+<ExImg src="/images/p/hero" extraWide alt="メルマガ写真" />
+````
+
+After:
+
+````markdown
+そんなわけで、以下がVol.1の内容となります。
+
+<ExImg src="/images/p/hero" extraWide alt="メルマガ写真" />
+````
+
+### Multi-line JSX formatting
+
+Controlled by the [formatMultiLineJsx](/docs/options/format-multi-line-jsx) option:
+
+Before:
+
+````markdown
+<ExImg src="/images/p/oxi-one-display" className="mx-auto md:ml-0" restrictedWidth="500"
+  alt="Display: Sequencer Mode"
+/>
+````
+
+After:
+
+````markdown
+<ExImg
+  src="/images/p/oxi-one-display"
+  className="mx-auto md:ml-0"
+  restrictedWidth="500"
+  alt="Display: Sequencer Mode" />
+````

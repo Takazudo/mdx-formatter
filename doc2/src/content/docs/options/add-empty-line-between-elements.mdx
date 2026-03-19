@@ -1,0 +1,91 @@
+---
+title: addEmptyLineBetweenElements
+description: Add empty lines between markdown block elements
+sidebar_position: 2
+---
+
+Add a single empty line between markdown block elements (headings, paragraphs, lists, code blocks, JSX components, etc.).
+
+## Options
+
+| Property  | Type      | Default | Description              |
+| --------- | --------- | ------- | ------------------------ |
+| `enabled` | `boolean` | `true`  | Enable/disable this rule |
+
+## Config
+
+```json
+{
+  "addEmptyLineBetweenElements": {
+    "enabled": true
+  }
+}
+```
+
+## Examples
+
+### Headings and paragraphs
+
+Before:
+
+````markdown
+## Heading
+Content here
+Another paragraph
+````
+
+After:
+
+````markdown
+## Heading
+
+Content here
+
+Another paragraph
+````
+
+### JSX components and text
+
+Before:
+
+````markdown
+<ExImg src="/test.jpg" alt="test" />
+Next paragraph
+````
+
+After:
+
+````markdown
+<ExImg src="/test.jpg" alt="test" />
+
+Next paragraph
+````
+
+### Lists and code blocks
+
+Before:
+
+````markdown
+Some text
+- Item 1
+- Item 2
+```js
+const x = 1;
+```
+More text
+````
+
+After:
+
+````markdown
+Some text
+
+- Item 1
+- Item 2
+
+```js
+const x = 1;
+```
+
+More text
+````

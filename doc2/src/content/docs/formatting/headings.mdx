@@ -1,0 +1,70 @@
+---
+title: Headings
+description: How the formatter normalizes heading styles and spacing
+sidebar_position: 2
+---
+
+The formatter ensures blank lines after headings when followed by non-heading content.
+
+## Rules
+
+- A blank line is added after a heading when followed by non-heading content (paragraphs, lists, JSX, etc.)
+- Consecutive headings are left as-is without inserting blank lines between them
+- Blank lines are added *after* headings, not before them
+
+## Examples
+
+### Heading followed by content
+
+Before:
+
+````markdown
+# Heading
+Content here
+````
+
+After:
+
+````markdown
+# Heading
+
+Content here
+````
+
+### Heading followed by JSX
+
+Before:
+
+````markdown
+## Section Title
+<ExImg src="/banner.jpg" alt="Banner" />
+````
+
+After:
+
+````markdown
+## Section Title
+
+<ExImg src="/banner.jpg" alt="Banner" />
+````
+
+### Heading followed by list
+
+Before:
+
+````markdown
+## Features
+- Item 1
+- Item 2
+- Item 3
+````
+
+After:
+
+````markdown
+## Features
+
+- Item 1
+- Item 2
+- Item 3
+````
