@@ -76,7 +76,7 @@ Only show sections that have entries. **Wait for user confirmation before procee
 
 ## Create changelog doc
 
-Create `doc2/src/content/docs/changelog/v{VERSION}.mdx` with this format:
+Create `doc/src/content/docs/changelog/v{VERSION}.mdx` with this format:
 
 ```mdx
 ---
@@ -115,7 +115,7 @@ Rules:
 ## Commit changelog
 
 ```bash
-git add doc2/src/content/docs/changelog/v{VERSION}.mdx
+git add doc/src/content/docs/changelog/v{VERSION}.mdx
 git commit -m "docs: Add changelog for v{VERSION}"
 ```
 
@@ -162,7 +162,7 @@ git push --tags
 After pushing the tag, create a GitHub release using the changelog content (with YAML frontmatter and `# v{VERSION}` heading stripped, since the release title already shows the version):
 
 ```bash
-NOTES=$(sed -n '/^Released:/,$ p' doc2/src/content/docs/changelog/v{VERSION}.mdx)
+NOTES=$(sed -n '/^Released:/,$ p' doc/src/content/docs/changelog/v{VERSION}.mdx)
 gh release create v{VERSION} --title "v{VERSION}" --notes "$NOTES"
 ```
 

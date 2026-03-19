@@ -1,0 +1,24 @@
+pre-commit:
+  parallel: true
+  commands:
+    prettier-js:
+      glob: '*.{js,mjs,ts}'
+      exclude: 'doc/'
+      run: pnpm exec prettier --write {staged_files} && git add {staged_files}
+    eslint:
+      glob: '*.{js,mjs,ts}'
+      exclude: 'doc/'
+      run: pnpm exec eslint --fix {staged_files} && git add {staged_files}
+    prettier-config:
+      glob: '*.{json,yml,yaml}'
+      exclude: 'doc/'
+      run: pnpm exec prettier --write {staged_files} && git add {staged_files}
+    prettier-claude-md:
+      glob: '.claude/**/*.md'
+      run: pnpm exec prettier --write {staged_files} && git add {staged_files}
+    prettier-doc:
+      glob: 'doc/src/**/*.{ts,tsx,js,jsx,css}'
+      run: pnpm exec prettier --write {staged_files} && git add {staged_files}
+    format-doc-mdx:
+      glob: 'doc/src/content/docs/**/*.{md,mdx}'
+      run: pnpm exec tsx src/cli.ts --write {staged_files} && git add {staged_files}

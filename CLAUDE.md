@@ -10,7 +10,7 @@ AST-based markdown and MDX formatter built on the unified/remark ecosystem. Publ
 - **Test framework**: vitest
 - **Linting**: ESLint (flat config) + Prettier + lint-staged (via husky)
 - **Build**: `tsc` (output to `dist/`)
-- **Doc site**: zudo-doc / Astro (workspace in `doc2/`, legacy Docusaurus in `doc/`)
+- **Doc site**: zudo-doc / Astro (workspace in `doc/`)
 - **Rust POC**: Experimental Rust rewrite in `crates/` (markdown-rs + napi-rs)
 
 ## Commands

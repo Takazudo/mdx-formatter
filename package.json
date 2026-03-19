@@ -38,26 +38,7 @@
     "build:rust:release": "cd crates/mdx-formatter-napi && cargo build --release",
     "b4push": "./scripts/run-b4push.sh",
     "doc:start": "pnpm --dir doc start",
-    "prepare": "husky",
     "prepublishOnly": "tsc && vitest run"
-  },
-  "lint-staged": {
-    "*.{js,mjs,ts}": [
-      "prettier --write",
-      "eslint --fix"
-    ],
-    "*.{json,yml,yaml}": [
-      "prettier --write"
-    ],
-    ".claude/**/*.md": [
-      "prettier --write"
-    ],
-    "doc/src/**/*.{ts,tsx,js,jsx,css}": [
-      "prettier --write"
-    ],
-    "doc/docs/**/*.{md,mdx}": [
-      "npx tsx src/cli.ts --write"
-    ]
   },
   "keywords": [
     "markdown",
@@ -105,8 +86,7 @@
     "@types/unist": "^3.0.3",
     "@vitest/coverage-v8": "^4.0.17",
     "eslint": "^9.39.2",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.2.7",
+    "lefthook": "^2.1.4",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.54.0",
     "vfile": "^6.0.3",

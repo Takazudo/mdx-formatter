@@ -1,34 +1,17 @@
 {
+  "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
     "baseUrl": ".",
-    "target": "ES2020",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "jsx": "react-jsx",
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "strict": true,
-    "skipLibCheck": true,
-    "noEmit": true,
-    "allowJs": true,
-    "checkJs": false,
-    "forceConsistentCasingInFileNames": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noImplicitReturns": false,
     "paths": {
-      "@site/*": ["./*"]
+      "@/*": ["src/*"]
     }
   },
-  "include": ["src/**/*", "*.js", "*.ts", "sidebars.js"],
   "exclude": [
-    "node_modules",
-    "build",
-    ".docusaurus",
-    "**/*.test.ts",
-    "**/*.test.tsx",
-    "node_modules/**/*"
+    "dist",
+    "e2e/fixtures",
+    "packages",
+    "worktrees",
+    "src/**/__tests__",
+    "vitest.config.ts"
   ]
 }

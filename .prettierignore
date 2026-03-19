@@ -4,6 +4,5 @@ build/
 coverage/
 pnpm-lock.yaml
 doc/
-doc2/
 target/
 worktrees/

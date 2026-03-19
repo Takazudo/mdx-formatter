@@ -27,7 +27,7 @@ Present to the user and **wait for confirmation**.
 
 ## Create Changelog Doc
 
-Create `doc2/src/content/docs/changelog/v{VERSION}.mdx` using the same format as `/l-version-increment`.
+Create `doc/src/content/docs/changelog/v{VERSION}.mdx` using the same format as `/l-version-increment`.
 
 Analyze all commits since the last stable tag (`git tag -l 'v*' --sort=-v:refname` excluding prerelease tags) and categorize them.
 
@@ -38,7 +38,7 @@ Rules:
 - Only include sections that have entries
 
 ```bash
-git add doc2/src/content/docs/changelog/v{VERSION}.mdx
+git add doc/src/content/docs/changelog/v{VERSION}.mdx
 git commit -m "docs: Add changelog for v{VERSION}"
 ```
 
@@ -79,7 +79,7 @@ git push --tags
 Create GitHub release:
 
 ```bash
-NOTES=$(sed -n '/^Released:/,$ p' doc2/src/content/docs/changelog/v{VERSION}.mdx)
+NOTES=$(sed -n '/^Released:/,$ p' doc/src/content/docs/changelog/v{VERSION}.mdx)
 gh release create v{VERSION} --title "v{VERSION}" --notes "$NOTES"
 ```
 
