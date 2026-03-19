@@ -1,0 +1,52 @@
+---
+title: Browser Usage
+description: Using mdx-formatter in browser and WebView environments
+sidebar_position: 8
+---
+
+# Browser Usage
+
+For browser or WebView environments (Vite, Webpack, Tauri, etc.), use the `./browser` subpath export. This avoids pulling in Node.js `fs` and `path` dependencies that would break bundler builds.
+
+## Import
+
+```typescript
+import { format } from "@takazudo/mdx-formatter/browser";
+```
+
+## Formatting Content
+
+```typescript
+const content = "# Hello\nSome text without spacing";
+const formatted = await format(content);
+// "# Hello\n\nSome text without spacing"
+```
+
+The `format` function returns a `Promise<string>` with the formatted content. On error, it returns the original content unchanged.
+
+## Detecting MDX
+
+The browser export also provides `detectMdx` for checking if content is likely MDX:
+
+```typescript
+import { format, detectMdx } from "@takazudo/mdx-formatter/browser";
+
+if (detectMdx(content)) {
+  console.log("Content has MDX syntax");
+}
+```
+
+## Limitations
+
+The browser export uses **default formatter settings only**. Config file loading (`.mdx-formatter.json`) is not supported because it requires Node.js file system access.
+
+If you need custom settings in a browser environment, use the main entry point's `format()` with `options.settings` in a Node.js context (e.g., a build script or server-side rendering), or pre-format files at build time using the CLI.
+
+## Package Exports
+
+The package defines two entry points via the `exports` field in `package.json`:
+
+| Import path | Entry point | Environment |
+| --- | --- | --- |
+| `@takazudo/mdx-formatter` | `./dist/index.js` | Node.js |
+| `@takazudo/mdx-formatter/browser` | `./dist/browser.js` | Browser / WebView |
