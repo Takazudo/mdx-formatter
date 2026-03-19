@@ -1,0 +1,97 @@
+---
+title: preserveAdmonitions
+description: Keep Docusaurus admonitions intact during formatting
+sidebar_position: 9
+---
+
+Keep Docusaurus admonitions (`:::note`, `:::tip`, `:::warning`, etc.) intact during formatting.
+
+Without this option, the `:::` syntax would be parsed as regular text and potentially reformatted incorrectly.
+
+## What is Docusaurus?
+
+[Docusaurus](https://docusaurus.io/) is a static site generator built by Meta for documentation websites. It uses MDX as its content format and provides a special "admonition" syntax using `:::` fences to render callout boxes (notes, tips, warnings, etc.) in documentation pages. This syntax is not part of standard markdown or MDX — it is a Docusaurus-specific extension, so generic markdown formatters would break it.
+
+## Options
+
+| Property  | Type      | Default | Description              |
+| --------- | --------- | ------- | ------------------------ |
+| `enabled` | `boolean` | `true`  | Enable/disable this rule |
+
+## Config
+
+```json
+{
+  "preserveAdmonitions": {
+    "enabled": true
+  }
+}
+```
+
+## Examples
+
+### Simple admonition
+
+The following admonition is preserved exactly as written:
+
+````markdown
+:::note
+This is a note admonition.
+:::
+````
+
+Stays as-is after formatting.
+
+### Admonition with title
+
+````markdown
+:::tip[Pro Tip]
+This is a professional tip with a custom title.
+:::
+````
+
+Stays as-is after formatting.
+
+### Admonition with rich content
+
+````markdown
+:::warning
+Be careful with this operation:
+
+- Item 1
+- Item 2
+
+```js
+dangerousOperation();
+```
+
+:::
+````
+
+The entire admonition block is preserved, including nested lists and code blocks.
+
+### Multiple admonition types
+
+All Docusaurus admonition types are supported:
+
+````markdown
+:::note
+Note content
+:::
+
+:::tip
+Tip content
+:::
+
+:::info
+Info content
+:::
+
+:::warning
+Warning content
+:::
+
+:::danger
+Danger content
+:::
+````

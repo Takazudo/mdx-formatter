@@ -1,0 +1,90 @@
+---
+title: expandSingleLineJsx
+description: Convert single-line JSX components with multiple props to multi-line format
+sidebar_position: 5
+---
+
+Convert single-line JSX components with multiple props to multi-line format. Also respects `ignoreComponents` from `formatMultiLineJsx`.
+
+**Disabled by default.**
+
+## Options
+
+| Property         | Type      | Default | Description                                         |
+| ---------------- | --------- | ------- | --------------------------------------------------- |
+| `enabled`        | `boolean` | `false` | Enable/disable this rule (disabled by default)      |
+| `propsThreshold` | `number`  | `2`     | Expand if the component has this many props or more |
+
+## Config
+
+```json
+{
+  "expandSingleLineJsx": {
+    "enabled": true,
+    "propsThreshold": 3
+  }
+}
+```
+
+## Examples
+
+### Default threshold (2 props)
+
+With `enabled: true` and `propsThreshold: 2`:
+
+Before:
+
+````markdown
+<Component prop1="value1" prop2="value2" />
+````
+
+After:
+
+````markdown
+<Component
+  prop1="value1"
+  prop2="value2" />
+````
+
+### Higher threshold
+
+With `propsThreshold: 3`, a component with only 2 props stays on one line:
+
+Before:
+
+````markdown
+<Component prop1="value1" prop2="value2" />
+````
+
+After (unchanged — only 2 props, threshold is 3):
+
+````markdown
+<Component prop1="value1" prop2="value2" />
+````
+
+But a component with 3 or more props gets expanded:
+
+Before:
+
+````markdown
+<ExImg src="/photo.jpg" alt="Photo" className="rounded" />
+````
+
+After:
+
+````markdown
+<ExImg
+  src="/photo.jpg"
+  alt="Photo"
+  className="rounded" />
+````
+
+### Single prop (never expanded)
+
+Components with a single prop are never expanded regardless of settings:
+
+````markdown
+<Component prop1="value1" />
+````
+
+This stays as-is.

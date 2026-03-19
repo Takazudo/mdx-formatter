@@ -1,0 +1,84 @@
+---
+title: Code Blocks
+description: How the formatter handles fenced code blocks
+sidebar_position: 4
+---
+
+The formatter preserves code block content exactly as-is — no formatting is applied inside fenced code blocks.
+
+## Rules
+
+- Fenced code blocks (` ``` `) are used
+- Language identifiers are preserved
+- Content inside code blocks is never modified
+- Blank lines are added before and after code blocks
+
+## Examples
+
+### Code block with language
+
+Before:
+
+````markdown
+Some text
+```js
+const x = 1;
+const y = 2;
+```
+Next paragraph
+````
+
+After:
+
+````markdown
+Some text
+
+```js
+const x = 1;
+const y = 2;
+```
+
+Next paragraph
+````
+
+### JSX content inside code blocks is not formatted
+
+Code blocks containing JSX are left as-is — the JSX formatting rules do not apply inside fences:
+
+Before:
+
+````markdown
+```jsx
+<Component prop1="value1" prop2="value2" prop3="value3" />
+```
+````
+
+After (unchanged):
+
+````markdown
+```jsx
+<Component prop1="value1" prop2="value2" prop3="value3" />
+```
+````
+
+### Code block with title (MDX)
+
+Before:
+
+````markdown
+```js title="example.js"
+function hello() {
+  console.log('world');
+}
+```
+````
+
+After (unchanged — content and meta string preserved):
+
+````markdown
+```js title="example.js"
+function hello() {
+  console.log('world');
+}
+```
+````

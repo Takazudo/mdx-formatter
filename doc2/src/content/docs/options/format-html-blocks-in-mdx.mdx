@@ -1,0 +1,130 @@
+---
+title: formatHtmlBlocksInMdx
+description: Format HTML blocks within MDX content using Prettier
+sidebar_position: 4
+---
+
+Format HTML blocks within MDX content using Prettier. Applies to standard HTML elements like `<dl>`, `<table>`, `<div>`, `<ul>`, etc.
+
+## Options
+
+| Property                   | Type      | Default   | Description                                |
+| -------------------------- | --------- | --------- | ------------------------------------------ |
+| `enabled`                  | `boolean` | `true`    | Enable/disable this rule                   |
+| `formatterConfig`          | `object`  | see below | Prettier configuration for HTML formatting |
+| `formatterConfig.parser`   | `string`  | `"html"`  | Prettier parser to use                     |
+| `formatterConfig.tabWidth` | `number`  | `2`       | Number of spaces per indentation level     |
+| `formatterConfig.useTabs`  | `boolean` | `false`   | Use tabs instead of spaces                 |
+
+## Config
+
+```json
+{
+  "formatHtmlBlocksInMdx": {
+    "enabled": true,
+    "formatterConfig": {
+      "parser": "html",
+      "tabWidth": 4,
+      "useTabs": false
+    }
+  }
+}
+```
+
+## Examples
+
+### Definition list
+
+Before:
+
+````markdown
+<dl>
+<dt>Term 1</dt>
+<dd>Definition 1</dd>
+<dt>Term 2</dt>
+<dd>Definition 2</dd>
+</dl>
+````
+
+After:
+
+````markdown
+<dl>
+  <dt>Term 1</dt>
+  <dd>Definition 1</dd>
+  <dt>Term 2</dt>
+  <dd>Definition 2</dd>
+</dl>
+````
+
+### Nested HTML structures
+
+Before:
+
+````markdown
+<dl>
+<div>
+<dt>Term 1</dt>
+<dd>Definition 1</dd>
+</div>
+<div>
+<dt>Term 2</dt>
+<dd>Definition 2</dd>
+</div>
+</dl>
+````
+
+After:
+
+````markdown
+<dl>
+  <div>
+    <dt>Term 1</dt>
+    <dd>Definition 1</dd>
+  </div>
+  <div>
+    <dt>Term 2</dt>
+    <dd>Definition 2</dd>
+  </div>
+</dl>
+````
+
+### Table
+
+Before:
+
+````markdown
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Item 1</td>
+<td>100</td>
+</tr>
+</tbody>
+</table>
+````
+
+After:
+
+````markdown
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Item 1</td>
+      <td>100</td>
+    </tr>
+  </tbody>
+</table>
+````

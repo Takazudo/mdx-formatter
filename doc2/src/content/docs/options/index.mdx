@@ -1,0 +1,65 @@
+---
+title: Options
+description: All configurable options for mdx-formatter
+sidebar_position: 1
+sidebar_label: Options
+---
+
+Every option can be set via [config file](/docs/overview/configuration) or programmatic API. Each rule has an `enabled` flag that can be toggled independently.
+
+## Full Configuration Example
+
+```json
+{
+  "exclude": ["generated/**"],
+  "addEmptyLineBetweenElements": {
+    "enabled": true
+  },
+  "formatMultiLineJsx": {
+    "enabled": true,
+    "indentSize": 2,
+    "ignoreComponents": ["CodeBlock"]
+  },
+  "formatHtmlBlocksInMdx": {
+    "enabled": true,
+    "formatterConfig": {
+      "parser": "html",
+      "tabWidth": 2,
+      "useTabs": false
+    }
+  },
+  "expandSingleLineJsx": {
+    "enabled": false,
+    "propsThreshold": 2
+  },
+  "indentJsxContent": {
+    "enabled": false,
+    "indentSize": 2,
+    "containerComponents": []
+  },
+  "addEmptyLinesInBlockJsx": {
+    "enabled": true,
+    "blockComponents": ["Outro", "InfoBox"]
+  },
+  "formatYamlFrontmatter": {
+    "enabled": true,
+    "indent": 2,
+    "lineWidth": 100,
+    "quotingType": "\"",
+    "forceQuotes": false,
+    "noCompatMode": true
+  },
+  "preserveAdmonitions": {
+    "enabled": true
+  },
+  "autoDetectIndent": {
+    "enabled": false,
+    "fallbackIndentSize": 2,
+    "fallbackIndentType": "space",
+    "minConfidence": 0.7
+  },
+  "errorHandling": {
+    "throwOnError": false
+  }
+}
+```

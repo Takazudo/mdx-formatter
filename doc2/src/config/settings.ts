@@ -49,7 +49,9 @@ export const settings = {
       {
         title: 'Docs',
         items: [
-          { label: 'Getting Started', href: '/docs/getting-started' },
+          { label: 'Overview', href: '/docs/overview' },
+          { label: 'Formatting', href: '/docs/formatting' },
+          { label: 'Options', href: '/docs/options' },
         ],
       },
       {
@@ -69,7 +71,9 @@ export const settings = {
     copyright: '&copy; 2025 Takazudo. MIT License.',
   } satisfies FooterConfig,
   headerNav: [
-    { label: 'Getting Started', path: '/docs/getting-started', categoryMatch: 'getting-started' },
+    { label: 'Overview', path: '/docs/overview', categoryMatch: 'overview' },
+    { label: 'Formatting', path: '/docs/formatting', categoryMatch: 'formatting' },
+    { label: 'Options', path: '/docs/options', categoryMatch: 'options' },
     { label: 'Changelog', path: '/docs/changelog', categoryMatch: 'changelog' },
     { label: 'Claude', path: '/docs/claude', categoryMatch: 'claude' },
   ] satisfies HeaderNavItem[],

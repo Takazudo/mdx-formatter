@@ -1,0 +1,115 @@
+---
+title: Japanese Text
+description: Special handling for Japanese (CJK) text formatting
+sidebar_position: 6
+---
+
+The formatter has special handling for Japanese (CJK) text to avoid common formatting issues that generic markdown formatters cause.
+
+## Rules
+
+- Japanese punctuation spacing is preserved
+- No extra spaces are inserted around Japanese characters
+- Bold/emphasis markers work correctly with Japanese text
+- URLs and parenthetical expressions in Japanese text are preserved
+- Line breaks within Japanese paragraphs are not altered
+- Question marks followed by Japanese text get a space after them
+
+## Examples
+
+### Japanese headings and content
+
+Before:
+
+````markdown
+# 日本語の見出し
+内容です。
+````
+
+After:
+
+````markdown
+# 日本語の見出し
+
+内容です。
+````
+
+### Bold text with Japanese
+
+Japanese bold text is preserved without unwanted space changes:
+
+Before:
+
+````markdown
+この値を **×2** します
+````
+
+After (unchanged):
+
+````markdown
+この値を **×2** します
+````
+
+### Image alt text with Japanese and colons
+
+Before:
+
+````markdown
+![図:VCAによるオーディオシグナルの減衰処理](/images/p/vca-exp-2)
+````
+
+After (unchanged — colons and Japanese in alt text preserved):
+
+````markdown
+![図:VCAによるオーディオシグナルの減衰処理](/images/p/vca-exp-2)
+````
+
+### URLs in parenthetical expressions
+
+Before:
+
+````markdown
+詳細は (https://example.com) をご覧ください
+````
+
+After (unchanged — parentheses around URL preserved):
+
+````markdown
+詳細は (https://example.com) をご覧ください
+````
+
+### Question mark spacing
+
+A space is inserted after a question mark when followed by Japanese text:
+
+Before:
+
+````markdown
+シンセのDIYってどういうこと？自分で作れたり
+````
+
+After:
+
+````markdown
+シンセのDIYってどういうこと？ 自分で作れたり
+````
+
+### Multi-line Japanese paragraphs
+
+Line breaks within Japanese paragraphs are preserved as-is:
+
+Before:
+
+````markdown
+こんにちは、Takazudo Modularです。
+Takazudo Modular Highlightsなどというメルマガの名前にしてみました。
+そんな年中送るかは分かりませんが……。
+````
+
+After (unchanged):
+
+````markdown
+こんにちは、Takazudo Modularです。
+Takazudo Modular Highlightsなどというメルマガの名前にしてみました。
+そんな年中送るかは分かりませんが……。
+````
