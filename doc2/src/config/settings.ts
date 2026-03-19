@@ -74,6 +74,7 @@ export const settings = {
     { label: 'Overview', path: '/docs/overview', categoryMatch: 'overview' },
     { label: 'Formatting', path: '/docs/formatting', categoryMatch: 'formatting' },
     { label: 'Options', path: '/docs/options', categoryMatch: 'options' },
+    { label: 'Architecture', path: '/docs/architecture', categoryMatch: 'architecture' },
     { label: 'Changelog', path: '/docs/changelog', categoryMatch: 'changelog' },
     { label: 'Claude', path: '/docs/claude', categoryMatch: 'claude' },
   ] satisfies HeaderNavItem[],

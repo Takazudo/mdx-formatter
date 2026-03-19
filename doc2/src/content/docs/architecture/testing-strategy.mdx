@@ -1,0 +1,152 @@
+---
+title: Testing Strategy
+sidebar_position: 3
+---
+
+# Testing Strategy
+
+mdx-formatter uses a multi-layered testing approach. The TypeScript test suite defines the formatting contract, while the Rust cross-platform tests validate that the Rust implementation produces compatible output.
+
+## TypeScript Test Suite
+
+The TypeScript tests in `test/` are the source of truth for what correctly formatted output looks like. They cover all 10 formatting rules across various input scenarios.
+
+### Test Files
+
+| File | Focus | Description |
+| --- | --- | --- |
+| `formatter.test.ts` | Core formatting | Heading spacing, list indentation, JSX handling, Japanese text |
+| `hybrid-formatter.test.ts` | Hybrid approach | AST analysis + line operations, conflict resolution |
+| `specific-rules.test.ts` | Individual rules | Detailed tests for each of the 10 rules |
+| `idempotency.test.ts` | Stability | `format(format(x)) === format(x)` for all inputs |
+| `html-blocks.test.ts` | HTML formatting | Prettier-based HTML block formatting in MDX |
+| `load-config.test.ts` | Configuration | `.mdx-formatter.json` loading and merging |
+| `url-autolink.test.ts` | URL handling | Autolink behavior and URL preservation |
+| `validate-mdx.test.ts` | MDX validation | Valid/invalid MDX detection |
+
+All tests use vitest and can be run with:
+
+```bash
+pnpm test           # Run all tests once
+pnpm test:watch     # Watch mode
+pnpm test:coverage  # Coverage report
+```
+
+## Idempotency Testing
+
+A core property of the formatter is idempotency: formatting an already-formatted file must produce identical output. The `idempotency.test.ts` suite verifies this across many document shapes:
+
+```typescript
+// Every test follows this pattern:
+const first = await format(input);
+const second = await format(first);
+assert.strictEqual(first, second);
+```
+
+Test cases include:
+
+- Simple content (single paragraph)
+- Complex documents (frontmatter + headings + lists + code blocks + JSX)
+- Documents that need fixes (heading spacing, list indent)
+- Edge cases (empty input, whitespace-only, single newline)
+
+The convergence loop (max 3 iterations) in the formatter guarantees this property. If `format_once(x) !== x`, the formatter applies another pass. After 3 passes, the output is returned regardless.
+
+## Rust Cross-Platform Tests
+
+The file `crates/mdx-formatter-core/tests/cross_platform.rs` contains 144 tests ported from the TypeScript suite. These tests validate that the Rust formatter produces the same output as the TypeScript version for the subset of rules currently implemented.
+
+### Test Organization
+
+The cross-platform tests are organized into numbered sections:
+
+| Section | Category | Count |
+| --- | --- | --- |
+| 1 | Basic Markdown Formatting | 14 |
+| 2 | List Indentation | 9 |
+| 3 | Idempotency | 9 |
+| 4 | MDX/JSX Preservation | 11 |
+| 5a | Parsing — CommonMark | 21 |
+| 5b | Parsing — GFM | 4 |
+| 5c | Parsing — MDX | 6 |
+| 5d | Parsing — Frontmatter | 4 |
+| 6 | Japanese Text | 11 |
+| 7 | Content Preservation | 12 |
+| 8 | JSX Spacing Rules | 4 |
+| 9 | Heading/Content Interaction | 2 |
+| 10 | Code Block Interaction | 4 |
+| 11 | Blockquote | 3 |
+| 12 | Error Handling/Edge Cases | 4 |
+| 13 | Regression Tests | 4 |
+| 14 | Complex Documents | 3 |
+| 15 | TODO (unimplemented rules) | 7 |
+| 16 | Settings Configuration | 5 |
+| 17 | Convergence Loop | 3 |
+| 18 | Stress Tests | 4 |
+
+### Test Annotations
+
+Tests use annotations to document the Rust formatter's current capabilities:
+
+- **No annotation**: Test passes and validates identical behavior to TypeScript
+- **`PARTIAL:`**: Rust formatter only partially handles the case (missing rule implementation). The test documents the current Rust behavior rather than the expected final behavior
+- **`TODO:`**: Test will pass once the corresponding rule is implemented. Currently verifies the formatter doesn't crash and preserves content
+
+Example of a `TODO` test:
+
+```rust
+#[test]
+fn todo_jsx_empty_lines_in_block_component() {
+    // TODO: Once addEmptyLinesInBlockJsx is implemented, expected should be:
+    // "<InfoBox>\n\nContent\n\n</InfoBox>"
+    let settings = settings_with_block_components();
+    let input = "<InfoBox>\nContent\n</InfoBox>";
+    let result = format(input, &settings);
+    assert!(result.contains("InfoBox"), "Component name preserved");
+    assert!(result.contains("Content"), "Content preserved");
+}
+```
+
+### Running Rust Tests
+
+```bash
+# Run all Rust tests (unit + cross-platform)
+cargo test
+
+# Run only cross-platform tests
+cargo test --test cross_platform
+
+# Run with output for debugging
+cargo test -- --nocapture
+```
+
+## How the Test Bridge Works
+
+The napi-rs bridge enables running the TypeScript test suite against the Rust formatter. The flow is:
+
+```
+vitest
+  ↓
+src/rust-formatter.ts    ← JS wrapper
+  ↓
+napi-rs binding          ← loads platform .node binary
+  ↓
+mdx-formatter-core       ← Rust formatting engine
+  ↓
+formatted output         ← returned to vitest
+```
+
+The JS wrapper (`src/rust-formatter.ts`) loads the native module and provides the same `format()` API as the TypeScript formatter. This allows running `pnpm test:rust` to validate the Rust output against the existing test expectations.
+
+## Testing New Rules
+
+When adding a new formatting rule, follow this process:
+
+1. Write TypeScript tests first in `test/` — these define the contract
+2. Implement the rule in `src/hybrid-formatter.ts`
+3. Verify TypeScript tests pass: `pnpm test`
+4. Port relevant test cases to `crates/mdx-formatter-core/tests/cross_platform.rs`
+5. Implement the rule in `crates/mdx-formatter-core/src/formatter.rs`
+6. Verify Rust tests pass: `cargo test`
+
+The TypeScript tests are always the source of truth. Rust tests should produce identical output for the same inputs.
