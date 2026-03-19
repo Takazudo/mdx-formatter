@@ -158,7 +158,7 @@ export default function SidebarTree({ nodes, currentSlug, rootMenuItems, backToM
           <a
             key={item.href}
             href={item.href}
-            className="flex items-center gap-hsp-xs border-t border-muted px-hsp-sm py-vsp-xs text-small font-semibold text-fg hover:text-accent hover:underline"
+            className="flex items-center gap-hsp-xs border-t border-muted px-hsp-sm py-vsp-xs text-small font-normal text-fg hover:text-accent hover:underline"
           >
             <CategoryLinkIcon className="w-[14px]" />
             {item.label}
@@ -177,7 +177,7 @@ export default function SidebarTree({ nodes, currentSlug, rootMenuItems, backToM
           <a
             key={item.href}
             href={item.href}
-            className="flex items-center gap-hsp-xs border-t border-muted px-hsp-sm py-vsp-xs text-small font-semibold text-fg hover:text-accent hover:underline"
+            className="flex items-center gap-hsp-xs border-t border-muted px-hsp-sm py-vsp-xs text-small font-normal text-fg hover:text-accent hover:underline"
           >
             <CategoryLinkIcon className="w-[14px]" />
             {item.label}
@@ -353,7 +353,7 @@ function CategoryNode({
         <ConnectorLines depth={depth} isLast={isLast} />
         {node.href ? (
           <div
-            className={`flex w-full items-center text-small font-semibold pt-[0.15rem] ${isActive ? "bg-fg text-bg" : "text-fg"}`}
+            className={`flex w-full items-center text-small font-normal pt-[0.15rem] ${isActive ? "bg-fg text-bg" : "text-fg"}`}
           >
             <a
               href={node.href}
@@ -378,7 +378,7 @@ function CategoryNode({
           <button
             type="button"
             onClick={toggle}
-            className={`flex w-full items-center gap-hsp-md text-small font-semibold py-vsp-xs text-fg hover:underline focus:underline`}
+            className={`flex w-full items-center gap-hsp-md text-small font-normal py-vsp-xs text-fg hover:underline focus:underline`}
             style={{ paddingLeft }}
             aria-expanded={isExpanded}
             aria-label={isExpanded ? `Collapse ${node.label}` : `Expand ${node.label}`}
@@ -427,7 +427,7 @@ function LeafNode({
         <a
           href={node.href}
           className={isRoot
-            ? `flex items-center gap-hsp-xs py-[calc(var(--spacing-vsp-xs)+0.15rem)] pr-[4px] text-small font-semibold ${
+            ? `flex items-center gap-hsp-xs py-[calc(var(--spacing-vsp-xs)+0.15rem)] pr-[4px] text-small font-normal ${
                 isActive ? "bg-fg text-bg" : "text-fg hover:underline focus:underline"
               }`
             : `block py-vsp-2xs pr-[4px] ${isLast ? "pb-vsp-xs" : ""} text-small ${

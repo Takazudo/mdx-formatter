@@ -198,6 +198,11 @@ body {
   font-family: var(--font-futura);
 }
 
+#desktop-sidebar,
+nav[aria-label="Table of contents"] {
+  font-family: var(--font-futura);
+}
+
 .zd-content :where(h2) {
   font-size: var(--text-subheading);
   font-weight: var(--font-weight-normal);
