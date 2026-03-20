@@ -22,31 +22,25 @@ By keeping the original source lines and only modifying specific locations, mdx-
 
 The formatter works in three phases:
 
+**Phase 1 — Parse**: Parse the source into an AST for structural analysis.
+
 ```d2 pad=20
 direction: right
+Source text -> remark/mdx parser -> mdast AST
+```
 
-parse: Phase 1 — Parse {
-  source: Source text
-  parser: remark/mdx parser
-  ast: mdast AST
-  source -> parser -> ast
-}
+**Phase 2 — Analyze**: Walk the AST and collect line-based operations.
 
-analyze: Phase 2 — Analyze {
-  walk: Walk AST
-  ops: Collect line-based operations
-  walk -> ops: "insert, replace,\nindent, fix"
-}
+```d2 pad=20
+direction: right
+Walk AST -> "Collect operations\n(insert, replace, indent, fix)"
+```
 
-apply: Phase 3 — Apply {
-  sort: Sort operations\n(reverse order)
-  lines: Apply to source lines
-  normalize: Normalize empty lines
-  sort -> lines -> normalize
-}
+**Phase 3 — Apply**: Sort and apply operations to the original source lines.
 
-parse -> analyze
-analyze -> apply
+```d2 pad=20
+direction: right
+"Sort operations\n(reverse order)" -> Apply to source lines -> Normalize empty lines
 ```
 
 The key insight: the AST is used **only for analysis** (finding positions, understanding structure), never for output generation. All modifications happen on the original source lines.
