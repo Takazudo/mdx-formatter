@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "lsof -ti:3518 | xargs kill -9 2>/dev/null; true",
+    "predev": "lsof -ti :3518 | xargs kill 2>/dev/null; true",
     "dev": "astro dev --port 3518",
-    "dev:network": "astro dev --host 0.0.0.0 --port 3518",
+    "predev:net": "lsof -ti :3518 | xargs kill 2>/dev/null; true",
+    "dev:net": "astro dev --host 0.0.0.0 --port 3518",
     "build": "astro build",
     "preview": "astro preview",
+    "preview:net": "astro preview --host 0.0.0.0",
     "check": "astro check"
   },
   "dependencies": {

@@ -6,7 +6,7 @@ Documentation site built with zudo-doc (Astro-based).
 
 ```bash
 pnpm --dir doc dev               # Dev server on port 3518
-pnpm --dir doc dev:network       # Dev server on 0.0.0.0:3518 (network accessible)
+pnpm --dir doc dev:net           # Dev server on 0.0.0.0:3518 (network accessible)
 pnpm --dir doc build             # Production build
 ```
 
