@@ -27,13 +27,13 @@ Uses the same hybrid approach as the TypeScript implementation:
 
 ## Current Status
 
-- Spacing rule (empty lines after headings) — working
+- Spacing rule (empty lines after headings/JSX) — working at all AST depths
 - List indentation normalization — working
-- 162 tests passing (18 unit + 144 cross-platform)
+- 215 tests passing (18 unit + 144 cross-platform + 42 plugin validation + 11 spacing recursion)
 - napi-rs scaffold ready (needs `@napi-rs/cli` to build `.node`)
+- TS plugin validation complete — 9 of 10 plugins NOT needed in Rust (see formatter.rs header)
 
 ## Known Limitations
 
-- Spacing only at root level (no recursion into blockquotes, JSX)
 - Partial settings deserialization (5 of 10 fields)
-- JSX formatting, YAML formatting, HTML blocks, Japanese text not yet implemented
+- JSX formatting, YAML formatting, HTML blocks not yet implemented
