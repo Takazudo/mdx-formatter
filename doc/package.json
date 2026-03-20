@@ -15,6 +15,7 @@
     "@astrojs/mdx": "^5.0.2",
     "@astrojs/react": "^5.0.1",
     "@shikijs/transformers": "^4.0.0",
+    "@terrastruct/d2": "^0.1.33",
     "astro": "^6.0.7",
     "astro-d2": "^0.10.0",
     "clsx": "^2.1.0",

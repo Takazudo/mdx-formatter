@@ -1,0 +1,39 @@
+<script>
+  async function initD2() {
+    const els = document.querySelectorAll<HTMLElement>(
+      "[data-d2]:not([data-d2-rendered])",
+    );
+    if (els.length === 0) return;
+
+    try {
+      const { D2 } = await import("@terrastruct/d2");
+      const d2 = new D2();
+
+      for (const el of els) {
+        const source = el.textContent || "";
+        if (!source.trim()) continue;
+
+        try {
+          // Two-step: compile D2 source into diagram, then render to SVG
+          const compiled = await d2.compile(source, { layout: "elk" });
+          const svg = await d2.render(compiled.diagram, {
+            ...compiled.renderOptions,
+            pad: 20,
+            noXMLTag: true,
+          });
+          el.innerHTML = svg;
+          el.setAttribute("data-d2-rendered", "");
+        } catch (e) {
+          console.error("[d2-init] Failed to render D2 diagram:", e);
+          el.innerHTML = `<pre style="color:red;font-size:0.8em">D2 render error: ${e}</pre><pre>${source}</pre>`;
+          el.setAttribute("data-d2-rendered", "");
+        }
+      }
+    } catch (e) {
+      console.error("[d2-init] Failed to load @terrastruct/d2:", e);
+    }
+  }
+
+  // astro:page-load fires on initial load and after View Transition navigations
+  document.addEventListener("astro:page-load", () => initD2());
+</script>
