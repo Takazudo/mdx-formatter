@@ -22,18 +22,31 @@ By keeping the original source lines and only modifying specific locations, mdx-
 
 The formatter works in three phases:
 
-```
-Phase 1: Parse          Phase 2: Analyze         Phase 3: Apply
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│ Source text      │    │ Walk AST         │    │ Sort operations  │
-│       ↓         │    │       ↓          │    │ (reverse order)  │
-│ remark/mdx      │───>│ Collect line-    │───>│       ↓          │
-│ parser          │    │ based operations │    │ Apply to source  │
-│       ↓         │    │ (insert, replace,│    │ lines            │
-│ mdast AST       │    │  indent, fix)    │    │       ↓          │
-└─────────────────┘    └──────────────────┘    │ Normalize empty  │
-                                               │ lines            │
-                                               └─────────────────┘
+```d2 pad=20
+direction: right
+
+parse: Phase 1 — Parse {
+  source: Source text
+  parser: remark/mdx parser
+  ast: mdast AST
+  source -> parser -> ast
+}
+
+analyze: Phase 2 — Analyze {
+  walk: Walk AST
+  ops: Collect line-based operations
+  walk -> ops: "insert, replace,\nindent, fix"
+}
+
+apply: Phase 3 — Apply {
+  sort: Sort operations\n(reverse order)
+  lines: Apply to source lines
+  normalize: Normalize empty lines
+  sort -> lines -> normalize
+}
+
+parse -> analyze
+analyze -> apply
 ```
 
 The key insight: the AST is used **only for analysis** (finding positions, understanding structure), never for output generation. All modifications happen on the original source lines.
@@ -44,10 +57,20 @@ Some formatting operations can create new formatting issues. For example, insert
 
 The formatter handles this with a convergence loop:
 
-```
-Input → format_once() → Output₁
-        format_once() → Output₂
-        format_once() → Output₃ (max)
+```d2 pad=20
+direction: right
+
+input: Input
+f1: format_once()
+o1: "Output₁"
+f2: format_once()
+o2: "Output₂"
+f3: format_once()
+o3: "Output₃ (max)"
+
+input -> f1 -> o1
+o1 -> f2 -> o2
+o2 -> f3 -> o3
 ```
 
 The loop runs `format_once()` up to **3 iterations**, stopping early when the output stabilizes (i.e., `format(x) === x`). This guarantees idempotency: formatting an already-formatted file produces identical output.

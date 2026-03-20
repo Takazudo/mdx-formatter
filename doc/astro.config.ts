@@ -3,6 +3,7 @@ import mdx from '@astrojs/mdx';
 import react from '@astrojs/react';
 import { transformerMetaHighlight, transformerMetaWordHighlight } from '@shikijs/transformers';
 import tailwindcss from '@tailwindcss/vite';
+import astroD2 from 'astro-d2';
 import { colorSchemes } from './src/config/color-schemes';
 import { settings } from './src/config/settings';
 import { searchIndexIntegration } from './src/integrations/search-index';
@@ -37,6 +38,9 @@ export default defineConfig({
   output: 'static',
   base: settings.base,
   integrations: [
+    astroD2({
+      skipGeneration: !!process.env.CI,
+    }),
     mdx(),
     react(),
     searchIndexIntegration(),

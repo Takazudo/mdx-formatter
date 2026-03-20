@@ -102,6 +102,9 @@ importers:
       astro:
         specifier: ^5.18.0
         version: 5.18.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.32.0)(rollup@4.57.1)(terser@5.46.1)(typescript@5.9.3)(yaml@2.8.2)
+      astro-d2:
+        specifier: ^0.9.0
+        version: 0.9.0(astro@5.18.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.32.0)(rollup@4.57.1)(terser@5.46.1)(typescript@5.9.3)(yaml@2.8.2))
       clsx:
         specifier: ^2.1.0
         version: 2.1.1
@@ -1237,6 +1240,9 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
+  '@terrastruct/d2@0.1.33':
+    resolution: {integrity: sha512-eK5hyfGIJFolC7sUsiKvWdY9xGFctTe3d+PSijo09IYDso8psztC+A4SammizXtlwYZpnnW0AtDjfBYauceSeA==}
+
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
 
@@ -1614,6 +1620,12 @@ packages:
   astring@1.9.0:
     resolution: {integrity: sha512-LElXdjswlqjWrPpJFg1Fx4wpkOCxj1TDHlSV4PlaRxHGWko024xICaa97ZkMfs6DRKlCguiAI+rbXv5GWwXIkg==}
     hasBin: true
+
+  astro-d2@0.9.0:
+    resolution: {integrity: sha512-an5vkji/rPL5rgULj1u85cgWvW9Za5htrvYcx3My1jAQLFgBxgUmsw7p9Il9yFnpjj/KemZDlV6WdSzhJAlvbQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      astro: '>=5.0.0'
 
   astro@5.18.1:
     resolution: {integrity: sha512-m4VWilWZ+Xt6NPoYzC4CgGZim/zQUO7WFL0RHCH0AiEavF1153iC3+me2atDvXpf/yX4PyGUeD8wZLq1cirT3g==}
@@ -4782,6 +4794,8 @@ snapshots:
       tailwindcss: 4.2.2
       vite: 7.3.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(yaml@2.8.2)
 
+  '@terrastruct/d2@0.1.33': {}
+
   '@types/babel__core@7.20.5':
     dependencies:
       '@babel/parser': 7.29.0
@@ -5263,6 +5277,14 @@ snapshots:
       js-tokens: 10.0.0
 
   astring@1.9.0: {}
+
+  astro-d2@0.9.0(astro@5.18.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.32.0)(rollup@4.57.1)(terser@5.46.1)(typescript@5.9.3)(yaml@2.8.2)):
+    dependencies:
+      '@terrastruct/d2': 0.1.33
+      astro: 5.18.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.32.0)(rollup@4.57.1)(terser@5.46.1)(typescript@5.9.3)(yaml@2.8.2)
+      hast-util-from-html: 2.0.3
+      hast-util-to-html: 9.0.5
+      unist-util-visit: 5.1.0
 
   astro@5.18.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.32.0)(rollup@4.57.1)(terser@5.46.1)(typescript@5.9.3)(yaml@2.8.2):
     dependencies:
