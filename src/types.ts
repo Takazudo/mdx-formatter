@@ -184,7 +184,7 @@ export type DeepPartial<T> = {
 };
 
 /**
- * Formatter operation types used in HybridFormatter
+ * Formatter operation types used in MdxFormatter
  */
 export type FormatterOperation =
   | {
@@ -252,13 +252,4 @@ export interface IndentStats {
 export interface IndentPattern {
   type: 'tab' | 'space';
   size: number;
-}
-
-/**
- * JSX stack entry used in SpecificFormatter
- */
-export interface JsxStackEntry {
-  name: string;
-  isContainer: boolean;
-  hasContent: boolean;
 }

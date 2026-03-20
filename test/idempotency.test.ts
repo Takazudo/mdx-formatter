@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { format } from '../src/index.js';
-import { HybridFormatter } from '../src/hybrid-formatter.js';
+import { MdxFormatter } from '../src/mdx-formatter.js';
 import { loadConfig } from '../src/load-config.js';
 import type { DeepPartial, FormatterSettings } from '../src/types.js';
 
@@ -101,9 +101,9 @@ describe('Idempotency — single-pass convergence', () => {
     expect(result).toBe(input);
   });
 
-  it('should demonstrate the bug with raw HybridFormatter (single pass)', async () => {
-    // This test demonstrates the underlying issue at the HybridFormatter level:
-    // a single HybridFormatter pass may not produce stable output.
+  it('should demonstrate the bug with raw MdxFormatter (single pass)', async () => {
+    // This test demonstrates the underlying issue at the MdxFormatter level:
+    // a single MdxFormatter pass may not produce stable output.
     // The fix in format() compensates by iterating until stable.
     const settings = loadConfig({ settings: settingsWithBlockComponents });
 
@@ -112,17 +112,17 @@ describe('Idempotency — single-pass convergence', () => {
   - Another item
 </Note>`;
 
-    const formatter1 = new HybridFormatter(input, settings);
+    const formatter1 = new MdxFormatter(input, settings);
     const pass1 = await formatter1.format();
 
-    const formatter2 = new HybridFormatter(pass1, settings);
+    const formatter2 = new MdxFormatter(pass1, settings);
     const pass2 = await formatter2.format();
 
     // After the fix in format(), both passes should produce the same result
-    // because format() internally iterates. But at the HybridFormatter level,
+    // because format() internally iterates. But at the MdxFormatter level,
     // pass1 and pass2 may differ (that's the root cause of the bug).
     // We just verify that pass2 is stable (pass2 === pass3).
-    const formatter3 = new HybridFormatter(pass2, settings);
+    const formatter3 = new MdxFormatter(pass2, settings);
     const pass3 = await formatter3.format();
     expect(pass3).toBe(pass2);
   });

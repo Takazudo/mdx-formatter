@@ -11,7 +11,7 @@
  * path is never reached, bundlers can tree-shake the prettier import away.
  */
 
-import { HybridFormatter } from './hybrid-formatter.js';
+import { MdxFormatter } from './mdx-formatter.js';
 import { detectMdx } from './detect-mdx.js';
 import { formatterSettings } from './settings.js';
 import { deepCloneSettings, deepMerge } from './utils.js';
@@ -47,7 +47,7 @@ export async function format(
   try {
     let result = content;
     for (let i = 0; i < MAX_ITERATIONS; i++) {
-      const formatter = new HybridFormatter(result, merged);
+      const formatter = new MdxFormatter(result, merged);
       const formatted = await formatter.format();
       if (formatted === result) break;
       result = formatted;

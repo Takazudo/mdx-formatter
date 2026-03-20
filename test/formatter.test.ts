@@ -764,4 +764,69 @@ This paragraph follows an image.
       });
     });
   });
+
+  describe('Issue #27: Paragraph/list spacing in production formatter', () => {
+    it('should add empty line between paragraph and list', async () => {
+      const input = 'Some text\n- Item 1\n- Item 2';
+      const expected = 'Some text\n\n- Item 1\n- Item 2';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should add empty line between list and paragraph', async () => {
+      const input = '- Item 1\n- Item 2\nMore text';
+      const expected = '- Item 1\n- Item 2\n\nMore text';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should add empty lines around list surrounded by paragraphs', async () => {
+      const input = 'Some text\n- Item 1\n- Item 2\nMore text';
+      const expected = 'Some text\n\n- Item 1\n- Item 2\n\nMore text';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should add empty line between code block and paragraph', async () => {
+      const input = '```js\ncode\n```\nParagraph';
+      const expected = '```js\ncode\n```\n\nParagraph';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should add empty line between paragraph and code block', async () => {
+      const input = 'Paragraph\n```js\ncode\n```';
+      const expected = 'Paragraph\n\n```js\ncode\n```';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should add empty line between list and code block', async () => {
+      const input = '- Item 1\n- Item 2\n```js\ncode\n```';
+      const expected = '- Item 1\n- Item 2\n\n```js\ncode\n```';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should add empty line between paragraph and numbered list', async () => {
+      const input = 'Some text\n1. First\n2. Second';
+      const expected = 'Some text\n\n1. First\n2. Second';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should add empty line between numbered list and paragraph', async () => {
+      const input = '1. First\n2. Second\nMore text';
+      const expected = '1. First\n2. Second\n\nMore text';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should not add empty lines if already present', async () => {
+      const input = 'Some text\n\n- Item 1\n- Item 2\n\nMore text';
+      const expected = 'Some text\n\n- Item 1\n- Item 2\n\nMore text';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+  });
 });
