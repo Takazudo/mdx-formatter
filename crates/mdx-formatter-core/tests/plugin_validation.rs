@@ -46,9 +46,11 @@ fn preserve_jsx_self_closing_tag() {
 
 #[test]
 fn preserve_jsx_multi_line() {
+    // JSX formatter correctly appends standalone /> to the last attribute line
     let input = "<Component\n  prop1=\"value1\"\n  prop2=\"value2\"\n/>";
+    let expected = "<Component\n  prop1=\"value1\"\n  prop2=\"value2\" />";
     let result = format(input, &default_settings());
-    assert_eq!(result, input, "Multi-line JSX should be preserved exactly");
+    assert_eq!(result, expected, "Multi-line JSX with standalone /> should be fixed");
 }
 
 #[test]
