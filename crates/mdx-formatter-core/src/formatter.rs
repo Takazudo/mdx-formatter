@@ -1,5 +1,5 @@
 use crate::parser;
-use crate::types::{FormatterOperation, FormatterSettings};
+use crate::types::{FormatterOperation, FormatterSettings, FormatYamlFrontmatterSetting};
 use markdown::mdast::Node;
 use regex::Regex;
 use std::collections::HashSet;
@@ -26,6 +26,18 @@ use std::sync::LazyLock;
 //     artifact doesn't occur; import/export spacing may need future work.
 //
 // See tests/plugin_validation.rs for test cases validating each finding.
+
+// Regex for preprocessing YAML: matches `key: value` lines
+static YAML_MAPPING_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(\s*)([\w][\w.-]*):\s+(.+)$").unwrap());
+
+// Regex for block scalar indicators (>, |, >-, |-, >+, |+)
+static BLOCK_SCALAR_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[|>][-+]?$").unwrap());
+
+// Regex for values that start with special YAML chars
+static SPECIAL_START_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[!&*%@`]").unwrap());
 
 // Compile once at startup, not on every format call
 static MULTIPLE_NEWLINES_RE: LazyLock<Regex> =
@@ -62,6 +74,10 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
 
     if settings.add_empty_line_between_elements.enabled {
         collect_spacing_operations(&ast, &lines, &mut operations);
+    }
+
+    if settings.format_yaml_frontmatter.enabled {
+        collect_yaml_format_operations(&ast, &lines, &settings.format_yaml_frontmatter, &mut operations);
     }
 
     collect_list_indentation_operations(&ast, &lines, &mut operations);
@@ -319,6 +335,269 @@ fn is_numbered_list_line(line: &str) -> bool {
     is_ordered_list_marker(trimmed)
 }
 
+/// Pre-process YAML text to quote values containing special YAML characters.
+///
+/// Detects unquoted values with `: `, ` #`, or starting with `!&*%@\`` and
+/// wraps them in double quotes to prevent parse errors or silent data corruption.
+fn preprocess_yaml_for_parsing(yaml_text: &str) -> String {
+    let lines: Vec<&str> = yaml_text.split('\n').collect();
+    let mut result: Vec<String> = Vec::with_capacity(lines.len());
+
+    for line in &lines {
+        if let Some(caps) = YAML_MAPPING_RE.captures(line) {
+            let indent = caps.get(1).map_or("", |m| m.as_str());
+            let key = caps.get(2).map_or("", |m| m.as_str());
+            let value = caps.get(3).map_or("", |m| m.as_str()).trim();
+
+            // Skip if already quoted
+            if (value.starts_with('"') && value.ends_with('"'))
+                || (value.starts_with('\'') && value.ends_with('\''))
+            {
+                result.push(line.to_string());
+                continue;
+            }
+
+            // Skip flow sequences [...] and flow mappings {...}
+            if (value.starts_with('[') && value.ends_with(']'))
+                || (value.starts_with('{') && value.ends_with('}'))
+            {
+                result.push(line.to_string());
+                continue;
+            }
+
+            // Skip block scalar indicators (>, |, >-, |-, >+, |+)
+            if BLOCK_SCALAR_RE.is_match(value) {
+                result.push(line.to_string());
+                continue;
+            }
+
+            let needs_quoting = value.contains(": ")
+                || value.contains(" #")
+                || SPECIAL_START_RE.is_match(value);
+
+            if needs_quoting {
+                let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+                result.push(format!("{}{}: \"{}\"", indent, key, escaped));
+                continue;
+            }
+        }
+
+        result.push(line.to_string());
+    }
+
+    result.join("\n")
+}
+
+/// Walk AST and collect YAML frontmatter formatting operations.
+///
+/// For each `Node::Yaml` node, parses the YAML content, reformats it using
+/// serde_yaml for parsing and a custom emitter for output, and creates a
+/// ReplaceLines operation if the output differs.
+fn collect_yaml_format_operations(
+    node: &Node,
+    _lines: &[&str],
+    settings: &FormatYamlFrontmatterSetting,
+    operations: &mut Vec<FormatterOperation>,
+) {
+    if let Node::Root(root) = node {
+        for child in &root.children {
+            if let Node::Yaml(yaml_node) = child {
+                if let Some(pos) = &yaml_node.position {
+                    let mut yaml_to_parse = yaml_node.value.clone();
+
+                    // Pre-process to fix unsafe values
+                    if settings.fix_unsafe_values {
+                        yaml_to_parse = preprocess_yaml_for_parsing(&yaml_to_parse);
+                    }
+
+                    // Parse YAML content
+                    let parsed: serde_yaml::Value = match serde_yaml::from_str(&yaml_to_parse) {
+                        Ok(v) => v,
+                        Err(_) => continue, // Skip formatting on parse failure
+                    };
+
+                    // Format using custom emitter that respects settings
+                    let clean = emit_yaml(&parsed, settings, 0);
+
+                    // Only replace if different from original
+                    if clean != yaml_node.value {
+                        let start_line = pos.start.line - 1; // 0-indexed
+                        let end_line = pos.end.line - 1;
+
+                        let formatted_lines: Vec<String> =
+                            clean.split('\n').map(|s| s.to_string()).collect();
+
+                        operations.push(FormatterOperation::ReplaceLines {
+                            start_line: start_line + 1, // Skip opening ---
+                            end_line: end_line - 1,     // Skip closing ---
+                            lines: formatted_lines,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Custom YAML emitter that respects formatter settings (quotingType, forceQuotes, indent).
+///
+/// Matches js-yaml's output behavior: uses JSON_SCHEMA-compatible formatting,
+/// quotes strings when needed, and respects the configured quoting style.
+fn emit_yaml(value: &serde_yaml::Value, settings: &FormatYamlFrontmatterSetting, indent_level: usize) -> String {
+    match value {
+        serde_yaml::Value::Mapping(map) => {
+            emit_yaml_mapping(map, settings, indent_level)
+        }
+        _ => emit_yaml_scalar(value, settings),
+    }
+}
+
+/// Emit a YAML mapping (key-value pairs) with proper indentation.
+fn emit_yaml_mapping(
+    map: &serde_yaml::Mapping,
+    settings: &FormatYamlFrontmatterSetting,
+    indent_level: usize,
+) -> String {
+    let indent_str = " ".repeat(indent_level * settings.indent);
+    let mut lines: Vec<String> = Vec::new();
+
+    for (key, value) in map {
+        let key_str = match key {
+            serde_yaml::Value::String(s) => s.clone(),
+            other => emit_yaml_scalar(other, settings),
+        };
+
+        match value {
+            serde_yaml::Value::Mapping(nested_map) => {
+                lines.push(format!("{}{}:", indent_str, key_str));
+                let nested = emit_yaml_mapping(nested_map, settings, indent_level + 1);
+                lines.push(nested);
+            }
+            serde_yaml::Value::Sequence(seq) => {
+                lines.push(format!("{}{}:", indent_str, key_str));
+                let child_indent = " ".repeat((indent_level + 1) * settings.indent);
+                for item in seq {
+                    match item {
+                        serde_yaml::Value::Mapping(item_map) => {
+                            // Sequence of mappings: first key on same line as `-`
+                            let nested = emit_yaml_mapping(item_map, settings, indent_level + 2);
+                            let nested_lines: Vec<&str> = nested.split('\n').collect();
+                            if let Some(first) = nested_lines.first() {
+                                lines.push(format!("{}- {}", child_indent, first.trim()));
+                                for rest in &nested_lines[1..] {
+                                    lines.push(format!("{}  {}", child_indent, rest.trim_start()));
+                                }
+                            }
+                        }
+                        _ => {
+                            lines.push(format!("{}- {}", child_indent, emit_yaml_scalar(item, settings)));
+                        }
+                    }
+                }
+            }
+            _ => {
+                lines.push(format!("{}{}: {}", indent_str, key_str, emit_yaml_scalar(value, settings)));
+            }
+        }
+    }
+
+    lines.join("\n")
+}
+
+/// Emit a YAML scalar value with proper quoting.
+fn emit_yaml_scalar(value: &serde_yaml::Value, settings: &FormatYamlFrontmatterSetting) -> String {
+    match value {
+        serde_yaml::Value::Null => "null".to_string(),
+        serde_yaml::Value::Bool(b) => {
+            if *b { "true" } else { "false" }.to_string()
+        }
+        serde_yaml::Value::Number(n) => n.to_string(),
+        serde_yaml::Value::String(s) => emit_yaml_string(s, settings),
+        serde_yaml::Value::Sequence(seq) => {
+            // Inline flow sequence for scalars
+            let items: Vec<String> = seq.iter().map(|v| emit_yaml_scalar(v, settings)).collect();
+            format!("[{}]", items.join(", "))
+        }
+        serde_yaml::Value::Mapping(_) => {
+            // Shouldn't reach here for top-level calls, but handle gracefully
+            serde_yaml::to_string(value).unwrap_or_default()
+        }
+        serde_yaml::Value::Tagged(tagged) => {
+            emit_yaml_scalar(&tagged.value, settings)
+        }
+    }
+}
+
+/// Emit a YAML string with proper quoting based on settings.
+///
+/// Quotes are added when:
+/// - `forceQuotes` is true
+/// - The string contains special YAML characters (`: `, ` #`, etc.)
+/// - The string looks like a YAML keyword (true, false, null, yes, no, etc.)
+/// - The string is empty
+fn emit_yaml_string(s: &str, settings: &FormatYamlFrontmatterSetting) -> String {
+    if settings.force_quotes || needs_quoting(s) {
+        quote_string(s, &settings.quoting_type)
+    } else {
+        s.to_string()
+    }
+}
+
+/// Check if a string value needs quoting in YAML output.
+fn needs_quoting(s: &str) -> bool {
+    if s.is_empty() {
+        return true;
+    }
+
+    // Check for YAML keywords that would be misinterpreted
+    let lower = s.to_lowercase();
+    if matches!(
+        lower.as_str(),
+        "true" | "false" | "null" | "yes" | "no" | "on" | "off" | "~"
+    ) {
+        return true;
+    }
+
+    // Check if it looks like a number
+    if s.parse::<f64>().is_ok() || s.parse::<i64>().is_ok() {
+        return true;
+    }
+
+    // Special YAML characters in the value
+    if s.contains(": ") || s.contains(" #") || s.contains('\n')
+        || s.contains('\'') || s.contains('"')
+    {
+        return true;
+    }
+
+    // Starts with special YAML chars
+    if let Some(first) = s.chars().next() {
+        if matches!(first, '!' | '&' | '*' | '%' | '@' | '`' | ',' | '[' | ']' | '{' | '}' | '>' | '|' | '#' | '?' | '-' | ':') {
+            return true;
+        }
+    }
+
+    // Ends with colon
+    if s.ends_with(':') {
+        return true;
+    }
+
+    false
+}
+
+/// Quote a string with the configured quoting type.
+fn quote_string(s: &str, quoting_type: &str) -> String {
+    if quoting_type == "'" {
+        // Single quotes: escape single quotes by doubling them
+        let escaped = s.replace('\'', "''");
+        format!("'{}'", escaped)
+    } else {
+        // Double quotes (default): escape backslashes and double quotes
+        let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{}\"", escaped)
+    }
+}
+
 /// Remove replacement operations that are strictly contained within a wider replacement.
 fn filter_overlapping_replacements(operations: &mut Vec<FormatterOperation>) {
     // Collect replacement ranges
@@ -570,5 +849,333 @@ mod tests {
         // The TS formatter inserts a line between headings, but the condition
         // says "if next line doesn't start with #", so this should be unchanged
         assert_eq!(result, input);
+    }
+
+    // ========================================================================
+    // YAML frontmatter formatting tests
+    // ========================================================================
+
+    #[test]
+    fn test_yaml_basic_formatting() {
+        let input = "---\ntitle: Test\nauthor: John\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input, "Simple YAML should be preserved");
+    }
+
+    #[test]
+    fn test_yaml_quoted_values_preserved() {
+        let input = "---\ntitle: \"Hello: World\"\ndescription: \"It's a test\"\n---\n\nContent";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input, "Quoted YAML values should be preserved");
+    }
+
+    #[test]
+    fn test_yaml_boolean_values_preserved() {
+        let input = "---\ndraft: true\npublished: false\n---\n\nContent";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input, "Boolean values should be preserved");
+    }
+
+    #[test]
+    fn test_yaml_idempotency() {
+        let input = "---\ntitle: My Post\nauthor: Jane\ntags:\n  - rust\n  - yaml\n---\n\n# Content";
+        let first = format(input, &FormatterSettings::default());
+        let second = format(&first, &FormatterSettings::default());
+        assert_eq!(first, second, "YAML formatting should be idempotent");
+    }
+
+    #[test]
+    fn test_yaml_disabled() {
+        let mut settings = FormatterSettings::default();
+        settings.format_yaml_frontmatter.enabled = false;
+        let input = "---\ntitle:    Test\n---\n\n# Content";
+        let result = format(input, &settings);
+        assert_eq!(result, input, "Disabled YAML rule should not modify content");
+    }
+
+    #[test]
+    fn test_yaml_unsafe_value_with_colon() {
+        // Values containing ": " should be quoted by preprocessor
+        let input = "---\ntitle: Hello: World\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(
+            result,
+            "---\ntitle: \"Hello: World\"\n---\n\n# Content",
+            "Unsafe values should be quoted"
+        );
+    }
+
+    #[test]
+    fn test_yaml_unsafe_value_with_hash() {
+        let input = "---\ntitle: Hello #world\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(
+            result,
+            "---\ntitle: \"Hello #world\"\n---\n\n# Content",
+            "Values with # comments should be quoted"
+        );
+    }
+
+    #[test]
+    fn test_yaml_force_quotes() {
+        let mut settings = FormatterSettings::default();
+        settings.format_yaml_frontmatter.force_quotes = true;
+        let input = "---\ntitle: Test\nauthor: John\n---\n\n# Content";
+        let result = format(input, &settings);
+        assert_eq!(
+            result,
+            "---\ntitle: \"Test\"\nauthor: \"John\"\n---\n\n# Content",
+            "forceQuotes should quote all string values"
+        );
+    }
+
+    #[test]
+    fn test_yaml_single_quote_type() {
+        let mut settings = FormatterSettings::default();
+        settings.format_yaml_frontmatter.force_quotes = true;
+        settings.format_yaml_frontmatter.quoting_type = "'".into();
+        let input = "---\ntitle: Test\n---\n\n# Content";
+        let result = format(input, &settings);
+        assert_eq!(
+            result,
+            "---\ntitle: 'Test'\n---\n\n# Content",
+            "Single quote type should use single quotes"
+        );
+    }
+
+    #[test]
+    fn test_yaml_parse_error_graceful() {
+        // Invalid YAML should be left unchanged
+        let input = "---\n: invalid yaml [[\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input, "Invalid YAML should be left unchanged");
+    }
+
+    #[test]
+    fn test_yaml_fix_unsafe_values_disabled() {
+        let mut settings = FormatterSettings::default();
+        settings.format_yaml_frontmatter.fix_unsafe_values = false;
+        // Without fix_unsafe_values, the colon in the value causes a parse error,
+        // so the frontmatter should be left unchanged
+        let input = "---\ntitle: Hello: World\n---\n\n# Content";
+        let result = format(input, &settings);
+        assert_eq!(result, input, "fix_unsafe_values=false should not preprocess");
+    }
+
+    #[test]
+    fn test_yaml_nested_mapping() {
+        let input = "---\ntitle: Test\nmeta:\n  og_title: Hello\n  og_desc: World\n---\n\n# Content";
+        let first = format(input, &FormatterSettings::default());
+        let second = format(&first, &FormatterSettings::default());
+        assert_eq!(first, second, "Nested YAML should be idempotent");
+    }
+
+    #[test]
+    fn test_yaml_sequence_values() {
+        let input = "---\ntitle: Test\ntags:\n  - rust\n  - yaml\n  - formatter\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        let second = format(&result, &FormatterSettings::default());
+        assert_eq!(result, second, "YAML with sequences should be idempotent");
+    }
+
+    #[test]
+    fn test_yaml_unnecessary_quotes_removed() {
+        // Strings that don't need quoting have quotes removed (normalized)
+        let input = "---\ntitle: \"Already quoted\"\n---\n\n# Content";
+        let expected = "---\ntitle: Already quoted\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, expected, "Unnecessary quotes should be removed");
+    }
+
+    #[test]
+    fn test_yaml_necessary_quotes_kept() {
+        // Strings that need quoting should keep their quotes
+        let input = "---\ntitle: \"Hello: World\"\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input, "Necessary quotes should be preserved");
+    }
+
+    // ========================================================================
+    // YAML preprocessing tests
+    // ========================================================================
+
+    #[test]
+    fn test_preprocess_skip_already_quoted() {
+        let input = "title: \"Hello: World\"";
+        let result = preprocess_yaml_for_parsing(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_preprocess_skip_single_quoted() {
+        let input = "title: 'Hello: World'";
+        let result = preprocess_yaml_for_parsing(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_preprocess_skip_flow_sequence() {
+        let input = "tags: [a, b, c]";
+        let result = preprocess_yaml_for_parsing(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_preprocess_skip_flow_mapping() {
+        let input = "meta: {key: value}";
+        let result = preprocess_yaml_for_parsing(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_preprocess_skip_block_scalar() {
+        let input = "description: >";
+        let result = preprocess_yaml_for_parsing(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_preprocess_quote_colon() {
+        let input = "title: Hello: World";
+        let result = preprocess_yaml_for_parsing(input);
+        assert_eq!(result, "title: \"Hello: World\"");
+    }
+
+    #[test]
+    fn test_preprocess_quote_hash() {
+        let input = "title: Hello #world";
+        let result = preprocess_yaml_for_parsing(input);
+        assert_eq!(result, "title: \"Hello #world\"");
+    }
+
+    #[test]
+    fn test_preprocess_quote_special_start_chars() {
+        let input = "title: !important";
+        let result = preprocess_yaml_for_parsing(input);
+        assert_eq!(result, "title: \"!important\"");
+    }
+
+    #[test]
+    fn test_preprocess_escape_quotes_in_value() {
+        let input = "title: She said \"hello\": goodbye";
+        let result = preprocess_yaml_for_parsing(input);
+        assert_eq!(result, "title: \"She said \\\"hello\\\": goodbye\"");
+    }
+
+    // ========================================================================
+    // Settings deserialization tests
+    // ========================================================================
+
+    #[test]
+    fn test_settings_from_empty_json() {
+        let value = serde_json::json!({});
+        let settings = FormatterSettings::from_partial_json(&value);
+        let defaults = FormatterSettings::default();
+        assert_eq!(settings.add_empty_line_between_elements.enabled, defaults.add_empty_line_between_elements.enabled);
+        assert_eq!(settings.format_yaml_frontmatter.enabled, defaults.format_yaml_frontmatter.enabled);
+        assert_eq!(settings.expand_single_line_jsx.enabled, defaults.expand_single_line_jsx.enabled);
+        assert_eq!(settings.error_handling.throw_on_error, defaults.error_handling.throw_on_error);
+        assert_eq!(settings.auto_detect_indent.enabled, defaults.auto_detect_indent.enabled);
+    }
+
+    #[test]
+    fn test_settings_partial_override() {
+        let value = serde_json::json!({
+            "addEmptyLineBetweenElements": { "enabled": false },
+            "formatYamlFrontmatter": { "enabled": false, "indent": 4 }
+        });
+        let settings = FormatterSettings::from_partial_json(&value);
+        assert!(!settings.add_empty_line_between_elements.enabled);
+        assert!(!settings.format_yaml_frontmatter.enabled);
+        assert_eq!(settings.format_yaml_frontmatter.indent, 4);
+        // Other settings should retain defaults
+        assert!(settings.format_multi_line_jsx.enabled);
+        assert!(settings.preserve_admonitions.enabled);
+    }
+
+    #[test]
+    fn test_settings_all_fields_camelcase() {
+        let value = serde_json::json!({
+            "addEmptyLineBetweenElements": { "enabled": false },
+            "formatMultiLineJsx": { "enabled": false, "indentSize": 4 },
+            "formatHtmlBlocksInMdx": { "enabled": false },
+            "expandSingleLineJsx": { "enabled": true, "propsThreshold": 3 },
+            "indentJsxContent": { "enabled": true, "indentSize": 4 },
+            "addEmptyLinesInBlockJsx": { "enabled": false, "blockComponents": ["Note"] },
+            "formatYamlFrontmatter": { "enabled": false, "lineWidth": 80 },
+            "preserveAdmonitions": { "enabled": false },
+            "errorHandling": { "throwOnError": true },
+            "autoDetectIndent": { "enabled": true, "fallbackIndentSize": 4, "minConfidence": 0.8 }
+        });
+        let settings = FormatterSettings::from_partial_json(&value);
+        assert!(!settings.add_empty_line_between_elements.enabled);
+        assert!(!settings.format_multi_line_jsx.enabled);
+        assert_eq!(settings.format_multi_line_jsx.indent_size, 4);
+        assert!(!settings.format_html_blocks_in_mdx.enabled);
+        assert!(settings.expand_single_line_jsx.enabled);
+        assert_eq!(settings.expand_single_line_jsx.props_threshold, 3);
+        assert!(settings.indent_jsx_content.enabled);
+        assert_eq!(settings.indent_jsx_content.indent_size, 4);
+        assert!(!settings.add_empty_lines_in_block_jsx.enabled);
+        assert_eq!(settings.add_empty_lines_in_block_jsx.block_components, vec!["Note"]);
+        assert!(!settings.format_yaml_frontmatter.enabled);
+        assert_eq!(settings.format_yaml_frontmatter.line_width, 80);
+        assert!(!settings.preserve_admonitions.enabled);
+        assert!(settings.error_handling.throw_on_error);
+        assert!(settings.auto_detect_indent.enabled);
+        assert_eq!(settings.auto_detect_indent.fallback_indent_size, 4);
+        assert!((settings.auto_detect_indent.min_confidence - 0.8).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_settings_invalid_json_returns_defaults() {
+        let value = serde_json::json!("not an object");
+        let settings = FormatterSettings::from_partial_json(&value);
+        let defaults = FormatterSettings::default();
+        assert_eq!(settings.add_empty_line_between_elements.enabled, defaults.add_empty_line_between_elements.enabled);
+    }
+
+    // ========================================================================
+    // needs_quoting tests
+    // ========================================================================
+
+    #[test]
+    fn test_needs_quoting_empty() {
+        assert!(needs_quoting(""));
+    }
+
+    #[test]
+    fn test_needs_quoting_keywords() {
+        assert!(needs_quoting("true"));
+        assert!(needs_quoting("false"));
+        assert!(needs_quoting("null"));
+        assert!(needs_quoting("yes"));
+        assert!(needs_quoting("no"));
+        assert!(needs_quoting("True"));
+        assert!(needs_quoting("FALSE"));
+    }
+
+    #[test]
+    fn test_needs_quoting_numbers() {
+        assert!(needs_quoting("42"));
+        assert!(needs_quoting("3.14"));
+        assert!(needs_quoting("-1"));
+    }
+
+    #[test]
+    fn test_needs_quoting_special_chars() {
+        assert!(needs_quoting("hello: world"));
+        assert!(needs_quoting("hello #comment"));
+        assert!(needs_quoting("!important"));
+        assert!(needs_quoting("&anchor"));
+        assert!(needs_quoting("*alias"));
+    }
+
+    #[test]
+    fn test_needs_quoting_normal_strings() {
+        assert!(!needs_quoting("hello"));
+        assert!(!needs_quoting("Hello World"));
+        assert!(!needs_quoting("my-title"));
+        assert!(!needs_quoting("some_value"));
     }
 }
