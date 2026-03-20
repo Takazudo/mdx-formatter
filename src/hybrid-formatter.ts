@@ -377,11 +377,7 @@ export class HybridFormatter {
    * Try to insert spacing between two consecutive sibling nodes.
    * Only inserts if there's no blank line between them already.
    */
-  private insertSpacingBetween(
-    current: Node,
-    next: Node,
-    operations: FormatterOperation[],
-  ): void {
+  private insertSpacingBetween(current: Node, next: Node, operations: FormatterOperation[]): void {
     if (!current.position || !next.position) return;
     const endLine = current.position.end.line - 1;
     const nextStartLine = next.position.start.line - 1;
