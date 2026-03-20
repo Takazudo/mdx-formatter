@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { SpecificFormatter } from '../src/specific-formatter.js';
+import { LegacyLineFormatter } from '../src/legacy-line-formatter.js';
 import { testSettings } from './test-helpers.js';
 import { loadConfig } from '../src/load-config.js';
 
@@ -23,7 +23,7 @@ describe('HTML Block Formatting in MDX', () => {
   <dd>Definition 1</dd>
 </dl>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -39,7 +39,7 @@ describe('HTML Block Formatting in MDX', () => {
   <dd>Definition with spaces</dd>
 </dl>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -67,7 +67,7 @@ describe('HTML Block Formatting in MDX', () => {
   </div>
 </dl>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -93,7 +93,7 @@ describe('HTML Block Formatting in MDX', () => {
   </dd>
 </dl>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -123,7 +123,7 @@ describe('HTML Block Formatting in MDX', () => {
   </tr>
 </table>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -159,7 +159,7 @@ describe('HTML Block Formatting in MDX', () => {
   </tbody>
 </table>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -177,7 +177,7 @@ describe('HTML Block Formatting in MDX', () => {
   </tr>
 </table>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -197,7 +197,7 @@ describe('HTML Block Formatting in MDX', () => {
   <li>Item 3</li>
 </ul>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -215,7 +215,7 @@ describe('HTML Block Formatting in MDX', () => {
   <li>Third</li>
 </ol>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -242,7 +242,7 @@ describe('HTML Block Formatting in MDX', () => {
   <li>Item 2</li>
 </ul>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -262,7 +262,7 @@ describe('HTML Block Formatting in MDX', () => {
   </div>
 </div>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -272,7 +272,7 @@ describe('HTML Block Formatting in MDX', () => {
 <span class="highlight">Important</span> text with <span>inline</span> elements.
 </div>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       // Formatter may collapse short inline content into single line
       expect(result).toContain('Important');
@@ -296,7 +296,7 @@ describe('HTML Block Formatting in MDX', () => {
   </ul>
 </div>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -316,7 +316,7 @@ describe('HTML Block Formatting in MDX', () => {
   <button type="submit">Submit</button>
 </form>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -338,7 +338,7 @@ describe('HTML Block Formatting in MDX', () => {
   </fieldset>
 </form>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -356,7 +356,7 @@ describe('HTML Block Formatting in MDX', () => {
   <option value="3">Option 3</option>
 </select>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -398,7 +398,7 @@ More content here.
   </tr>
 </table>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -426,7 +426,7 @@ Information here
 
 <CustomComponent prop="value" />`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -437,7 +437,7 @@ Information here
 [Link](https://example.com) in a div.
 </div>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       // Formatter may collapse short content; verify content is preserved
       expect(result).toContain('Bold text');
@@ -456,7 +456,7 @@ Information here
 <span></span>
 <p></p>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -474,7 +474,7 @@ Information here
   <hr />
 </div>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -492,7 +492,7 @@ Information here
   <!-- Another comment -->
 </div>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -514,7 +514,7 @@ function example() {
 </code></pre>
 </div>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -552,7 +552,7 @@ function example() {
   </section>
 </div>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -566,7 +566,7 @@ function example() {
 </dl>`;
 
       // Test with rule disabled
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       formatter.settings.formatHtmlBlocksInMdx = { enabled: false };
       const result = await formatter.format();
       expect(result).toBe(input); // Should not change when disabled
@@ -583,7 +583,7 @@ function example() {
     <dd>Definition</dd>
 </dl>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       formatter.settings.formatHtmlBlocksInMdx = {
         enabled: true,
         formatterConfig: { tabWidth: 4 },
@@ -597,7 +597,7 @@ function example() {
 <p>Content</p>
 </div>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       // Formatter preserves long attribute lines without wrapping
       expect(result).toContain('very-long-class-name-that-exceeds-normal-width');
@@ -612,7 +612,7 @@ function example() {
   <dd>   Definition with spaces   </dd>
 </dl>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       // Content whitespace should be trimmed
       expect(result).toContain('<dt>Term with spaces</dt>');
@@ -638,7 +638,7 @@ function example() {
   </dl>
 </Outro>`;
 
-      const formatter = new SpecificFormatter(input, settings);
+      const formatter = new LegacyLineFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });

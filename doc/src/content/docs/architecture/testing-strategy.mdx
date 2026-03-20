@@ -17,7 +17,7 @@ The TypeScript tests in `test/` are the source of truth for what correctly forma
 | --- | --- | --- |
 | `formatter.test.ts` | Core formatting | Heading spacing, list indentation, JSX handling, Japanese text |
 | `hybrid-formatter.test.ts` | Hybrid approach | AST analysis + line operations, conflict resolution |
-| `specific-rules.test.ts` | Individual rules | Detailed tests for each of the 10 rules |
+| `legacy-line-rules.test.ts` | Individual rules | Detailed tests for each of the 10 rules |
 | `idempotency.test.ts` | Stability | `format(format(x)) === format(x)` for all inputs |
 | `html-blocks.test.ts` | HTML formatting | Prettier-based HTML block formatting in MDX |
 | `load-config.test.ts` | Configuration | `.mdx-formatter.json` loading and merging |

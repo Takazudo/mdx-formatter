@@ -9,7 +9,7 @@ The formatter uses a hybrid approach: parse markdown/MDX into an AST (via remark
 - `index.ts` — Public API (`format()`, `formatFile()`, `checkFile()`, `detectMdx()`)
 - `cli.ts` — CLI entry point (commander-based)
 - `hybrid-formatter.ts` — Core formatter: parses AST, collects `FormatterOperation`s, applies them to source lines
-- `specific-formatter.ts` — Line-based JSX formatting (indentation, empty lines in block components)
+- `legacy-line-formatter.ts` — Line-based JSX formatting (indentation, empty lines in block components)
 - `html-block-formatter.ts` — Formats HTML blocks within MDX using Prettier
 - `indent-detector.ts` — Auto-detects indentation style from file content
 - `settings.ts` — Default `FormatterSettings` with all rules and their defaults

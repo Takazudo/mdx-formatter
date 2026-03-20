@@ -12,7 +12,7 @@ Tests use vitest with `globals: true` (no need to import `describe`/`it`/`expect
 
 - `formatter.test.ts` — Core formatting: headings, paragraphs, spacing, frontmatter, lists, MDX/JSX
 - `html-blocks.test.ts` — HTML block formatting within MDX
-- `specific-rules.test.ts` — JSX-specific rules (block components, indentation, expansion)
+- `legacy-line-rules.test.ts` — JSX-specific rules (block components, indentation, expansion)
 - `hybrid-formatter.test.ts` — HybridFormatter internals
 - `url-autolink.test.ts` — URL autolink handling
 - `validate-mdx.test.ts` — MDX validation edge cases

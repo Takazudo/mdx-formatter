@@ -255,7 +255,7 @@ export interface IndentPattern {
 }
 
 /**
- * JSX stack entry used in SpecificFormatter
+ * JSX stack entry used in LegacyLineFormatter
  */
 export interface JsxStackEntry {
   name: string;

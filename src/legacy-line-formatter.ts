@@ -1,5 +1,5 @@
 /**
- * SpecificFormatter - Applies only specific formatting rules to MDX content
+ * LegacyLineFormatter - Applies only specific formatting rules to MDX content
  * Does NOT reformat everything, only applies targeted fixes
  */
 
@@ -8,7 +8,7 @@ import { HtmlBlockFormatter } from './html-block-formatter.js';
 import { deepCloneSettings } from './utils.js';
 import type { FormatterSettings, JsxStackEntry } from './types.js';
 
-export class SpecificFormatter {
+export class LegacyLineFormatter {
   private content: string;
   private lines: string[];
   settings: FormatterSettings;
