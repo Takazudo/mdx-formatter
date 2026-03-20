@@ -52,6 +52,10 @@ interface ListItemNode extends AstNodeWithPosition {
   children: Node[];
 }
 
+const ADMONITION_START_RE = /^:::(note|tip|info|warning|danger|caution)/;
+const LIST_MARKER_RE = /^[-*+]\s/;
+const NUMBERED_LIST_RE = /^\d+\.\s/;
+
 export class HybridFormatter {
   private readonly originalContent: string;
   private content: string;
@@ -358,7 +362,7 @@ export class HybridFormatter {
    */
   private isAdmonitionStartLine(lineIndex: number): boolean {
     const line = this.lines[lineIndex];
-    return line !== undefined && /^:::(note|tip|info|warning|danger|caution)/.test(line.trim());
+    return line !== undefined && ADMONITION_START_RE.test(line.trim());
   }
 
   /**
@@ -488,7 +492,7 @@ export class HybridFormatter {
       if (inCodeBlock) continue;
 
       // Track admonitions
-      if (/^:::(note|tip|info|warning|danger|caution)/.test(trimmed)) {
+      if (ADMONITION_START_RE.test(trimmed)) {
         inAdmonitionBlock = true;
         continue;
       }
@@ -507,23 +511,24 @@ export class HybridFormatter {
       // Skip empty lines and already-spaced transitions
       if (!trimmed || !trimmedNext) continue;
 
+      const isListItem = LIST_MARKER_RE.test(trimmed) || NUMBERED_LIST_RE.test(trimmed);
+      const nextIsListItem = LIST_MARKER_RE.test(trimmedNext) || NUMBERED_LIST_RE.test(trimmedNext);
+
       // List item followed by non-list non-empty line
-      if (trimmed.match(/^[-*+]\s/) && !trimmedNext.match(/^[-*+]\s/)) {
-        // Don't add if next line is a numbered list continuation
-        if (trimmedNext.match(/^\d+\.\s/)) continue;
+      if (isListItem && !nextIsListItem) {
         // Don't add spacing before code block fences (handled by Part 3)
         if (trimmedNext.startsWith('```')) continue;
         // Don't add spacing before JSX elements (handled by visit above)
-        if (trimmedNext.match(/^<[A-Z]/)) continue;
+        if (/^<[A-Z]/.test(trimmedNext)) continue;
         operations.push({ type: 'insertLine', startLine: lineIdx + 1, content: '' });
       }
 
       // Non-list line followed by list item
-      if (!trimmed.match(/^[-*+]\s/) && !trimmed.match(/^\d+\.\s/) && trimmedNext.match(/^[-*+]\s/)) {
+      if (!isListItem && nextIsListItem) {
         // Don't add if current line is a heading (handled by visit above)
-        if (trimmed.match(/^#{1,6}\s/)) continue;
+        if (/^#{1,6}\s/.test(trimmed)) continue;
         // Don't add if current line is a JSX element (handled by visit above)
-        if (trimmed.startsWith('<') && trimmed.match(/^<[A-Z]/)) continue;
+        if (/^<[A-Z]/.test(trimmed)) continue;
         operations.push({ type: 'insertLine', startLine: lineIdx + 1, content: '' });
       }
     }

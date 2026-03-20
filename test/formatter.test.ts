@@ -808,6 +808,20 @@ This paragraph follows an image.
       expect(result).toBe(expected);
     });
 
+    it('should add empty line between paragraph and numbered list', async () => {
+      const input = 'Some text\n1. First\n2. Second';
+      const expected = 'Some text\n\n1. First\n2. Second';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should add empty line between numbered list and paragraph', async () => {
+      const input = '1. First\n2. Second\nMore text';
+      const expected = '1. First\n2. Second\n\nMore text';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
     it('should not add empty lines if already present', async () => {
       const input = 'Some text\n\n- Item 1\n- Item 2\n\nMore text';
       const expected = 'Some text\n\n- Item 1\n- Item 2\n\nMore text';
