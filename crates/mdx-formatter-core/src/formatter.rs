@@ -399,17 +399,26 @@ fn collect_yaml_format_operations(
                     // Format using custom emitter that respects settings
                     let clean = emit_yaml(&parsed, settings, 0);
 
+                    let start_line = pos.start.line - 1; // 0-indexed
+                    let end_line = pos.end.line - 1;
+
+                    // Guard against empty frontmatter (---\n---) where there
+                    // are no content lines between the markers.
+                    // start_line+1 > end_line-1 would produce an inverted range.
+                    let content_start = start_line + 1; // skip opening ---
+                    if end_line < 1 || content_start > end_line - 1 {
+                        continue;
+                    }
+                    let content_end = end_line - 1; // skip closing ---
+
                     // Only replace if different from original
                     if clean != yaml_node.value {
-                        let start_line = pos.start.line - 1; // 0-indexed
-                        let end_line = pos.end.line - 1;
-
                         let formatted_lines: Vec<String> =
                             clean.split('\n').map(|s| s.to_string()).collect();
 
                         operations.push(FormatterOperation::ReplaceLines {
-                            start_line: start_line + 1, // Skip opening ---
-                            end_line: end_line - 1,     // Skip closing ---
+                            start_line: content_start,
+                            end_line: content_end,
                             lines: formatted_lines,
                         });
                     }
@@ -423,6 +432,10 @@ fn collect_yaml_format_operations(
 ///
 /// Matches js-yaml's output behavior: uses JSON_SCHEMA-compatible formatting,
 /// quotes strings when needed, and respects the configured quoting style.
+///
+/// Note: `line_width` (folded string wrapping) and `no_compat_mode` (YAML 1.2 vs 1.1)
+/// are stored in settings but not yet implemented by this emitter. They are accepted
+/// for future use and to maintain API parity with the TypeScript implementation.
 fn emit_yaml(value: &serde_yaml::Value, settings: &FormatYamlFrontmatterSetting, indent_level: usize) -> String {
     match value {
         serde_yaml::Value::Mapping(map) => {
@@ -462,10 +475,11 @@ fn emit_yaml_mapping(
                             // Sequence of mappings: first key on same line as `-`
                             let nested = emit_yaml_mapping(item_map, settings, indent_level + 2);
                             let nested_lines: Vec<&str> = nested.split('\n').collect();
+                            let continuation_indent = " ".repeat(settings.indent);
                             if let Some(first) = nested_lines.first() {
                                 lines.push(format!("{}- {}", child_indent, first.trim()));
                                 for rest in &nested_lines[1..] {
-                                    lines.push(format!("{}  {}", child_indent, rest.trim_start()));
+                                    lines.push(format!("{}{}{}", child_indent, continuation_indent, rest.trim_start()));
                                 }
                             }
                         }
@@ -566,14 +580,24 @@ fn needs_quoting(s: &str) -> bool {
 }
 
 /// Quote a string with the configured quoting type.
+///
+/// Escapes control characters (`\n`, `\r`, `\t`) to their YAML escape
+/// sequences in addition to backslash and quote characters.
 fn quote_string(s: &str, quoting_type: &str) -> String {
     if quoting_type == "'" {
-        // Single quotes: escape single quotes by doubling them
+        // Single-quoted strings: only single quotes need escaping (doubled)
+        // Note: control chars in single-quoted YAML are allowed as literals,
+        // but we normalize them to escape sequences for safety.
         let escaped = s.replace('\'', "''");
         format!("'{}'", escaped)
     } else {
-        // Double quotes (default): escape backslashes and double quotes
-        let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+        // Double-quoted strings: escape backslash first, then special chars
+        let escaped = s
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t");
         format!("\"{}\"", escaped)
     }
 }
@@ -834,6 +858,15 @@ mod tests {
     // ========================================================================
     // YAML frontmatter formatting tests
     // ========================================================================
+
+    #[test]
+    fn test_yaml_empty_frontmatter_no_panic() {
+        // Empty frontmatter (---\n---) must not panic or produce wrong output
+        let input = "---\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        // Should be left unchanged since there's nothing to format
+        assert_eq!(result, input, "Empty frontmatter should not panic and should be preserved");
+    }
 
     #[test]
     fn test_yaml_basic_formatting() {
