@@ -1,6 +1,6 @@
 /**
- * MdxFormatter - AST-based markdown/MDX formatter
- * Parses content into an AST, then applies targeted line-based operations
+ * HybridFormatter - Uses AST analysis to apply targeted fixes
+ * This implements the proper hybrid approach from the plan
  */
 
 import { unified } from 'unified';
@@ -52,11 +52,7 @@ interface ListItemNode extends AstNodeWithPosition {
   children: Node[];
 }
 
-const ADMONITION_START_RE = /^:::(note|tip|info|warning|danger|caution)/;
-const LIST_MARKER_RE = /^[-*+]\s/;
-const NUMBERED_LIST_RE = /^\d+\.\s/;
-
-export class MdxFormatter {
+export class HybridFormatter {
   private readonly originalContent: string;
   private content: string;
   private lines: string[];
@@ -357,46 +353,7 @@ export class MdxFormatter {
     return result.replace(/\n{3,}/g, '\n\n');
   }
 
-  /**
-   * Check if a line is an admonition start marker (:::note, :::tip, etc.)
-   */
-  private isAdmonitionStartLine(lineIndex: number): boolean {
-    const line = this.lines[lineIndex];
-    return line !== undefined && ADMONITION_START_RE.test(line.trim());
-  }
-
-  /**
-   * Check if a line is an admonition closing marker (:::)
-   */
-  private isAdmonitionEndLine(lineIndex: number): boolean {
-    const line = this.lines[lineIndex];
-    return line !== undefined && line.trim() === ':::';
-  }
-
-  /**
-   * Try to insert spacing between two consecutive sibling nodes.
-   * Only inserts if there's no blank line between them already.
-   */
-  private insertSpacingBetween(current: Node, next: Node, operations: FormatterOperation[]): void {
-    if (!current.position || !next.position) return;
-    const endLine = current.position.end.line - 1;
-    const nextStartLine = next.position.start.line - 1;
-    if (nextStartLine === endLine + 1) {
-      const lineBetween = this.lines[endLine + 1];
-      if (lineBetween !== undefined && lineBetween.trim() !== '') {
-        operations.push({
-          type: 'insertLine',
-          startLine: endLine + 1,
-          content: '',
-        });
-      }
-    }
-  }
-
   collectSpacingOperations(operations: FormatterOperation[]): void {
-    // --- Part 1: Heading and JSX spacing (all depths) via visit() ---
-    // This preserves the original behavior for headings and JSX elements
-    // which need spacing at any nesting level.
     visit(this.ast, (node: Node) => {
       // Add spacing after headings
       if (node.type === 'heading' && node.position) {
@@ -404,7 +361,7 @@ export class MdxFormatter {
         const endLine = headingNode.position.end.line - 1;
         if (endLine < this.lines.length - 1) {
           const nextLine = this.lines[endLine + 1];
-          if (nextLine && nextLine.trim() !== '') {
+          if (nextLine && nextLine.trim() !== '' && !nextLine.startsWith('#')) {
             operations.push({
               type: 'insertLine',
               startLine: endLine + 1,
@@ -414,7 +371,7 @@ export class MdxFormatter {
         }
       }
 
-      // Add spacing after JSX components when followed by non-JSX text
+      // FIXED: Add spacing after JSX components when followed by text or another JSX component
       if (this.isFormattableJsxNode(node)) {
         const jsxNode = node;
         const endLine = jsxNode.position!.end.line - 1;
@@ -425,13 +382,15 @@ export class MdxFormatter {
         }
         if (endLine < this.lines.length - 1) {
           const nextLine = this.lines[endLine + 1];
+          // Check if next line is text (not empty, not heading)
           if (
             nextLine &&
             nextLine.trim() !== '' &&
             !nextLine.trim().startsWith('#') &&
             !nextLine.trim().startsWith('-') &&
-            !nextLine.trim().match(/^\d+\./)
+            !nextLine.trim().match(/^\d+\./) // Not a numbered list
           ) {
+            // Add spacing between consecutive block components
             const blockComponents = this.settings.addEmptyLinesInBlockJsx.blockComponents || [];
             const isBlockComponent = blockComponents.includes(jsxNode.name || '');
             const nextIsBlockComponent = blockComponents.some((name: string) =>
@@ -444,7 +403,9 @@ export class MdxFormatter {
                 startLine: endLine + 1,
                 content: '',
               });
-            } else if (!nextLine.trim().startsWith('<')) {
+            }
+            // Add spacing after JSX when followed by text (not another JSX)
+            else if (!nextLine.trim().startsWith('<')) {
               operations.push({
                 type: 'insertLine',
                 startLine: endLine + 1,
@@ -455,171 +416,6 @@ export class MdxFormatter {
         }
       }
     });
-
-    // --- Part 2: Line-based list boundary detection ---
-    // When there's no blank line between a list and following text, remark includes
-    // the text inside the list node. We need line-based detection for these cases.
-    let inCodeBlock = false;
-    let inFrontmatter = false;
-    let inAdmonitionBlock = false;
-    let jsxDepth = 0;
-    for (let lineIdx = 0; lineIdx < this.lines.length - 1; lineIdx++) {
-      const line = this.lines[lineIdx];
-      const nextLine = this.lines[lineIdx + 1];
-      const trimmed = line.trim();
-      const trimmedNext = nextLine.trim();
-
-      // Track frontmatter
-      if (lineIdx === 0 && trimmed === '---') {
-        inFrontmatter = true;
-        continue;
-      }
-      if (inFrontmatter && trimmed === '---') {
-        inFrontmatter = false;
-        continue;
-      }
-      if (inFrontmatter) continue;
-
-      // Track code blocks
-      if (trimmed.startsWith('```')) {
-        inCodeBlock = !inCodeBlock;
-        continue;
-      }
-      if (inCodeBlock) continue;
-
-      // Track admonitions
-      if (ADMONITION_START_RE.test(trimmed)) {
-        inAdmonitionBlock = true;
-        // Add spacing before admonition start if preceded by non-empty content
-        if (lineIdx > 0 && this.lines[lineIdx - 1]?.trim() !== '') {
-          // Check we haven't already inserted at this position
-          const alreadyInserted = operations.some(
-            (op) => op.type === 'insertLine' && op.startLine === lineIdx,
-          );
-          if (!alreadyInserted) {
-            operations.push({ type: 'insertLine', startLine: lineIdx, content: '' });
-          }
-        }
-        continue;
-      }
-      if (inAdmonitionBlock && trimmed === ':::') {
-        inAdmonitionBlock = false;
-        // Add spacing after admonition end if followed by non-empty content
-        if (trimmedNext && trimmedNext !== '') {
-          operations.push({ type: 'insertLine', startLine: lineIdx + 1, content: '' });
-        }
-        continue;
-      }
-      if (inAdmonitionBlock) continue;
-
-      // Track JSX nesting depth — don't add list spacing inside JSX blocks
-      const openTags = (line.match(/<[A-Z][^>]*(?<!\/\s*)>/g) || []).length;
-      const closeTags = (line.match(/<\/[A-Z][^>]*>/g) || []).length;
-      jsxDepth = Math.max(0, jsxDepth + openTags - closeTags);
-      if (jsxDepth > 0) continue;
-
-      // Skip empty lines and already-spaced transitions
-      if (!trimmed || !trimmedNext) continue;
-
-      const isListItem = LIST_MARKER_RE.test(trimmed) || NUMBERED_LIST_RE.test(trimmed);
-      const nextIsListItem = LIST_MARKER_RE.test(trimmedNext) || NUMBERED_LIST_RE.test(trimmedNext);
-
-      // List item followed by non-list non-empty line
-      if (isListItem && !nextIsListItem) {
-        // Don't add spacing before code block fences (handled by Part 3)
-        if (trimmedNext.startsWith('```')) continue;
-        // Don't add spacing before JSX elements (handled by visit above)
-        if (/^<[A-Z]/.test(trimmedNext)) continue;
-        operations.push({ type: 'insertLine', startLine: lineIdx + 1, content: '' });
-      }
-
-      // Non-list line followed by list item
-      if (!isListItem && nextIsListItem) {
-        // Don't add if current line is a heading (handled by visit above)
-        if (/^#{1,6}\s/.test(trimmed)) continue;
-        // Don't add if current line is a JSX element (handled by visit above)
-        if (/^<[A-Z]/.test(trimmed)) continue;
-        operations.push({ type: 'insertLine', startLine: lineIdx + 1, content: '' });
-      }
-    }
-
-    // --- Part 3: AST-based paragraph/code spacing (root level) via sibling pairs ---
-    // This handles spacing between block elements at the root level.
-    const children = (this.ast as Parent).children || [];
-
-    // Track admonition regions to skip spacing inside them
-    let inAdmonition = false;
-
-    for (let i = 0; i < children.length - 1; i++) {
-      const current = children[i];
-      const next = children[i + 1];
-
-      if (!current.position || !next.position) continue;
-
-      // Skip yaml frontmatter nodes
-      if (current.type === 'yaml') continue;
-
-      // Track admonition regions (:::note ... :::)
-      if (
-        current.type === 'paragraph' &&
-        this.isAdmonitionStartLine(current.position.start.line - 1)
-      ) {
-        inAdmonition = true;
-      }
-      if (
-        current.type === 'paragraph' &&
-        this.isAdmonitionEndLine(current.position.start.line - 1)
-      ) {
-        inAdmonition = false;
-        // Don't skip — we still check spacing AFTER the closing :::
-      }
-
-      // Skip spacing between nodes inside admonition blocks
-      if (inAdmonition) continue;
-
-      // Paragraph ↔ list
-      if (current.type === 'paragraph' && next.type === 'list') {
-        this.insertSpacingBetween(current, next, operations);
-        continue;
-      }
-      if (current.type === 'list' && next.type === 'paragraph') {
-        this.insertSpacingBetween(current, next, operations);
-        continue;
-      }
-
-      // List ↔ other block elements (code, heading handled by visit above)
-      if (current.type === 'list' && next.type === 'code') {
-        this.insertSpacingBetween(current, next, operations);
-        continue;
-      }
-      if (current.type === 'code' && next.type === 'list') {
-        this.insertSpacingBetween(current, next, operations);
-        continue;
-      }
-
-      // Code ↔ paragraph
-      if (current.type === 'code' && next.type === 'paragraph') {
-        this.insertSpacingBetween(current, next, operations);
-        continue;
-      }
-      if (current.type === 'paragraph' && next.type === 'code') {
-        this.insertSpacingBetween(current, next, operations);
-        continue;
-      }
-
-      // Non-heading, non-JSX element followed by heading
-      // Note: heading → anything is handled by visit() above
-      // Note: JSX → heading is handled by visit() above (JSX skips headings intentionally)
-      if (
-        current.type !== 'heading' &&
-        current.type !== 'mdxJsxFlowElement' &&
-        current.type !== 'mdxJsxTextElement' &&
-        next.type === 'heading'
-      ) {
-        this.insertSpacingBetween(current, next, operations);
-        continue;
-      }
-    }
   }
 
   // NEW: Method to fix list indentation

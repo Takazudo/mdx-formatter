@@ -253,12 +253,3 @@ export interface IndentPattern {
   type: 'tab' | 'space';
   size: number;
 }
-
-/**
- * JSX stack entry (legacy, retained for type compatibility)
- */
-export interface JsxStackEntry {
-  name: string;
-  isContainer: boolean;
-  hasContent: boolean;
-}
