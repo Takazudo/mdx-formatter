@@ -178,7 +178,7 @@ fn check_node_spacing(
         Node::Heading(_) => {
             if let Some(pos) = node.position() {
                 let end_line = pos.end.line - 1; // 0-indexed
-                if end_line < lines.len() - 1 {
+                if lines.len() > 1 && end_line < lines.len() - 1 {
                     let next_line = lines[end_line + 1];
                     // After heading: insert empty line if next is non-empty, non-heading
                     if !next_line.trim().is_empty() && !next_line.starts_with('#') {
@@ -193,7 +193,7 @@ fn check_node_spacing(
         Node::MdxJsxFlowElement(_) => {
             if let Some(pos) = node.position() {
                 let end_line = pos.end.line - 1; // 0-indexed
-                if end_line < lines.len() - 1 {
+                if lines.len() > 1 && end_line < lines.len() - 1 {
                     let next_line = lines[end_line + 1];
                     // Skip if current line is inside a table row
                     if let Some(current_line) = lines.get(end_line) {
@@ -811,6 +811,7 @@ fn collect_jsx_indent_operations(
     operations: &mut Vec<FormatterOperation>,
 ) {
     let container_names = &settings.indent_jsx_content.container_components;
+    let indent_str = " ".repeat(settings.indent_jsx_content.indent_size);
 
     visit_jsx_elements(node, &mut |info: JsxElementInfo| {
         if !is_formattable_jsx(info.name, settings) {
@@ -842,10 +843,10 @@ fn collect_jsx_indent_operations(
             }
 
             // If not indented, add indent operation
-            if !line.starts_with("  ") {
+            if !line.starts_with(&indent_str) {
                 operations.push(FormatterOperation::IndentLine {
                     start_line: i,
-                    indent: "  ".to_string(),
+                    indent: indent_str.clone(),
                 });
             }
         }
@@ -1157,14 +1158,18 @@ fn collect_yaml_format_operations(
                         let start_line = pos.start.line - 1; // 0-indexed
                         let end_line = pos.end.line - 1;
 
-                        let formatted_lines: Vec<String> =
-                            clean.split('\n').map(|s| s.to_string()).collect();
+                        // Guard against empty frontmatter (---\n---)
+                        // where start_line + 1 > end_line - 1
+                        if end_line > start_line + 1 {
+                            let formatted_lines: Vec<String> =
+                                clean.split('\n').map(|s| s.to_string()).collect();
 
-                        operations.push(FormatterOperation::ReplaceLines {
-                            start_line: start_line + 1, // Skip opening ---
-                            end_line: end_line - 1,     // Skip closing ---
-                            lines: formatted_lines,
-                        });
+                            operations.push(FormatterOperation::ReplaceLines {
+                                start_line: start_line + 1, // Skip opening ---
+                                end_line: end_line - 1,     // Skip closing ---
+                                lines: formatted_lines,
+                            });
+                        }
                     }
                 }
             }
