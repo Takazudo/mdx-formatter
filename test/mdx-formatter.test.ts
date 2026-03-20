@@ -1,12 +1,12 @@
 import { describe, it, expect, test } from 'vitest';
-import { HybridFormatter } from '../src/hybrid-formatter.js';
+import { MdxFormatter } from '../src/mdx-formatter.js';
 import { testSettings } from './test-helpers.js';
 import { loadConfig } from '../src/load-config.js';
 import type { DeepPartial, FormatterSettings } from '../src/types.js';
 
 const settings = loadConfig({ settings: testSettings });
 
-describe('HybridFormatter - AST-based MDX Formatter', () => {
+describe('MdxFormatter - AST-based MDX Formatter', () => {
   const tabSettings = loadConfig({
     settings: {
       ...testSettings,
@@ -40,7 +40,7 @@ describe('HybridFormatter - AST-based MDX Formatter', () => {
   restrictedWidth="500"
   alt="ディスプレイ: Sequencer Mode選択の図" />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -54,7 +54,7 @@ url="https://youtube.com/watch?v=123" title="Demo Video"
   url="https://youtube.com/watch?v=123"
   title="Demo Video" />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -69,7 +69,7 @@ srcs={[
 divide="3"
 />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       // Verify proper indentation applied
       expect(result).toContain('  srcs={');
@@ -87,7 +87,7 @@ Content here`;
 
 Content here`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -100,7 +100,7 @@ Next paragraph`;
 
 Next paragraph`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -114,7 +114,7 @@ Content here`;
 
 Content here`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -127,7 +127,7 @@ Content here`;
 
 ### Heading 2`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -146,7 +146,7 @@ className="center"
   alt="test"
   className="center" />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -163,7 +163,7 @@ stringProp="test"
   prop2={value2}
   stringProp="test" />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -181,7 +181,7 @@ stringProp="test"
   <dd>Definition 1</dd>
 </dl>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -201,7 +201,7 @@ stringProp="test"
   <dd>Def 2</dd>
 </dl>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -221,7 +221,7 @@ Multiple lines here.
 
 </Outro>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -241,7 +241,7 @@ Important information
 
 </InfoBox>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -260,7 +260,7 @@ Important information
 
 </LayoutDivideItem>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -278,7 +278,7 @@ More content
 
 </Column>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -307,7 +307,7 @@ Right content
 </LayoutDivideItem>
 </LayoutDivide>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -325,7 +325,7 @@ Content already has empty line above.
 
 </Outro>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -339,7 +339,7 @@ Single line content
 
 </InfoBox>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -364,7 +364,7 @@ Other content
 
 </Column>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -384,7 +384,7 @@ With multiple lines.
 
 </Outro>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -402,7 +402,7 @@ Multiple lines here.
   Multiple lines here.
 </Outro>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       // Temporarily enable indentation rule for this test
       formatter.settings.indentJsxContent.enabled = true;
       formatter.settings.addEmptyLinesInBlockJsx = { enabled: false };
@@ -423,7 +423,7 @@ Important information
   - Point 2
 </InfoBox>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       // Temporarily enable indentation rule for this test
       formatter.settings.indentJsxContent.enabled = true;
       formatter.settings.addEmptyLinesInBlockJsx = { enabled: false };
@@ -441,7 +441,7 @@ Right content
 </LayoutDivideItem>
 </LayoutDivide>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       // Temporarily enable indentation rule for this test
       formatter.settings.indentJsxContent.enabled = true;
       formatter.settings.addEmptyLinesInBlockJsx = { enabled: false };
@@ -463,7 +463,7 @@ This is a note
 This is a note
 :::`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -477,7 +477,7 @@ Advanced usage here
 Advanced usage here
 :::`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -515,7 +515,7 @@ Important note here
 
 </InfoBox>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -535,7 +535,7 @@ More content here`;
 
 More content here`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -559,7 +559,7 @@ More content here`;
 
 次のセクション`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -570,7 +570,7 @@ More content here`;
       const input = '';
       const expected = '';
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -579,7 +579,7 @@ More content here`;
       const input = '   \n\n   ';
       const expected = '';
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result.trim()).toBe(expected);
     });
@@ -593,7 +593,7 @@ More content here`;
 <ExImg src="/test.jpg" alt="test" />
 \`\`\``;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -607,7 +607,7 @@ More content here`;
 
 <Component prop1="value1" prop2="value2" prop3="value3" />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       // Code block content should be preserved
       expect(result).toContain(
@@ -621,7 +621,7 @@ More content here`;
       // Single-line JSX stays single-line (expandSingleLineJsx disabled)
       const input = `<ExImg src="/test.jpg" alt="テスト画像" title="これはテストです" className="center" />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(input);
     });
@@ -631,7 +631,7 @@ More content here`;
     it('should respect disabled rules', async () => {
       const input = `<ExImg src="/test.jpg" alt="test" className="center" />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       // Disable single-line expansion
       formatter.settings.expandSingleLineJsx.enabled = false;
 
@@ -645,7 +645,7 @@ src="/test.jpg"
 alt="test"
 />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       formatter.settings.formatMultiLineJsx.indentSize = 4;
 
       const expected = `<ExImg
@@ -720,7 +720,7 @@ alt="test"
   </div>
 </dl>`;
 
-        const formatter = new HybridFormatter(input, settings);
+        const formatter = new MdxFormatter(input, settings);
         const result = await formatter.format();
 
         // Check that there are no duplicate closing tags
@@ -745,7 +745,7 @@ alt="test"
   <p>Last paragraph</p>
 </div>`;
 
-        const formatter = new HybridFormatter(input, settings);
+        const formatter = new MdxFormatter(input, settings);
         const result = await formatter.format();
 
         // Ensure no duplication
@@ -771,7 +771,7 @@ alt="test"
   </section>
 </article>`;
 
-        const formatter = new HybridFormatter(input, settings);
+        const formatter = new MdxFormatter(input, settings);
         const result = await formatter.format();
 
         // Check for correct number of closing tags
@@ -810,7 +810,7 @@ Text after HTML block.
 
 ## Another Heading`;
 
-        const formatter = new HybridFormatter(input, settings);
+        const formatter = new MdxFormatter(input, settings);
         const result = await formatter.format();
 
         // Ensure HTML block is not duplicated
@@ -836,7 +836,7 @@ Text after HTML block.
   </div>
 </dl>`;
 
-        const formatter = new HybridFormatter(input, settings);
+        const formatter = new MdxFormatter(input, settings);
         const result = await formatter.format();
 
         // Check that MDX expressions are preserved
@@ -856,7 +856,7 @@ Text after HTML block.
   </div>
 </dl>`;
 
-        const formatter = new HybridFormatter(input, settings);
+        const formatter = new MdxFormatter(input, settings);
         const result = await formatter.format();
 
         // Check attributes are preserved
@@ -881,7 +881,7 @@ Text after HTML block.
     </div>
 </dl>`;
 
-        const formatter = new HybridFormatter(input, settings);
+        const formatter = new MdxFormatter(input, settings);
         const result = await formatter.format();
 
         // Ensure no duplication of closing tags
@@ -900,7 +900,7 @@ Text after HTML block.
   <div></div>
 </dl>`;
 
-        const formatter = new HybridFormatter(input, settings);
+        const formatter = new MdxFormatter(input, settings);
         const result = await formatter.format();
 
         expect(result.match(/<\/dl>/g)?.length).toBe(1);
@@ -914,7 +914,7 @@ Text after HTML block.
   <p>Text</p>
 </div>`;
 
-        const formatter = new HybridFormatter(input, settings);
+        const formatter = new MdxFormatter(input, settings);
         const result = await formatter.format();
 
         expect(result.match(/<\/div>/g)?.length).toBe(1);
@@ -929,7 +929,7 @@ Text after HTML block.
   <p>HTML paragraph</p>
 </div>`;
 
-        const formatter = new HybridFormatter(input, settings);
+        const formatter = new MdxFormatter(input, settings);
         const result = await formatter.format();
 
         // CustomComponent should be preserved as JSX
@@ -965,7 +965,7 @@ tags:
 
 Content here`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -987,7 +987,7 @@ tags:
 
 Content`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1005,7 +1005,7 @@ title: "Claude Codeの/batchとAgent Teams: 2つのエージェント並列実�
 
 Content here`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1027,7 +1027,7 @@ subtitle: "key: value pair here"
 
 Content`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1045,7 +1045,7 @@ title: "Already quoted: value"
 
 Content`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1075,7 +1075,7 @@ tags:
 
 Content here`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1095,7 +1095,7 @@ description: "Section #1 of the guide"
 
 Content`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1115,7 +1115,7 @@ date: 2024-01-15
 
 Content`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1135,7 +1135,7 @@ ref: "*main"
 
 Content`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1153,7 +1153,7 @@ tag: "!important"
 
 Content`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1173,7 +1173,7 @@ zip: "00750"
 
 Content`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1190,7 +1190,7 @@ Content`;
 
       // yaml.load/dump round-trip normalizes folded (>) to literal (|)
       // and folds the content into a single line. The key point is no crash.
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toContain('description:');
       expect(result).toContain('This is a folded value');
@@ -1210,7 +1210,7 @@ title: "He said \\"hello: world\\""
 
 Content`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1231,7 +1231,7 @@ title: foo: bar
 
 Content`;
 
-      const formatter = new HybridFormatter(input, settingsWithoutFix);
+      const formatter = new MdxFormatter(input, settingsWithoutFix);
       const result = await formatter.format();
       // Should be unchanged since yaml.load() fails without preprocessing
       expect(result).toBe(input);
@@ -1249,7 +1249,7 @@ Content`;
 </div>\`}
   height={320} />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(input);
     });
@@ -1265,7 +1265,7 @@ Content`;
 }\`}
   height={320} />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(input);
     });
@@ -1292,7 +1292,7 @@ Content`;
 }\`}
   height={400} />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(input);
     });
@@ -1307,7 +1307,7 @@ Content`;
 </div>\`}
   height={320} />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(input);
     });
@@ -1318,7 +1318,7 @@ Content`;
   html={\`<p>Simple</p>\`}
   height={320} />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(input);
     });
@@ -1329,7 +1329,7 @@ Content`;
   html={\`\`}
   height={320} />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(input);
     });
@@ -1352,7 +1352,7 @@ Content`;
         },
       };
 
-      const formatter = new HybridFormatter(input, loadConfig({ settings: disabledSettings }));
+      const formatter = new MdxFormatter(input, loadConfig({ settings: disabledSettings }));
       const result = await formatter.format();
       // When disabled, the formatter flattens template literal indentation
       expect(result).not.toBe(input);
@@ -1369,7 +1369,7 @@ Content`;
 | <kbd>Enter</kbd> | Activate |
 | <kbd>Escape</kbd> | Close |`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(input);
     });
@@ -1381,7 +1381,7 @@ Content`;
 | <strong>bold</strong> | Bold text |
 | <em>italic</em> | Italic text |`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(input);
     });
@@ -1394,7 +1394,7 @@ Some text after the component.`;
 
 Some text after the component.`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1409,7 +1409,7 @@ Some text after the component.`;
 
 Some text after the table.`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(input);
     });
@@ -1430,7 +1430,7 @@ Some text after the table.`;
   </TabItem>
 </Tabs>`;
 
-      const formatter = new HybridFormatter(input, tabSettings);
+      const formatter = new MdxFormatter(input, tabSettings);
       const result = await formatter.format();
 
       // The closing tags should NOT be duplicated
@@ -1455,10 +1455,10 @@ Some text after the table.`;
   </TabItem>
 </Tabs>`;
 
-      const formatter1 = new HybridFormatter(input, tabSettings);
+      const formatter1 = new MdxFormatter(input, tabSettings);
       const result1 = await formatter1.format();
 
-      const formatter2 = new HybridFormatter(result1, tabSettings);
+      const formatter2 = new MdxFormatter(result1, tabSettings);
       const result2 = await formatter2.format();
 
       // Second formatting pass should produce the same result (idempotent)
@@ -1477,10 +1477,10 @@ Multiple lines here.
 
 </Outro>`;
 
-      const formatter1 = new HybridFormatter(input, settings);
+      const formatter1 = new MdxFormatter(input, settings);
       const result1 = await formatter1.format();
 
-      const formatter2 = new HybridFormatter(result1, settings);
+      const formatter2 = new MdxFormatter(result1, settings);
       const result2 = await formatter2.format();
 
       // Must be idempotent - second pass should produce same result
@@ -1498,10 +1498,10 @@ Multiple lines here.
 
 </Danger>`;
 
-      const formatter1 = new HybridFormatter(input, blockSettings);
+      const formatter1 = new MdxFormatter(input, blockSettings);
       const result1 = await formatter1.format();
 
-      const formatter2 = new HybridFormatter(result1, blockSettings);
+      const formatter2 = new MdxFormatter(result1, blockSettings);
       const result2 = await formatter2.format();
 
       // Must be idempotent
@@ -1518,10 +1518,10 @@ Multiple lines here.
 \`\`\`
 </Danger>`;
 
-      const formatter1 = new HybridFormatter(input, blockSettings);
+      const formatter1 = new MdxFormatter(input, blockSettings);
       const result1 = await formatter1.format();
 
-      const formatter2 = new HybridFormatter(result1, blockSettings);
+      const formatter2 = new MdxFormatter(result1, blockSettings);
       const result2 = await formatter2.format();
 
       // Must be idempotent
@@ -1547,7 +1547,7 @@ npm install zudo-doc
 
 </TabItem>`;
 
-      const formatter = new HybridFormatter(input, tabSettings);
+      const formatter = new MdxFormatter(input, tabSettings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1586,7 +1586,7 @@ npm install zudo-doc
 
 </Tabs>`;
 
-      const formatter = new HybridFormatter(input, tabSettings);
+      const formatter = new MdxFormatter(input, tabSettings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1612,7 +1612,7 @@ npm install zudo-doc
 
 </Danger>`;
 
-      const formatter = new HybridFormatter(input, blockSettings);
+      const formatter = new MdxFormatter(input, blockSettings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1628,7 +1628,7 @@ npm install zudo-doc
   condition={a > b}
   name="test" />`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
     });
@@ -1668,7 +1668,7 @@ npm install zudo-doc
 
 </Tabs>`;
 
-      const formatter = new HybridFormatter(input, deepSettings);
+      const formatter = new MdxFormatter(input, deepSettings);
       const result = await formatter.format();
       expect(result).toBe(expected);
 
@@ -1678,7 +1678,7 @@ npm install zudo-doc
       expect((result.match(/<\/Note>/g) || []).length).toBe(1);
 
       // Verify idempotency
-      const formatter2 = new HybridFormatter(result, deepSettings);
+      const formatter2 = new MdxFormatter(result, deepSettings);
       const result2 = await formatter2.format();
       expect(result2).toBe(result);
     });
@@ -1694,16 +1694,16 @@ Content here.
 
 </Danger>`;
 
-      const formatter1 = new HybridFormatter(input, blockSettings);
+      const formatter1 = new MdxFormatter(input, blockSettings);
       const result1 = await formatter1.format();
 
       // Second pass must be identical (no oscillation)
-      const formatter2 = new HybridFormatter(result1, blockSettings);
+      const formatter2 = new MdxFormatter(result1, blockSettings);
       const result2 = await formatter2.format();
       expect(result2).toBe(result1);
 
       // Third pass for good measure
-      const formatter3 = new HybridFormatter(result2, blockSettings);
+      const formatter3 = new MdxFormatter(result2, blockSettings);
       const result3 = await formatter3.format();
       expect(result3).toBe(result2);
     });
@@ -1717,7 +1717,7 @@ Content here.
 Content here.
 </Danger>`;
 
-      const formatter1 = new HybridFormatter(input, blockSettings);
+      const formatter1 = new MdxFormatter(input, blockSettings);
       const result1 = await formatter1.format();
 
       // Must have empty lines after opening tag and before closing tag
@@ -1725,7 +1725,7 @@ Content here.
       expect(result1).toContain('Content here.\n\n</Danger>');
 
       // Second pass must be identical
-      const formatter2 = new HybridFormatter(result1, blockSettings);
+      const formatter2 = new MdxFormatter(result1, blockSettings);
       const result2 = await formatter2.format();
       expect(result2).toBe(result1);
     });
@@ -1747,7 +1747,7 @@ Some text
 
 </InfoBox>`;
 
-      const formatter = new HybridFormatter(input, settings);
+      const formatter = new MdxFormatter(input, settings);
       const result = await formatter.format();
       expect(result).toBe(expected);
 

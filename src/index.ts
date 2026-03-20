@@ -1,10 +1,10 @@
 /**
  * Main entry point for the markdown formatter
- * Uses HybridFormatter for AST-based formatting
+ * Uses MdxFormatter for AST-based formatting
  */
 
 import { promises as fs } from 'fs';
-import { HybridFormatter } from './hybrid-formatter.js';
+import { MdxFormatter } from './mdx-formatter.js';
 import { loadConfig } from './load-config.js';
 import { detectMdx } from './detect-mdx.js';
 import type { FormatOptions } from './types.js';
@@ -23,7 +23,7 @@ export async function format(content: string, options: FormatOptions = {}): Prom
     // cases (most files converge in 1, edge cases in 2).
     const MAX_ITERATIONS = 3;
     for (let i = 0; i < MAX_ITERATIONS; i++) {
-      const formatter = new HybridFormatter(result, settings);
+      const formatter = new MdxFormatter(result, settings);
       const formatted = await formatter.format();
       if (formatted === result) break;
       result = formatted;

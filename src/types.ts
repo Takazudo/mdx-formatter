@@ -184,7 +184,7 @@ export type DeepPartial<T> = {
 };
 
 /**
- * Formatter operation types used in HybridFormatter
+ * Formatter operation types used in MdxFormatter
  */
 export type FormatterOperation =
   | {
@@ -255,7 +255,7 @@ export interface IndentPattern {
 }
 
 /**
- * JSX stack entry used in LegacyLineFormatter
+ * JSX stack entry (legacy, retained for type compatibility)
  */
 export interface JsxStackEntry {
   name: string;

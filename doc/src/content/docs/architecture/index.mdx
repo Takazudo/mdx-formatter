@@ -97,7 +97,7 @@ Rules are applied in order during the operation collection phase. After all oper
 
 ## Plugin System
 
-The formatter uses remark-compatible plugins for specialized transformations. These run during AST processing in `src/hybrid-formatter.ts`:
+The formatter uses remark-compatible plugins for specialized transformations. These run during AST processing in `src/mdx-formatter.ts`:
 
 | Plugin | Purpose |
 | --- | --- |
@@ -116,7 +116,7 @@ The formatter uses remark-compatible plugins for specialized transformations. Th
 
 | File | Role |
 | --- | --- |
-| `src/hybrid-formatter.ts` | Core formatter: parse AST, collect operations, apply |
+| `src/mdx-formatter.ts` | Core formatter (`MdxFormatter`): parse AST, collect operations, apply |
 | `src/settings.ts` | Default settings for all 10 rules |
 | `src/types.ts` | All shared type definitions |
 | `src/html-block-formatter.ts` | Formats HTML blocks using Prettier |

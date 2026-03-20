@@ -1,6 +1,6 @@
 /**
- * HybridFormatter - Uses AST analysis to apply targeted fixes
- * This implements the proper hybrid approach from the plan
+ * MdxFormatter - AST-based markdown/MDX formatter
+ * Parses content into an AST, then applies targeted line-based operations
  */
 
 import { unified } from 'unified';
@@ -56,7 +56,7 @@ const ADMONITION_START_RE = /^:::(note|tip|info|warning|danger|caution)/;
 const LIST_MARKER_RE = /^[-*+]\s/;
 const NUMBERED_LIST_RE = /^\d+\.\s/;
 
-export class HybridFormatter {
+export class MdxFormatter {
   private readonly originalContent: string;
   private content: string;
   private lines: string[];
