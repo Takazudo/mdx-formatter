@@ -4,9 +4,20 @@ description: Special handling for Japanese (CJK) text formatting
 sidebar_position: 6
 ---
 
-Japanese text is preserved as-is by the formatter. The formatter does not insert or remove spaces around Japanese punctuation. This works through the formatter's text-preservation approach -- the hybrid line-based formatter preserves original text for content it does not specifically transform.
+## The problem with general formatters
 
-## Rules
+Most markdown formatters apply Western typographic rules that do not work well with Japanese (CJK) text. Common issues include:
+
+- **Line reflow** — Formatters reflow paragraphs to fit a line width. Since Japanese does not use spaces between words, the formatter cannot determine where to break lines, resulting in inappropriate joins or splits.
+- **Unwanted backslashes** — Some formatters insert `\` at line ends to preserve hard line breaks, cluttering Japanese text with unnecessary escape characters.
+- **Space insertion** — Formatters may add spaces around emphasis markers (`**bold**`), punctuation (。、), or between Japanese and ASCII characters where none should exist.
+- **HTML entity encoding** — Characters like `を` can get encoded to `&#x3092;`, making the source unreadable.
+
+These issues make general-purpose formatters difficult to use in projects that contain Japanese markdown content.
+
+## How mdx-formatter handles Japanese text
+
+Japanese text is preserved as-is by the formatter. The formatter does not insert or remove spaces around Japanese punctuation. This works through the formatter's text-preservation approach -- the hybrid line-based formatter preserves original text for content it does not specifically transform.
 
 - Japanese punctuation spacing is preserved
 - No extra spaces are inserted around Japanese characters
