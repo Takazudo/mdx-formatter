@@ -1,6 +1,8 @@
 use crate::parser;
 use crate::types::{FormatterOperation, FormatterSettings};
-use markdown::mdast::Node;
+use markdown::mdast::{
+    AttributeContent, AttributeValue, Node,
+};
 use regex::Regex;
 use std::collections::HashSet;
 use std::sync::LazyLock;
@@ -40,6 +42,21 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
 
     if settings.add_empty_line_between_elements.enabled {
         collect_spacing_operations(&ast, &lines, &mut operations);
+    }
+
+    // JSX multi-line formatting and single-line expansion
+    if settings.format_multi_line_jsx.enabled || settings.expand_single_line_jsx.enabled {
+        collect_jsx_format_operations(&ast, &lines, settings, &mut operations);
+    }
+
+    // JSX content indentation
+    if settings.indent_jsx_content.enabled {
+        collect_jsx_indent_operations(&ast, &lines, settings, &mut operations);
+    }
+
+    // Block JSX empty lines
+    if settings.add_empty_lines_in_block_jsx.enabled {
+        collect_block_jsx_empty_line_operations(&ast, &lines, settings, &mut operations);
     }
 
     collect_list_indentation_operations(&ast, &lines, &mut operations);
@@ -187,6 +204,720 @@ fn collect_spacing_operations(
         }
         _ => {}
     }
+}
+
+// ============================================================================
+// JSX Formatting
+// ============================================================================
+
+/// Check if a tag name represents an HTML element (lowercase first char)
+/// vs a JSX component (uppercase first char).
+fn is_html_element(name: &str) -> bool {
+    name.chars()
+        .next()
+        .map_or(true, |c| c.is_ascii_lowercase())
+}
+
+/// Check if a JSX node should be formatted.
+/// Skips HTML elements, fragments, and ignored components.
+fn is_formattable_jsx(
+    name: &Option<String>,
+    settings: &FormatterSettings,
+) -> bool {
+    match name {
+        None => false, // Fragment
+        Some(n) => {
+            if is_html_element(n) {
+                return false;
+            }
+            if settings
+                .format_multi_line_jsx
+                .ignore_components
+                .contains(n)
+            {
+                return false;
+            }
+            true
+        }
+    }
+}
+
+/// Extract text from source lines using AST position info (1-indexed).
+fn extract_node_text(lines: &[&str], start_line: usize, start_col: usize, end_line: usize, end_col: usize) -> String {
+    let sl = start_line - 1; // to 0-indexed
+    let el = end_line - 1;
+    let sc = start_col - 1;
+    let ec = end_col - 1;
+
+    if sl == el {
+        if sl < lines.len() {
+            let line = lines[sl];
+            let end = ec.min(line.len());
+            let start = sc.min(end);
+            return line[start..end].to_string();
+        }
+        return String::new();
+    }
+
+    let mut result = Vec::new();
+    // First line
+    if sl < lines.len() {
+        let line = lines[sl];
+        let start = sc.min(line.len());
+        result.push(line[start..].to_string());
+    }
+    // Middle lines
+    for i in (sl + 1)..el {
+        if i < lines.len() {
+            result.push(lines[i].to_string());
+        }
+    }
+    // Last line
+    if el < lines.len() {
+        let line = lines[el];
+        let end = ec.min(line.len());
+        result.push(line[..end].to_string());
+    }
+    result.join("\n")
+}
+
+/// Extract an attribute expression value from original text by brace-matching.
+/// Returns the full `attrName={...}` string if found.
+fn extract_attribute_expression(attr_name: &str, original_text: &str) -> Option<String> {
+    let text_lines: Vec<&str> = original_text.split('\n').collect();
+    let needle = format!("{}={{", attr_name);
+
+    for (line_idx, line) in text_lines.iter().enumerate() {
+        let needle_pos = match line.find(&needle) {
+            Some(pos) => pos,
+            None => continue,
+        };
+
+        let after_open = needle_pos + needle.len();
+
+        // Check if it's a complete single-line expression
+        if let Some(close_brace) = line[after_open..].find('}') {
+            let between = &line[after_open..after_open + close_brace];
+            if !between.contains('{') {
+                return Some(format!(
+                    "{}={{{}}}",
+                    attr_name,
+                    &line[after_open..after_open + close_brace]
+                ));
+            }
+        }
+
+        // Multi-line expression - brace matching
+        let mut brace_depth: i32 = 1;
+        let mut result = needle.clone();
+        let mut current_line_idx = line_idx;
+        let char_index = after_open;
+
+        while current_line_idx < text_lines.len() && brace_depth > 0 {
+            let current_line = text_lines[current_line_idx];
+            let start_i = if current_line_idx == line_idx {
+                char_index
+            } else {
+                0
+            };
+            for ch in current_line[start_i..].chars() {
+                result.push(ch);
+                if ch == '{' {
+                    brace_depth += 1;
+                }
+                if ch == '}' {
+                    brace_depth -= 1;
+                    if brace_depth == 0 {
+                        return Some(result);
+                    }
+                }
+            }
+            current_line_idx += 1;
+            if current_line_idx < text_lines.len() && brace_depth > 0 {
+                result.push('\n');
+            }
+        }
+    }
+
+    None
+}
+
+/// Build an attribute string from AST attribute data, preferring original text
+/// for expressions.
+fn get_attribute_string(attr: &AttributeContent, original_text: &str, preserve_template_literal: bool) -> String {
+    match attr {
+        AttributeContent::Expression(expr_attr) => {
+            // Spread attribute like {...props}
+            format!("{{{}}}", expr_attr.value)
+        }
+        AttributeContent::Property(prop) => {
+            let name = &prop.name;
+            match &prop.value {
+                None => {
+                    // Boolean attribute
+                    name.clone()
+                }
+                Some(AttributeValue::Literal(s)) => {
+                    format!("{}=\"{}\"", name, s)
+                }
+                Some(AttributeValue::Expression(expr)) => {
+                    let expr_value = &expr.value;
+
+                    // For template literals, prefer extracting from original text
+                    if preserve_template_literal && expr_value.trim_start().starts_with('`') {
+                        if let Some(extracted) =
+                            extract_attribute_expression(name, original_text)
+                        {
+                            return extracted;
+                        }
+                        return format!("{}={{{}}}", name, expr_value);
+                    }
+
+                    if !expr_value.is_empty() {
+                        format!("{}={{{}}}", name, expr_value)
+                    } else {
+                        // Try to extract from original text
+                        if let Some(extracted) =
+                            extract_attribute_expression(name, original_text)
+                        {
+                            extracted
+                        } else {
+                            format!("{}={{...}}", name)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Extract children text between opening and closing tags from original text.
+fn extract_children_text(name: &str, original_text: &str) -> String {
+    let text_lines: Vec<&str> = original_text.split('\n').collect();
+
+    // Find where the opening tag ends
+    let mut opening_end_index: Option<usize> = None;
+    for (i, line) in text_lines.iter().enumerate() {
+        if line.contains('>') && !line.contains("/>") {
+            opening_end_index = Some(i);
+            break;
+        }
+    }
+
+    // Find where the closing tag starts
+    let closing_tag = format!("</{}", name);
+    let mut closing_start_index: Option<usize> = None;
+    for i in (0..text_lines.len()).rev() {
+        if text_lines[i].contains(&closing_tag) {
+            closing_start_index = Some(i);
+            break;
+        }
+    }
+
+    match (opening_end_index, closing_start_index) {
+        (Some(open_idx), Some(close_idx)) if close_idx > open_idx => {
+            let mut content_lines: Vec<&str> = Vec::new();
+
+            // Handle content on same line as opening tag
+            let opening_line = text_lines[open_idx];
+            if let Some(pos) = opening_line.find('>') {
+                let after_opening = &opening_line[pos + 1..];
+                if !after_opening.trim().is_empty() {
+                    content_lines.push(after_opening);
+                }
+            }
+
+            // Add middle lines
+            for i in (open_idx + 1)..close_idx {
+                content_lines.push(text_lines[i]);
+            }
+
+            // Handle content on same line as closing tag
+            let closing_line = text_lines[close_idx];
+            if let Some(pos) = closing_line.find(&closing_tag) {
+                let before_closing = &closing_line[..pos];
+                if !before_closing.trim().is_empty() {
+                    content_lines.push(before_closing);
+                }
+            }
+
+            content_lines.join("\n")
+        }
+        _ => String::new(),
+    }
+}
+
+/// Check if a JSX element needs formatting.
+fn needs_jsx_formatting(
+    name: &str,
+    attributes: &[AttributeContent],
+    start_line_1: usize,
+    end_line_1: usize,
+    original_text: &str,
+    settings: &FormatterSettings,
+) -> bool {
+    let is_multi_line = start_line_1 != end_line_1;
+    let props_threshold = settings.expand_single_line_jsx.props_threshold;
+
+    // Rule 4: Single-line with threshold+ attributes needs expansion
+    if !is_multi_line
+        && attributes.len() >= props_threshold
+        && settings.expand_single_line_jsx.enabled
+    {
+        return true;
+    }
+
+    // Rule 2: Multi-line needs proper formatting
+    if is_multi_line && settings.format_multi_line_jsx.enabled {
+        let text_lines: Vec<&str> = original_text.split('\n').collect();
+        let indent_str = " ".repeat(settings.format_multi_line_jsx.indent_size);
+
+        // Find opening tag end line
+        let has_closing_tag = original_text.contains(&format!("</{}>", name));
+        let mut opening_tag_end_line = text_lines.len() - 1;
+        if has_closing_tag {
+            let mut brace_depth: i32 = 0;
+            for (i, line) in text_lines.iter().enumerate() {
+                for ch in line.chars() {
+                    if ch == '{' { brace_depth += 1; }
+                    if ch == '}' { brace_depth -= 1; }
+                }
+                let trimmed = line.trim();
+                if brace_depth == 0 && trimmed.ends_with('>') && !trimmed.ends_with("/>") {
+                    opening_tag_end_line = i;
+                    break;
+                }
+            }
+        }
+
+        // Check for attributes on the first line
+        let first_line = text_lines[0];
+        if first_line.contains("=\"") && !first_line.ends_with('>') && !first_line.ends_with("/>") {
+            return true;
+        }
+
+        // Check attribute lines within opening tag
+        for i in 1..=opening_tag_end_line {
+            if i >= text_lines.len() {
+                break;
+            }
+            let trimmed = text_lines[i].trim();
+
+            // /> on its own line is always wrong
+            if trimmed == "/>" {
+                return true;
+            }
+
+            // Skip empty lines or closing tag
+            if trimmed.is_empty() || trimmed.starts_with(&format!("</{}", name)) {
+                continue;
+            }
+
+            // Check proper indentation
+            let line = text_lines[i];
+            if !line.starts_with(&indent_str) {
+                return true;
+            }
+
+            // Check extra space after indent
+            let after_indent = &line[indent_str.len()..];
+            if after_indent.starts_with(' ') && !after_indent.trim_start().starts_with('{') {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Format a JSX element into properly indented lines.
+fn format_jsx_element(
+    name: &str,
+    attributes: &[AttributeContent],
+    children: &[Node],
+    original_text: &str,
+    start_line_1: usize,
+    end_line_1: usize,
+    settings: &FormatterSettings,
+) -> String {
+    let indent = " ".repeat(settings.format_multi_line_jsx.indent_size);
+    let props_threshold = settings.expand_single_line_jsx.props_threshold;
+    let preserve_template_literal = settings.format_multi_line_jsx.preserve_template_literal_indent;
+
+    let has_closing_tag = original_text.contains(&format!("</{}>", name));
+    let is_inline_with_content =
+        original_text.contains(">{") || (original_text.contains('>') && has_closing_tag);
+    let self_closing = !has_closing_tag && !is_inline_with_content && children.is_empty();
+
+    let should_expand = (settings.expand_single_line_jsx.enabled
+        && attributes.len() >= props_threshold)
+        || start_line_1 != end_line_1;
+
+    let mut lines: Vec<String> = Vec::new();
+
+    if attributes.is_empty() {
+        if self_closing {
+            lines.push(format!("<{} />", name));
+        } else {
+            lines.push(format!("<{}>", name));
+        }
+    } else if !should_expand && attributes.len() == 1 {
+        let attr_str = get_attribute_string(&attributes[0], original_text, preserve_template_literal);
+        if self_closing {
+            lines.push(format!("<{} {} />", name, attr_str));
+        } else {
+            lines.push(format!("<{} {}>", name, attr_str));
+        }
+    } else {
+        // Multi-line format
+        lines.push(format!("<{}", name));
+
+        for attr in attributes {
+            let attr_str = get_attribute_string(attr, original_text, preserve_template_literal);
+
+            if attr_str.contains('\n') {
+                let attr_lines: Vec<&str> = attr_str.split('\n').collect();
+                lines.push(format!("{}{}", indent, attr_lines[0]));
+
+                let is_template_literal =
+                    preserve_template_literal && attr_lines[0].contains("={`");
+
+                for attr_line in &attr_lines[1..] {
+                    if is_template_literal {
+                        lines.push(attr_line.to_string());
+                    } else if attr_line.trim().ends_with("]}") || attr_line.trim() == "]}" {
+                        lines.push(format!("{}{}", indent, attr_line.trim()));
+                    } else {
+                        lines.push(format!("{}  {}", indent, attr_line.trim()));
+                    }
+                }
+            } else {
+                lines.push(format!("{}{}", indent, attr_str));
+            }
+        }
+
+        // Close the opening tag
+        if self_closing {
+            if let Some(last) = lines.last_mut() {
+                last.push_str(" />");
+            }
+        } else {
+            lines.push(">".to_string());
+        }
+    }
+
+    // Add children content if not self-closing
+    if !self_closing {
+        let block_components = &settings.add_empty_lines_in_block_jsx.block_components;
+        let is_block_component = settings.add_empty_lines_in_block_jsx.enabled
+            && block_components.contains(&name.to_string());
+
+        let children_text = extract_children_text(name, original_text);
+        if !children_text.is_empty() {
+            // Add empty line after opening tag for block components
+            if is_block_component {
+                let first_content_line = children_text.split('\n').next().unwrap_or("");
+                if !first_content_line.trim().is_empty() {
+                    lines.push(String::new());
+                }
+            }
+
+            let container_components = &settings.indent_jsx_content.container_components;
+            let is_container =
+                settings.indent_jsx_content.enabled && container_components.contains(&name.to_string());
+
+            if is_container {
+                for child_line in children_text.split('\n') {
+                    if !child_line.trim().is_empty() {
+                        lines.push(format!("{}{}", indent, child_line.trim()));
+                    }
+                }
+            } else {
+                for child_line in children_text.split('\n') {
+                    lines.push(child_line.to_string());
+                }
+            }
+
+            // Add empty line before closing tag for block components
+            if is_block_component {
+                if let Some(last) = lines.last() {
+                    if !last.trim().is_empty() {
+                        lines.push(String::new());
+                    }
+                }
+            }
+        }
+
+        lines.push(format!("</{}>", name));
+    }
+
+    lines.join("\n")
+}
+
+/// JSX element info extracted from either flow or text elements.
+struct JsxElementInfo<'a> {
+    name: &'a Option<String>,
+    attributes: &'a [AttributeContent],
+    children: &'a [Node],
+    position: &'a markdown::unist::Position,
+}
+
+/// Visit all JSX elements (both flow and text) in the AST.
+fn visit_jsx_elements<F>(node: &Node, callback: &mut F)
+where
+    F: FnMut(JsxElementInfo),
+{
+    fn visit_children<F>(children: &[Node], callback: &mut F)
+    where
+        F: FnMut(JsxElementInfo),
+    {
+        for child in children {
+            visit_jsx_elements(child, callback);
+        }
+    }
+
+    match node {
+        Node::Root(root) => visit_children(&root.children, callback),
+        Node::MdxJsxFlowElement(jsx) => {
+            if let Some(pos) = &jsx.position {
+                callback(JsxElementInfo {
+                    name: &jsx.name,
+                    attributes: &jsx.attributes,
+                    children: &jsx.children,
+                    position: pos,
+                });
+            }
+            visit_children(&jsx.children, callback);
+        }
+        Node::MdxJsxTextElement(jsx) => {
+            if let Some(pos) = &jsx.position {
+                callback(JsxElementInfo {
+                    name: &jsx.name,
+                    attributes: &jsx.attributes,
+                    children: &jsx.children,
+                    position: pos,
+                });
+            }
+            visit_children(&jsx.children, callback);
+        }
+        Node::Blockquote(bq) => visit_children(&bq.children, callback),
+        Node::List(list) => visit_children(&list.children, callback),
+        Node::ListItem(item) => visit_children(&item.children, callback),
+        Node::Paragraph(para) => visit_children(&para.children, callback),
+        Node::Heading(h) => visit_children(&h.children, callback),
+        _ => {}
+    }
+}
+
+/// Collect JSX format operations (multi-line formatting, single-line expansion).
+fn collect_jsx_format_operations(
+    node: &Node,
+    lines: &[&str],
+    settings: &FormatterSettings,
+    operations: &mut Vec<FormatterOperation>,
+) {
+    visit_jsx_elements(node, &mut |info: JsxElementInfo| {
+        if !is_formattable_jsx(info.name, settings) {
+            return;
+        }
+
+        let start_line = info.position.start.line; // 1-indexed
+        let end_line = info.position.end.line;
+        let start_line_0 = start_line - 1;
+        let end_line_0 = end_line - 1;
+
+        let original_text = extract_node_text(
+            lines,
+            info.position.start.line,
+            info.position.start.column,
+            info.position.end.line,
+            info.position.end.column,
+        );
+
+        let name = info.name.as_deref().unwrap_or("");
+
+        if needs_jsx_formatting(
+            name,
+            info.attributes,
+            start_line,
+            end_line,
+            &original_text,
+            settings,
+        ) {
+            let formatted = format_jsx_element(
+                name,
+                info.attributes,
+                info.children,
+                &original_text,
+                start_line,
+                end_line,
+                settings,
+            );
+
+            if formatted != original_text {
+                operations.push(FormatterOperation::ReplaceLines {
+                    start_line: start_line_0,
+                    end_line: end_line_0,
+                    lines: formatted.split('\n').map(|s| s.to_string()).collect(),
+                });
+            }
+        }
+    });
+}
+
+/// Collect JSX indent operations for container components.
+fn collect_jsx_indent_operations(
+    node: &Node,
+    lines: &[&str],
+    settings: &FormatterSettings,
+    operations: &mut Vec<FormatterOperation>,
+) {
+    let container_names = &settings.indent_jsx_content.container_components;
+
+    visit_jsx_elements(node, &mut |info: JsxElementInfo| {
+        if !is_formattable_jsx(info.name, settings) {
+            return;
+        }
+
+        let name = match info.name {
+            Some(n) => n,
+            None => return,
+        };
+
+        if !container_names.contains(name) {
+            return;
+        }
+
+        let start_line_0 = info.position.start.line - 1;
+        let end_line_0 = info.position.end.line - 1;
+
+        for i in (start_line_0 + 1)..end_line_0 {
+            if i >= lines.len() {
+                break;
+            }
+            let line = lines[i];
+            let trimmed = line.trim();
+
+            // Skip empty lines and closing tag
+            if trimmed.is_empty() || trimmed.starts_with(&format!("</{}", name)) {
+                continue;
+            }
+
+            // If not indented, add indent operation
+            if !line.starts_with("  ") {
+                operations.push(FormatterOperation::IndentLine {
+                    start_line: i,
+                    indent: "  ".to_string(),
+                });
+            }
+        }
+    });
+}
+
+/// Collect block JSX empty line operations.
+fn collect_block_jsx_empty_line_operations(
+    node: &Node,
+    lines: &[&str],
+    settings: &FormatterSettings,
+    operations: &mut Vec<FormatterOperation>,
+) {
+    let block_components = &settings.add_empty_lines_in_block_jsx.block_components;
+
+    visit_jsx_elements(node, &mut |info: JsxElementInfo| {
+        if !is_formattable_jsx(info.name, settings) {
+            return;
+        }
+
+        let name = match info.name {
+            Some(n) => n,
+            None => return,
+        };
+
+        if !block_components.contains(name) {
+            return;
+        }
+
+        let start_line_0 = info.position.start.line - 1;
+        let end_line_0 = info.position.end.line - 1;
+
+        // Handle single-line components
+        if start_line_0 == end_line_0 {
+            if start_line_0 < lines.len() {
+                let line = lines[start_line_0];
+                let open_tag = format!("<{}", name);
+                let close_tag = format!("</{}>", name);
+                if line.contains(&open_tag) && line.contains(&close_tag) {
+                    if let Some(opening_tag_end) = line.find('>') {
+                        if let Some(closing_tag_start) = line.rfind(&close_tag) {
+                            if opening_tag_end + 1 < closing_tag_start {
+                                let opening_tag =
+                                    line[..opening_tag_end + 1].trim().to_string();
+                                let content = line[opening_tag_end + 1..closing_tag_start]
+                                    .trim()
+                                    .to_string();
+                                let closing_tag_str = line[closing_tag_start..].trim().to_string();
+
+                                operations.push(FormatterOperation::ReplaceLines {
+                                    start_line: start_line_0,
+                                    end_line: start_line_0,
+                                    lines: vec![
+                                        opening_tag,
+                                        String::new(),
+                                        content,
+                                        String::new(),
+                                        closing_tag_str,
+                                    ],
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
+        // Find the actual end of the opening tag (may span multiple lines)
+        let mut opening_tag_end_line = start_line_0;
+        for i in start_line_0..=end_line_0 {
+            if i >= lines.len() {
+                break;
+            }
+            let trimmed = lines[i].trim();
+            if trimmed.ends_with('>')
+                && !trimmed.ends_with("/>")
+                && !trimmed.starts_with("</")
+            {
+                opening_tag_end_line = i;
+                break;
+            }
+        }
+
+        // Check if there's an empty line after the opening tag
+        if opening_tag_end_line + 1 < lines.len() {
+            let line_after_opening = lines[opening_tag_end_line + 1];
+            if !line_after_opening.trim().is_empty() {
+                operations.push(FormatterOperation::InsertLine {
+                    start_line: opening_tag_end_line + 1,
+                    content: String::new(),
+                });
+            }
+        }
+
+        // Check if there's an empty line before the closing tag
+        if end_line_0 > start_line_0 + 1 {
+            let line_before_closing = lines[end_line_0 - 1];
+            if !line_before_closing.trim().is_empty()
+                && !line_before_closing
+                    .trim()
+                    .starts_with(&format!("</{}", name))
+            {
+                operations.push(FormatterOperation::InsertLine {
+                    start_line: end_line_0,
+                    content: String::new(),
+                });
+            }
+        }
+    });
 }
 
 /// Walk the AST and collect list indentation fix operations.
@@ -550,5 +1281,264 @@ mod tests {
         // The TS formatter inserts a line between headings, but the condition
         // says "if next line doesn't start with #", so this should be unchanged
         assert_eq!(result, input);
+    }
+
+    // ================================================================
+    // JSX Multi-line Formatting Tests
+    // ================================================================
+
+    #[test]
+    fn test_jsx_self_closing_preserved() {
+        let input = "<Component />";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_jsx_self_closing_single_prop_preserved() {
+        let input = "<Component prop=\"value\" />";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_jsx_multiline_formats_attributes() {
+        // Attributes badly indented should get reformatted
+        let input = "<Component\n      src=\"image.png\"\n      alt=\"test\" />";
+        let expected = "<Component\n  src=\"image.png\"\n  alt=\"test\" />";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_jsx_standalone_self_close_fixed() {
+        // /> on its own line should be appended to last attribute
+        let input = "<Component\n  src=\"image.png\"\n  alt=\"test\"\n/>";
+        let expected = "<Component\n  src=\"image.png\"\n  alt=\"test\" />";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_jsx_attrs_on_first_line_reformatted() {
+        // Attributes on the first line should be reformatted
+        let input = "<Component src=\"image.png\" alt=\"test\"\n  className=\"foo\" />";
+        let expected = "<Component\n  src=\"image.png\"\n  alt=\"test\"\n  className=\"foo\" />";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_jsx_with_children_preserved() {
+        let input = "<Component>\nContent here\n</Component>";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_jsx_multiline_with_children() {
+        let input = "<Component\n      src=\"image.png\"\n      alt=\"test\">\nContent\n</Component>";
+        // Non-self-closing: closing > goes on its own line
+        let expected = "<Component\n  src=\"image.png\"\n  alt=\"test\">\nContent\n</Component>";
+        let result = format(input, &FormatterSettings::default());
+        // The formatter puts > on its own line (matching TS behavior)
+        let expected_alt = "<Component\n  src=\"image.png\"\n  alt=\"test\"\n>\nContent\n</Component>";
+        assert!(
+            result == expected || result == expected_alt,
+            "Got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_jsx_html_element_skipped() {
+        // Lowercase elements should not be formatted
+        let input = "<div\n      class=\"test\">\nContent\n</div>";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_jsx_ignored_component_skipped() {
+        let mut settings = FormatterSettings::default();
+        settings.format_multi_line_jsx.ignore_components =
+            vec!["IgnoreMe".to_string()];
+        let input = "<IgnoreMe\n      prop=\"value\" />";
+        let result = format(input, &settings);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_jsx_expression_attribute() {
+        let input = "<Component\n      value={42} />";
+        let expected = "<Component\n  value={42} />";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_jsx_boolean_attribute() {
+        let input = "<Component\n      disabled\n      loading />";
+        let expected = "<Component\n  disabled\n  loading />";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_jsx_already_formatted_unchanged() {
+        let input = "<Component\n  src=\"image.png\"\n  alt=\"test\" />";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input, "Already properly formatted JSX should be unchanged");
+    }
+
+    #[test]
+    fn test_jsx_format_disabled() {
+        let mut settings = FormatterSettings::default();
+        settings.format_multi_line_jsx.enabled = false;
+        let input = "<Component\n      src=\"image.png\" />";
+        let result = format(input, &settings);
+        assert_eq!(result, input, "Disabled JSX formatting should not modify content");
+    }
+
+    // ================================================================
+    // Block JSX Empty Line Tests
+    // ================================================================
+
+    fn settings_with_blocks() -> FormatterSettings {
+        let mut s = FormatterSettings::default();
+        s.add_empty_lines_in_block_jsx.block_components =
+            vec!["InfoBox".to_string(), "Note".to_string()];
+        s
+    }
+
+    #[test]
+    fn test_block_jsx_adds_empty_lines() {
+        let settings = settings_with_blocks();
+        let input = "<InfoBox>\nContent\n</InfoBox>";
+        let expected = "<InfoBox>\n\nContent\n\n</InfoBox>";
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_block_jsx_already_has_empty_lines() {
+        let settings = settings_with_blocks();
+        let input = "<InfoBox>\n\nContent\n\n</InfoBox>";
+        let result = format(input, &settings);
+        assert_eq!(result, input, "Should be idempotent");
+    }
+
+    #[test]
+    fn test_block_jsx_single_line_expanded() {
+        let settings = settings_with_blocks();
+        let input = "<InfoBox>Content</InfoBox>";
+        let expected = "<InfoBox>\n\nContent\n\n</InfoBox>";
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_block_jsx_non_block_not_affected() {
+        let settings = settings_with_blocks();
+        let input = "<OtherComponent>\nContent\n</OtherComponent>";
+        let result = format(input, &settings);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_block_jsx_with_attributes() {
+        let settings = settings_with_blocks();
+        let input = "<InfoBox\n  title=\"Hello\">\nContent\n</InfoBox>";
+        let expected = "<InfoBox\n  title=\"Hello\">\n\nContent\n\n</InfoBox>";
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    // ================================================================
+    // JSX Indent Operations Tests
+    // ================================================================
+
+    fn settings_with_indent() -> FormatterSettings {
+        let mut s = FormatterSettings::default();
+        s.indent_jsx_content.enabled = true;
+        s.indent_jsx_content.container_components =
+            vec!["Container".to_string(), "Wrapper".to_string()];
+        s
+    }
+
+    #[test]
+    fn test_jsx_indent_adds_indentation() {
+        let settings = settings_with_indent();
+        let input = "<Container>\nContent line 1\nContent line 2\n</Container>";
+        let expected = "<Container>\n  Content line 1\n  Content line 2\n</Container>";
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_jsx_indent_already_indented() {
+        let settings = settings_with_indent();
+        let input = "<Container>\n  Content line 1\n  Content line 2\n</Container>";
+        let result = format(input, &settings);
+        assert_eq!(result, input, "Already indented content should be unchanged");
+    }
+
+    #[test]
+    fn test_jsx_indent_non_container_unchanged() {
+        let settings = settings_with_indent();
+        let input = "<Other>\nContent\n</Other>";
+        let result = format(input, &settings);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_jsx_indent_skips_empty_lines() {
+        let settings = settings_with_indent();
+        let input = "<Container>\nContent\n\nMore content\n</Container>";
+        let expected = "<Container>\n  Content\n\n  More content\n</Container>";
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_jsx_indent_disabled() {
+        let mut settings = FormatterSettings::default();
+        settings.indent_jsx_content.enabled = false;
+        settings.indent_jsx_content.container_components =
+            vec!["Container".to_string()];
+        let input = "<Container>\nContent\n</Container>";
+        let result = format(input, &settings);
+        assert_eq!(result, input, "Disabled indent should not modify content");
+    }
+
+    // ================================================================
+    // JSX Formatting Idempotency Tests
+    // ================================================================
+
+    #[test]
+    fn test_jsx_format_idempotent() {
+        let input = "<Component\n      src=\"image.png\"\n      alt=\"test\" />";
+        let settings = FormatterSettings::default();
+        let first = format(input, &settings);
+        let second = format(&first, &settings);
+        assert_eq!(first, second, "JSX formatting should be idempotent");
+    }
+
+    #[test]
+    fn test_block_jsx_idempotent() {
+        let settings = settings_with_blocks();
+        let input = "<InfoBox>\nContent\n</InfoBox>";
+        let first = format(input, &settings);
+        let second = format(&first, &settings);
+        assert_eq!(first, second, "Block JSX formatting should be idempotent");
+    }
+
+    #[test]
+    fn test_jsx_indent_idempotent() {
+        let settings = settings_with_indent();
+        let input = "<Container>\nContent\n</Container>";
+        let first = format(input, &settings);
+        let second = format(&first, &settings);
+        assert_eq!(first, second, "JSX indent should be idempotent");
     }
 }

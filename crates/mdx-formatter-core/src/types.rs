@@ -203,11 +203,7 @@ impl Default for FormatterSettings {
 impl FormatterSettings {
     /// Create settings from a partial JSON value, merging with defaults.
     ///
-    /// TODO(poc): Currently only covers 5 of 10 settings fields.
-    /// A proper implementation would use `#[serde(default, rename_all = "camelCase")]`
-    /// on FormatterSettings itself to deserialize from JSON automatically.
-    /// Missing: expandSingleLineJsx, indentJsxContent, formatHtmlBlocksInMdx,
-    ///          errorHandling, autoDetectIndent.
+    /// TODO(poc): Missing: formatHtmlBlocksInMdx, errorHandling, autoDetectIndent.
     pub fn from_partial_json(value: &serde_json::Value) -> Self {
         let mut settings = Self::default();
 
@@ -223,6 +219,46 @@ impl FormatterSettings {
                 }
                 if let Some(indent) = v.get("indentSize").and_then(|e| e.as_u64()) {
                     settings.format_multi_line_jsx.indent_size = indent as usize;
+                }
+                if let Some(components) =
+                    v.get("ignoreComponents").and_then(|e| e.as_array())
+                {
+                    settings.format_multi_line_jsx.ignore_components = components
+                        .iter()
+                        .filter_map(|c| c.as_str().map(|s| s.to_string()))
+                        .collect();
+                }
+                if let Some(preserve) =
+                    v.get("preserveTemplateLiteralIndent").and_then(|e| e.as_bool())
+                {
+                    settings.format_multi_line_jsx.preserve_template_literal_indent =
+                        preserve;
+                }
+            }
+            if let Some(v) = obj.get("expandSingleLineJsx") {
+                if let Some(enabled) = v.get("enabled").and_then(|e| e.as_bool()) {
+                    settings.expand_single_line_jsx.enabled = enabled;
+                }
+                if let Some(threshold) =
+                    v.get("propsThreshold").and_then(|e| e.as_u64())
+                {
+                    settings.expand_single_line_jsx.props_threshold = threshold as usize;
+                }
+            }
+            if let Some(v) = obj.get("indentJsxContent") {
+                if let Some(enabled) = v.get("enabled").and_then(|e| e.as_bool()) {
+                    settings.indent_jsx_content.enabled = enabled;
+                }
+                if let Some(indent) = v.get("indentSize").and_then(|e| e.as_u64()) {
+                    settings.indent_jsx_content.indent_size = indent as usize;
+                }
+                if let Some(components) =
+                    v.get("containerComponents").and_then(|e| e.as_array())
+                {
+                    settings.indent_jsx_content.container_components = components
+                        .iter()
+                        .filter_map(|c| c.as_str().map(|s| s.to_string()))
+                        .collect();
                 }
             }
             if let Some(v) = obj.get("formatYamlFrontmatter") {
