@@ -119,11 +119,12 @@ Content here`;
       expect(result).toBe(expected);
     });
 
-    it('should not add empty line between consecutive headings', async () => {
+    it('should add empty line between consecutive headings', async () => {
       const input = `## Heading 1
 ### Heading 2`;
 
       const expected = `## Heading 1
+
 ### Heading 2`;
 
       const formatter = new HybridFormatter(input, settings);
