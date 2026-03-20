@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "lsof -ti:3518 | xargs kill -9 2>/dev/null; astro dev --port 3518",
-    "dev:network": "lsof -ti:3518 | xargs kill -9 2>/dev/null; astro dev --host 0.0.0.0 --port 3518",
+    "predev": "lsof -ti:3518 | xargs kill -9 2>/dev/null; true",
+    "dev": "astro dev --port 3518",
+    "dev:network": "astro dev --host 0.0.0.0 --port 3518",
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check"

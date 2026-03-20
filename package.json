@@ -25,10 +25,14 @@
     "LICENSE"
   ],
   "scripts": {
+    "// ── Build ───────────────────────────────────────": "",
     "build": "tsc",
+    "prepublishOnly": "tsc && vitest run",
+    "// ── Test ────────────────────────────────────────": "",
     "test": "vitest run",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest --coverage",
+    "// ── Quality ─────────────────────────────────────": "",
     "format": "npx tsx src/cli.ts --write \"**/*.{md,mdx}\"",
     "format:check": "npx tsx src/cli.ts --check \"**/*.{md,mdx}\"",
     "prettier": "prettier --check .",
@@ -37,12 +41,13 @@
     "lint:fix": "eslint --fix .",
     "check": "prettier --check . && eslint .",
     "check:fix": "prettier --write . && eslint --fix .",
+    "b4push": "./scripts/run-b4push.sh",
+    "// ── Rust ────────────────────────────────────────": "",
     "test:rust": "vitest run --config vitest.rust.config.ts",
     "build:rust": "cd crates/mdx-formatter-napi && cargo build",
     "build:rust:release": "cd crates/mdx-formatter-napi && cargo build --release",
-    "b4push": "./scripts/run-b4push.sh",
-    "doc:start": "pnpm --dir doc start",
-    "prepublishOnly": "tsc && vitest run"
+    "// ── Doc ─────────────────────────────────────────": "",
+    "doc:start": "pnpm --dir doc start"
   },
   "keywords": [
     "markdown",
