@@ -5,6 +5,28 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
+// TS Plugin Validation Summary:
+// The Rust formatter uses a hybrid approach (AST analysis + original text preservation)
+// which eliminates the need for most TS plugins that exist to work around remark's
+// AST round-tripping:
+//
+// NOT NEEDED (Rust preserves original text, no AST round-tripping):
+//   - preserve-jsx.ts         — JSX never mangled
+//   - preserve-image-alt.ts   — Colons in alt text preserved
+//   - fix-autolink-output.ts  — No angle brackets added to URLs
+//   - preprocess-japanese.ts  — Japanese text preserved as-is
+//   - japanese-text.ts        — No backslashes inserted, punctuation untouched
+//   - fix-formatting-issues.ts — No bold spacing / entity issues
+//   - docusaurus-admonitions.ts — ::: syntax preserved as-is
+//   - normalize-lists.ts      — List markers preserved, no merging needed
+//   - html-definition-list.ts — HTML content preserved as-is
+//
+// PARTIALLY COVERED by existing spacing rule:
+//   - fix-paragraph-spacing.ts — Heading/JSX spacing handled; collapsed JSX
+//     artifact doesn't occur; import/export spacing may need future work.
+//
+// See tests/plugin_validation.rs for test cases validating each finding.
+
 // Compile once at startup, not on every format call
 static MULTIPLE_NEWLINES_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
@@ -96,96 +118,94 @@ fn op_priority(op: &FormatterOperation) -> u8 {
 
 /// Walk the AST and collect spacing operations.
 ///
-/// Adds empty lines after headings when the next line is non-empty content
-/// (not another heading). Also handles spacing after JSX flow elements.
+/// Uses a full-tree visitor (like the TS `visit()`) so that headings and JSX
+/// elements at ANY nesting depth get the spacing check — not just root children.
 fn collect_spacing_operations(
     node: &Node,
     lines: &[&str],
     operations: &mut Vec<FormatterOperation>,
 ) {
+    // Check spacing for the current node (heading or JSX at any depth)
+    check_node_spacing(node, lines, operations);
+
+    // Recurse into all children
+    for child in get_children(node) {
+        collect_spacing_operations(child, lines, operations);
+    }
+}
+
+/// Check if a node (heading or JSX) needs an empty line after it.
+fn check_node_spacing(
+    node: &Node,
+    lines: &[&str],
+    operations: &mut Vec<FormatterOperation>,
+) {
     match node {
-        Node::Root(root) => {
-            for child in &root.children {
-                // Check for spacing needed after this child
-                if let Some(pos) = child.position() {
-                    let end_line = pos.end.line - 1; // 0-indexed
-
-                    if end_line < lines.len() - 1 {
-                        let next_line = lines[end_line + 1];
-
-                        match child {
-                            Node::Heading(_) => {
-                                // After heading: insert empty line if next is non-empty, non-heading
-                                if !next_line.trim().is_empty()
-                                    && !next_line.starts_with('#')
-                                {
-                                    operations.push(FormatterOperation::InsertLine {
-                                        start_line: end_line + 1,
-                                        content: String::new(),
-                                    });
-                                }
-                            }
-                            Node::MdxJsxFlowElement(_) => {
-                                // After JSX: insert empty line if next is non-empty text
-                                // Skip if next line is inside a table row
-                                if let Some(current_line) = lines.get(end_line) {
-                                    if current_line.trim().starts_with('|') {
-                                        // Skip JSX inside table rows
-                                    } else if !next_line.trim().is_empty()
-                                        && !next_line.trim().starts_with('#')
-                                        && !next_line.trim().starts_with('-')
-                                        && !is_numbered_list_line(next_line)
-                                        && !next_line.trim().starts_with('<')
-                                    {
-                                        operations.push(FormatterOperation::InsertLine {
-                                            start_line: end_line + 1,
-                                            content: String::new(),
-                                        });
-                                    }
-                                }
-                            }
-                            _ => {}
+        Node::Heading(_) => {
+            if let Some(pos) = node.position() {
+                let end_line = pos.end.line - 1; // 0-indexed
+                if end_line < lines.len() - 1 {
+                    let next_line = lines[end_line + 1];
+                    // After heading: insert empty line if next is non-empty, non-heading
+                    if !next_line.trim().is_empty() && !next_line.starts_with('#') {
+                        operations.push(FormatterOperation::InsertLine {
+                            start_line: end_line + 1,
+                            content: String::new(),
+                        });
+                    }
+                }
+            }
+        }
+        Node::MdxJsxFlowElement(_) => {
+            if let Some(pos) = node.position() {
+                let end_line = pos.end.line - 1; // 0-indexed
+                if end_line < lines.len() - 1 {
+                    let next_line = lines[end_line + 1];
+                    // Skip if current line is inside a table row
+                    if let Some(current_line) = lines.get(end_line) {
+                        if current_line.trim().starts_with('|') {
+                            return; // Skip JSX inside table rows
                         }
                     }
-
+                    // After JSX: insert empty line if next is non-empty text
+                    if !next_line.trim().is_empty()
+                        && !next_line.trim().starts_with('#')
+                        && !next_line.trim().starts_with('-')
+                        && !is_numbered_list_line(next_line)
+                        && !next_line.trim().starts_with('<')
+                    {
+                        operations.push(FormatterOperation::InsertLine {
+                            start_line: end_line + 1,
+                            content: String::new(),
+                        });
+                    }
                 }
-
-                // Recurse into children
-                collect_spacing_operations(child, lines, operations);
-            }
-        }
-        // Recurse into nodes that have children
-        Node::Heading(heading) => {
-            for child in &heading.children {
-                collect_spacing_operations(child, lines, operations);
-            }
-        }
-        Node::Paragraph(para) => {
-            for child in &para.children {
-                collect_spacing_operations(child, lines, operations);
-            }
-        }
-        Node::List(list) => {
-            for child in &list.children {
-                collect_spacing_operations(child, lines, operations);
-            }
-        }
-        Node::ListItem(item) => {
-            for child in &item.children {
-                collect_spacing_operations(child, lines, operations);
-            }
-        }
-        Node::Blockquote(bq) => {
-            for child in &bq.children {
-                collect_spacing_operations(child, lines, operations);
-            }
-        }
-        Node::MdxJsxFlowElement(jsx) => {
-            for child in &jsx.children {
-                collect_spacing_operations(child, lines, operations);
             }
         }
         _ => {}
+    }
+}
+
+/// Get children of any node type that contains children.
+fn get_children(node: &Node) -> &[Node] {
+    match node {
+        Node::Root(n) => &n.children,
+        Node::Heading(n) => &n.children,
+        Node::Paragraph(n) => &n.children,
+        Node::List(n) => &n.children,
+        Node::ListItem(n) => &n.children,
+        Node::Blockquote(n) => &n.children,
+        Node::MdxJsxFlowElement(n) => &n.children,
+        Node::MdxJsxTextElement(n) => &n.children,
+        Node::Table(n) => &n.children,
+        Node::TableRow(n) => &n.children,
+        Node::TableCell(n) => &n.children,
+        Node::Emphasis(n) => &n.children,
+        Node::Strong(n) => &n.children,
+        Node::Link(n) => &n.children,
+        Node::Delete(n) => &n.children,
+        Node::FootnoteDefinition(n) => &n.children,
+        _ => &[],
     }
 }
 
