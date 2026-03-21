@@ -1,3 +1,4 @@
+use crate::html_formatter;
 use crate::parser;
 use crate::types::{FormatterOperation, FormatterSettings, FormatYamlFrontmatterSetting};
 use markdown::mdast::{
@@ -99,6 +100,11 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
     }
 
     collect_list_indentation_operations(&ast, &lines, &mut operations);
+
+    // HTML block formatting
+    if settings.format_html_blocks_in_mdx.enabled {
+        collect_html_block_operations(&ast, &lines, &mut operations);
+    }
 
     // 4. Filter overlapping replacements
     filter_overlapping_replacements(&mut operations);
@@ -1070,6 +1076,91 @@ fn is_ordered_list_marker(trimmed: &str) -> bool {
 fn is_numbered_list_line(line: &str) -> bool {
     let trimmed = line.trim();
     is_ordered_list_marker(trimmed)
+}
+
+// ============================================================================
+// HTML Block Formatting
+// ============================================================================
+
+/// Walk the AST for MdxJsxFlowElement nodes with lowercase tag names (HTML elements).
+/// For each top-level HTML block, format it and emit a ReplaceHtmlBlock operation
+/// if the formatted content differs from the original.
+fn collect_html_block_operations(
+    node: &Node,
+    lines: &[&str],
+    operations: &mut Vec<FormatterOperation>,
+) {
+    let mut html_nodes: Vec<(usize, usize)> = Vec::new(); // (start_line_0, end_line_0)
+    let mut processed_ranges: Vec<(usize, usize)> = Vec::new();
+
+    // Walk AST to find top-level HTML flow elements
+    collect_html_flow_elements(node, &mut html_nodes, &mut processed_ranges);
+
+    // Process each top-level HTML node
+    for (start_line, end_line) in html_nodes {
+        if start_line >= lines.len() || end_line >= lines.len() {
+            continue;
+        }
+
+        // Extract the HTML content from source lines
+        let html_lines: Vec<&str> = lines[start_line..=end_line].to_vec();
+        let html_content = html_lines.join("\n");
+
+        // Format the HTML block
+        let formatted = html_formatter::format_html_block(&html_content, 2);
+
+        // Only emit operation if formatting changed the content
+        if formatted != html_content {
+            operations.push(FormatterOperation::ReplaceHtmlBlock {
+                start_line,
+                end_line,
+                content: formatted,
+            });
+        }
+    }
+}
+
+/// Recursively walk AST to find MdxJsxFlowElement nodes with lowercase names.
+/// Only collects top-level HTML blocks (skips nodes nested inside already-processed ranges).
+fn collect_html_flow_elements(
+    node: &Node,
+    results: &mut Vec<(usize, usize)>,
+    processed_ranges: &mut Vec<(usize, usize)>,
+) {
+    match node {
+        Node::MdxJsxFlowElement(jsx) => {
+            if let Some(name) = &jsx.name {
+                if is_html_element(name) {
+                    if let Some(pos) = &jsx.position {
+                        let start_line = pos.start.line - 1; // 0-indexed
+                        let end_line = pos.end.line - 1;
+
+                        // Check if this node is nested inside an already-processed range
+                        let is_nested = processed_ranges
+                            .iter()
+                            .any(|&(rs, re)| start_line > rs && end_line < re);
+
+                        if !is_nested {
+                            results.push((start_line, end_line));
+                            processed_ranges.push((start_line, end_line));
+                        }
+
+                        // Don't recurse into children — they're part of this block
+                        return;
+                    }
+                }
+            }
+            // If not an HTML element, recurse into children
+            for child in &jsx.children {
+                collect_html_flow_elements(child, results, processed_ranges);
+            }
+        }
+        _ => {
+            for child in get_children(node) {
+                collect_html_flow_elements(child, results, processed_ranges);
+            }
+        }
+    }
 }
 
 /// Pre-process YAML text to quote values containing special YAML characters.

@@ -4,7 +4,7 @@
  * Runs the same test cases from formatter.test.ts against the Rust napi
  * formatter to measure the gap between TS and Rust implementations.
  *
- * HTML block tests are skipped — not yet implemented in Rust.
+ * Now includes HTML block formatting tests.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -45,7 +45,307 @@ describe.skipIf(!rustAvailable)('Rust Passthrough: Markdown Formatter', () => {
     });
   });
 
-  // HTML Definition List Formatting — SKIPPED (HTML blocks not implemented in Rust)
+  describe('HTML Block Formatting', () => {
+    it('should format simple dl/dt/dd with proper indentation', async () => {
+      const input = `<dl>
+<dt>Term 1</dt>
+<dd>Definition 1</dd>
+</dl>`;
+      const expected = `<dl>
+  <dt>Term 1</dt>
+  <dd>Definition 1</dd>
+</dl>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should handle dl/dt/dd with excessive whitespace', async () => {
+      const input = `<dl>
+  <dt>  Term with spaces  </dt>
+  <dd>   Definition with spaces   </dd>
+</dl>`;
+      const expected = `<dl>
+  <dt>Term with spaces</dt>
+  <dd>Definition with spaces</dd>
+</dl>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should format dl with div wrappers', async () => {
+      const input = `<dl>
+<div>
+<dt>Term 1</dt>
+<dd>Definition 1</dd>
+</div>
+<div>
+<dt>Term 2</dt>
+<dd>Definition 2</dd>
+</div>
+</dl>`;
+      const expected = `<dl>
+  <div>
+    <dt>Term 1</dt>
+    <dd>Definition 1</dd>
+  </div>
+  <div>
+    <dt>Term 2</dt>
+    <dd>Definition 2</dd>
+  </div>
+</dl>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should handle nested definition lists', async () => {
+      const input = `<dl>
+<dt>Outer Term</dt>
+<dd>
+<dl>
+<dt>Inner Term</dt>
+<dd>Inner Definition</dd>
+</dl>
+</dd>
+</dl>`;
+      const expected = `<dl>
+  <dt>Outer Term</dt>
+  <dd>
+    <dl>
+      <dt>Inner Term</dt>
+      <dd>Inner Definition</dd>
+    </dl>
+  </dd>
+</dl>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should format simple table structure', async () => {
+      const input = `<table>
+<tr>
+<td>Cell 1</td>
+<td>Cell 2</td>
+</tr>
+<tr>
+<td>Cell 3</td>
+<td>Cell 4</td>
+</tr>
+</table>`;
+      const expected = `<table>
+  <tr>
+    <td>Cell 1</td>
+    <td>Cell 2</td>
+  </tr>
+  <tr>
+    <td>Cell 3</td>
+    <td>Cell 4</td>
+  </tr>
+</table>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should format table with thead and tbody', async () => {
+      const input = `<table>
+<thead>
+<tr>
+<th>Header 1</th>
+<th>Header 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Data 1</td>
+<td>Data 2</td>
+</tr>
+</tbody>
+</table>`;
+      const expected = `<table>
+  <thead>
+    <tr>
+      <th>Header 1</th>
+      <th>Header 2</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Data 1</td>
+      <td>Data 2</td>
+    </tr>
+  </tbody>
+</table>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should format unordered list', async () => {
+      const input = `<ul>
+<li>Item 1</li>
+<li>Item 2</li>
+<li>Item 3</li>
+</ul>`;
+      const expected = `<ul>
+  <li>Item 1</li>
+  <li>Item 2</li>
+  <li>Item 3</li>
+</ul>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should format nested div elements', async () => {
+      const input = `<div class="container">
+<div class="row">
+<div class="col">Content</div>
+</div>
+</div>`;
+      const expected = `<div class="container">
+  <div class="row">
+    <div class="col">Content</div>
+  </div>
+</div>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should format div with mixed content', async () => {
+      const input = `<div>
+<h3>Title</h3>
+<p>Paragraph text here.</p>
+<ul>
+<li>List item</li>
+</ul>
+</div>`;
+      const expected = `<div>
+  <h3>Title</h3>
+  <p>Paragraph text here.</p>
+  <ul>
+    <li>List item</li>
+  </ul>
+</div>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should handle select and options', async () => {
+      const input = `<select name="choice">
+<option value="1">Option 1</option>
+<option value="2">Option 2</option>
+<option value="3">Option 3</option>
+</select>`;
+      const expected = `<select name="choice">
+  <option value="1">Option 1</option>
+  <option value="2">Option 2</option>
+  <option value="3">Option 3</option>
+</select>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should format HTML blocks within MDX content', async () => {
+      const input = `# Heading
+
+Some paragraph text.
+
+<dl>
+<dt>Term</dt>
+<dd>Definition</dd>
+</dl>
+
+More content here.
+
+<table>
+<tr>
+<td>Data</td>
+</tr>
+</table>`;
+      const expected = `# Heading
+
+Some paragraph text.
+
+<dl>
+  <dt>Term</dt>
+  <dd>Definition</dd>
+</dl>
+
+More content here.
+
+<table>
+  <tr>
+    <td>Data</td>
+  </tr>
+</table>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should handle empty HTML elements', async () => {
+      const input = `<div></div>
+<span></span>
+<p></p>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should preserve self-closing tags', async () => {
+      const input = `<div>
+<img src="image.jpg" alt="Test" />
+<br />
+<hr />
+</div>`;
+      const expected = `<div>
+  <img src="image.jpg" alt="Test" />
+  <br />
+  <hr />
+</div>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should handle deeply nested structures', async () => {
+      const input = `<div>
+<section>
+<article>
+<header>
+<h1>Title</h1>
+</header>
+<main>
+<p>Content</p>
+</main>
+<footer>
+<p>Footer</p>
+</footer>
+</article>
+</section>
+</div>`;
+      const expected = `<div>
+  <section>
+    <article>
+      <header>
+        <h1>Title</h1>
+      </header>
+      <main>
+        <p>Content</p>
+      </main>
+      <footer>
+        <p>Footer</p>
+      </footer>
+    </article>
+  </section>
+</div>`;
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(expected);
+    });
+
+    it('should be idempotent', async () => {
+      const formatted = `<dl>
+  <dt>Term</dt>
+  <dd>Definition</dd>
+</dl>`;
+      const result = await format(formatted, { settings: testSettings });
+      expect(result).toBe(formatted);
+    });
+  });
 
   describe('MDX/JSX Support', () => {
     it('should handle JSX components with empty lines', async () => {
@@ -627,9 +927,9 @@ Another paragraph.`;
       });
     });
 
-    // Issue 3: dl/dt/dd with div wrapper formatting — SKIPPED (HTML blocks not implemented in Rust)
+    // Issue 3: dl/dt/dd with div wrapper formatting — now covered in HTML Block Formatting section
 
-    // Combined scenarios — SKIPPED (includes dl/dt/dd HTML block tests)
+    // Combined scenarios — dl/dt/dd tests now covered in HTML Block Formatting section
   });
 
   describe('Issue #27: Paragraph/list spacing in production formatter', () => {

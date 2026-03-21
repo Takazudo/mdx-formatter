@@ -12,6 +12,7 @@
 //! - JSX multi-line formatting (attribute indentation, self-closing fix, block JSX empty lines)
 //! - YAML frontmatter formatting (parse, reformat, unsafe value quoting)
 //! - List indentation normalization
+//! - HTML block formatting (indentation of HTML elements in MDX)
 //! - Convergence loop (max 3 iterations)
 //! - Empty line normalization (collapse 3+ newlines to 2)
 
@@ -1294,4 +1295,176 @@ fn stress_frontmatter_jsx_lists_code() {
     let input = "---\ntitle: Complex\n---\n\n# Title\n\nIntro text.\n\n<Widget type=\"fancy\" />\n\n- Item 1\n- Item 2\n\n```ts\nconst x = 1;\n```\n\n## Conclusion\n\nFinal words.";
     let result = format(input, &default_settings());
     assert_eq!(result, input, "Well-structured document should be stable");
+}
+
+// ============================================================================
+// HTML Block Formatting (from html-blocks.test.ts)
+// ============================================================================
+
+#[test]
+fn html_block_simple_dl() {
+    let input = "<dl>\n<dt>Term 1</dt>\n<dd>Definition 1</dd>\n</dl>";
+    let expected = "<dl>\n  <dt>Term 1</dt>\n  <dd>Definition 1</dd>\n</dl>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_dl_excessive_whitespace() {
+    let input = "<dl>\n  <dt>  Term with spaces  </dt>\n  <dd>   Definition with spaces   </dd>\n</dl>";
+    let expected = "<dl>\n  <dt>Term with spaces</dt>\n  <dd>Definition with spaces</dd>\n</dl>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_dl_with_div_wrappers() {
+    let input = "<dl>\n<div>\n<dt>Term 1</dt>\n<dd>Definition 1</dd>\n</div>\n<div>\n<dt>Term 2</dt>\n<dd>Definition 2</dd>\n</div>\n</dl>";
+    let expected = "<dl>\n  <div>\n    <dt>Term 1</dt>\n    <dd>Definition 1</dd>\n  </div>\n  <div>\n    <dt>Term 2</dt>\n    <dd>Definition 2</dd>\n  </div>\n</dl>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_nested_definition_lists() {
+    let input = "<dl>\n<dt>Outer Term</dt>\n<dd>\n<dl>\n<dt>Inner Term</dt>\n<dd>Inner Definition</dd>\n</dl>\n</dd>\n</dl>";
+    let expected = "<dl>\n  <dt>Outer Term</dt>\n  <dd>\n    <dl>\n      <dt>Inner Term</dt>\n      <dd>Inner Definition</dd>\n    </dl>\n  </dd>\n</dl>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_simple_table() {
+    let input = "<table>\n<tr>\n<td>Cell 1</td>\n<td>Cell 2</td>\n</tr>\n<tr>\n<td>Cell 3</td>\n<td>Cell 4</td>\n</tr>\n</table>";
+    let expected = "<table>\n  <tr>\n    <td>Cell 1</td>\n    <td>Cell 2</td>\n  </tr>\n  <tr>\n    <td>Cell 3</td>\n    <td>Cell 4</td>\n  </tr>\n</table>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_table_with_thead_tbody() {
+    let input = "<table>\n<thead>\n<tr>\n<th>Header 1</th>\n<th>Header 2</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Data 1</td>\n<td>Data 2</td>\n</tr>\n</tbody>\n</table>";
+    let expected = "<table>\n  <thead>\n    <tr>\n      <th>Header 1</th>\n      <th>Header 2</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <td>Data 1</td>\n      <td>Data 2</td>\n    </tr>\n  </tbody>\n</table>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_table_with_attributes() {
+    let input = "<table class=\"data-table\" id=\"results\">\n<tr class=\"row-highlight\">\n<td colspan=\"2\">Merged Cell</td>\n</tr>\n</table>";
+    let expected = "<table class=\"data-table\" id=\"results\">\n  <tr class=\"row-highlight\">\n    <td colspan=\"2\">Merged Cell</td>\n  </tr>\n</table>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_unordered_list() {
+    let input = "<ul>\n<li>Item 1</li>\n<li>Item 2</li>\n<li>Item 3</li>\n</ul>";
+    let expected = "<ul>\n  <li>Item 1</li>\n  <li>Item 2</li>\n  <li>Item 3</li>\n</ul>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_ordered_list() {
+    let input = "<ol>\n<li>First</li>\n<li>Second</li>\n<li>Third</li>\n</ol>";
+    let expected = "<ol>\n  <li>First</li>\n  <li>Second</li>\n  <li>Third</li>\n</ol>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_nested_divs() {
+    let input = "<div class=\"container\">\n<div class=\"row\">\n<div class=\"col\">Content</div>\n</div>\n</div>";
+    let expected = "<div class=\"container\">\n  <div class=\"row\">\n    <div class=\"col\">Content</div>\n  </div>\n</div>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_div_with_mixed_content() {
+    let input = "<div>\n<h3>Title</h3>\n<p>Paragraph text here.</p>\n<ul>\n<li>List item</li>\n</ul>\n</div>";
+    let expected = "<div>\n  <h3>Title</h3>\n  <p>Paragraph text here.</p>\n  <ul>\n    <li>List item</li>\n  </ul>\n</div>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_select_options() {
+    let input = "<select name=\"choice\">\n<option value=\"1\">Option 1</option>\n<option value=\"2\">Option 2</option>\n<option value=\"3\">Option 3</option>\n</select>";
+    let expected = "<select name=\"choice\">\n  <option value=\"1\">Option 1</option>\n  <option value=\"2\">Option 2</option>\n  <option value=\"3\">Option 3</option>\n</select>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_mixed_mdx_content() {
+    let input = "# Heading\n\nSome paragraph text.\n\n<dl>\n<dt>Term</dt>\n<dd>Definition</dd>\n</dl>\n\nMore content here.\n\n<table>\n<tr>\n<td>Data</td>\n</tr>\n</table>";
+    let expected = "# Heading\n\nSome paragraph text.\n\n<dl>\n  <dt>Term</dt>\n  <dd>Definition</dd>\n</dl>\n\nMore content here.\n\n<table>\n  <tr>\n    <td>Data</td>\n  </tr>\n</table>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_empty_elements() {
+    let input = "<div></div>\n<span></span>\n<p></p>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, input);
+}
+
+#[test]
+fn html_block_self_closing_void_elements() {
+    let input = "<div>\n<img src=\"image.jpg\" alt=\"Test\" />\n<br />\n<hr />\n</div>";
+    let expected = "<div>\n  <img src=\"image.jpg\" alt=\"Test\" />\n  <br />\n  <hr />\n</div>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_deeply_nested() {
+    let input = "<div>\n<section>\n<article>\n<header>\n<h1>Title</h1>\n</header>\n<main>\n<p>Content</p>\n</main>\n<footer>\n<p>Footer</p>\n</footer>\n</article>\n</section>\n</div>";
+    let expected = "<div>\n  <section>\n    <article>\n      <header>\n        <h1>Title</h1>\n      </header>\n      <main>\n        <p>Content</p>\n      </main>\n      <footer>\n        <p>Footer</p>\n      </footer>\n    </article>\n  </section>\n</div>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn html_block_disabled_setting() {
+    let input = "<dl>\n<dt>Term</dt>\n<dd>Definition</dd>\n</dl>";
+    let mut settings = default_settings();
+    settings.format_html_blocks_in_mdx.enabled = false;
+    let result = format(input, &settings);
+    assert_eq!(result, input, "Should not change when disabled");
+}
+
+#[test]
+fn html_block_long_attributes_no_wrapping() {
+    let input = "<div class=\"very-long-class-name-that-exceeds-normal-width\" id=\"very-long-id-value\" data-attribute=\"very-long-attribute-value\">\n<p>Content</p>\n</div>";
+    let result = format(input, &default_settings());
+    assert!(result.contains("very-long-class-name-that-exceeds-normal-width"));
+    assert!(result.contains("<p>Content</p>"));
+}
+
+#[test]
+fn html_block_backward_compat_trimmed_dt_dd() {
+    let input = "<dl>\n  <dt>  Term with spaces  </dt>\n  <dd>   Definition with spaces   </dd>\n</dl>";
+    let result = format(input, &default_settings());
+    assert!(result.contains("<dt>Term with spaces</dt>"));
+    assert!(result.contains("<dd>Definition with spaces</dd>"));
+}
+
+#[test]
+fn html_block_idempotent() {
+    // Formatting already-formatted HTML should produce the same output
+    let formatted = "<dl>\n  <dt>Term</dt>\n  <dd>Definition</dd>\n</dl>";
+    let result = format(formatted, &default_settings());
+    assert_eq!(result, formatted, "HTML block formatting should be idempotent");
+}
+
+#[test]
+fn html_block_inline_span_preserves_content() {
+    let input = "<div>\n<span class=\"highlight\">Important</span> text with <span>inline</span> elements.\n</div>";
+    let result = format(input, &default_settings());
+    assert!(result.contains("Important"));
+    assert!(result.contains("inline"));
 }
