@@ -38,29 +38,29 @@ All verification checks pass. The Rust implementation is ready to fully replace 
 
 Release build, 100 iterations, median timing:
 
-| Input | TS (ms) | Rust (ms) | Speedup |
-| --- | --- | --- | --- |
-| small.mdx (21 lines) | 0.57 | 0.19 | 3.1x |
-| medium.mdx (131 lines) | 1.56 | 0.45 | 3.5x |
-| large.mdx (506 lines) | 7.52 | 1.38 | 5.4x |
+| Input                  | TS (ms) | Rust (ms) | Speedup |
+| ---------------------- | ------- | --------- | ------- |
+| small.mdx (21 lines)   | 0.57    | 0.19      | 3.1x    |
+| medium.mdx (131 lines) | 1.56    | 0.45      | 3.5x    |
+| large.mdx (506 lines)  | 7.52    | 1.38      | 5.4x    |
 
 Single-call latency (first timed call):
 
-| Input | TS (ms) | Rust (ms) | Speedup |
-| --- | --- | --- | --- |
-| small.mdx | 1.05 | 0.25 | 4.1x |
-| medium.mdx | 1.88 | 0.50 | 3.8x |
-| large.mdx | 9.82 | 1.38 | 7.1x |
+| Input      | TS (ms) | Rust (ms) | Speedup |
+| ---------- | ------- | --------- | ------- |
+| small.mdx  | 1.05    | 0.25      | 4.1x    |
+| medium.mdx | 1.88    | 0.50      | 3.8x    |
+| large.mdx  | 9.82    | 1.38      | 7.1x    |
 
 ## Build Verification
 
-| Target | Status |
-| --- | --- |
-| napi module (release) | OK |
-| CLI binary (`mdx-formatter`) | OK |
-| WASM (web target) | OK |
-| WASM (doc site) | OK |
-| Rust napi module loadable | OK — `isRustFormatterAvailable()` returns `true` |
+| Target                       | Status                                           |
+| ---------------------------- | ------------------------------------------------ |
+| napi module (release)        | OK                                               |
+| CLI binary (`mdx-formatter`) | OK                                               |
+| WASM (web target)            | OK                                               |
+| WASM (doc site)              | OK                                               |
+| Rust napi module loadable    | OK — `isRustFormatterAvailable()` returns `true` |
 
 ## CLI Verification
 
