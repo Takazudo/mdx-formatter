@@ -48,6 +48,9 @@ interface SettingsState {
   autoDetectIndent: SettingToggle;
 }
 
+const TEXTAREA_CLASS =
+  'min-h-[32rem] w-full resize-y rounded-lg border border-muted/30 bg-code-bg p-hsp-md font-mono text-caption leading-relaxed text-code-fg focus:border-accent focus:outline-none';
+
 const defaultSettings: SettingsState = {
   addEmptyLineBetweenElements: { enabled: true },
   formatMultiLineJsx: { enabled: true, indentSize: 2 },
@@ -113,9 +116,9 @@ function SettingRow({
         <span className="text-caption font-mono text-fg">{label}</span>
       </label>
       {children && (
-        <div className={`ml-5 flex items-center gap-hsp-xs ${!enabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <fieldset disabled={!enabled} className={`ml-5 flex items-center gap-hsp-xs ${!enabled ? 'opacity-40' : ''}`}>
           {children}
-        </div>
+        </fieldset>
       )}
     </div>
   );
@@ -188,6 +191,8 @@ export default function FormatterPlayground(): ReactNode {
         <button
           type="button"
           onClick={() => setSettingsOpen((prev) => !prev)}
+          aria-expanded={settingsOpen}
+          aria-controls="pg-settings"
           className="flex w-full items-center gap-hsp-xs p-hsp-md text-caption font-semibold text-muted hover:text-fg transition-colors"
         >
           <svg
@@ -200,7 +205,7 @@ export default function FormatterPlayground(): ReactNode {
           Settings
         </button>
         {settingsOpen && (
-          <div className="border-t border-muted/30 p-hsp-md">
+          <div id="pg-settings" className="border-t border-muted/30 p-hsp-md">
             <div className="grid grid-cols-1 gap-vsp-xs md:grid-cols-2 md:gap-hsp-md">
               <SettingRow
                 label="addEmptyLineBetweenElements"
@@ -229,7 +234,7 @@ export default function FormatterPlayground(): ReactNode {
                   value={settings.formatMultiLineJsx.indentSize}
                   onChange={(e) =>
                     updateSetting('formatMultiLineJsx', {
-                      indentSize: Number(e.target.value) || 2,
+                      indentSize: Math.max(1, Math.min(8, Number(e.target.value) || 2)),
                     })
                   }
                   className="w-14 rounded border border-muted/30 bg-code-bg px-hsp-xs py-0.5 text-caption text-fg"
@@ -253,7 +258,7 @@ export default function FormatterPlayground(): ReactNode {
                   value={settings.expandSingleLineJsx.propsThreshold}
                   onChange={(e) =>
                     updateSetting('expandSingleLineJsx', {
-                      propsThreshold: Number(e.target.value) || 2,
+                      propsThreshold: Math.max(1, Math.min(10, Number(e.target.value) || 2)),
                     })
                   }
                   className="w-14 rounded border border-muted/30 bg-code-bg px-hsp-xs py-0.5 text-caption text-fg"
@@ -351,7 +356,7 @@ export default function FormatterPlayground(): ReactNode {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             spellCheck={false}
-            className="min-h-[32rem] w-full resize-y rounded-lg border border-muted/30 bg-code-bg p-hsp-md font-mono text-caption leading-relaxed text-code-fg focus:border-accent focus:outline-none"
+            className={TEXTAREA_CLASS}
           />
         </div>
         <div className="flex flex-col gap-vsp-2xs">
@@ -363,7 +368,7 @@ export default function FormatterPlayground(): ReactNode {
             value={output}
             readOnly
             spellCheck={false}
-            className="min-h-[32rem] w-full resize-y rounded-lg border border-muted/30 bg-code-bg p-hsp-md font-mono text-caption leading-relaxed text-code-fg focus:border-accent focus:outline-none"
+            className={TEXTAREA_CLASS}
             placeholder="Click Format to see the result..."
           />
         </div>
