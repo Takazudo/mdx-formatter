@@ -1,10 +1,10 @@
 # @takazudo/mdx-formatter
 
-AST-based markdown and MDX formatter with Japanese text support. Built on top of the unified ecosystem with remark plugins.
+AST-based markdown and MDX formatter with Japanese text support. Uses remark for AST parsing, then applies targeted line-based operations to the original source text.
 
 ## Features
 
-- **AST-based formatting** — Uses remark's AST for reliable, structural formatting
+- **Hybrid formatter** — Parses via remark AST, applies edits to original source lines (no lossy round-trip)
 - **MDX support** — Full support for MDX syntax including JSX components, imports, exports
 - **Japanese text handling** — Preserves Japanese punctuation and text formatting
 - **Docusaurus admonitions** — Preserves `:::note`, `:::tip`, `:::warning` etc. syntax
