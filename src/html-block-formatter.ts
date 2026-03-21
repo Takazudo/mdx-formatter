@@ -159,7 +159,7 @@ export class HtmlBlockFormatter {
       const formatted = await prettier.format(preprocessed, {
         parser: this.settings.formatterConfig.parser || 'html',
         printWidth: 999999, // Never wrap lines
-        tabWidth: this.settings.formatterConfig.tabWidth || 2,
+        tabWidth: this.settings.formatterConfig.tabWidth ?? 2,
         useTabs: this.settings.formatterConfig.useTabs || false,
         htmlWhitespaceSensitivity: 'css', // Use CSS mode to handle whitespace better
         bracketSameLine: true, // Keep closing bracket on same line to prevent broken tags
