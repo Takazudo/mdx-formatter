@@ -194,7 +194,7 @@ export default function FormatterPlayground(): ReactNode {
           Settings
         </button>
         {settingsOpen && (
-          <div id="pg-settings" className="border-t border-muted/30 p-hsp-md">
+          <div id="pg-settings" className="border-t border-muted/30 p-hsp-md flex flex-col gap-vsp-sm">
             <div className="grid grid-cols-1 gap-vsp-xs sm:grid-cols-2 sm:gap-hsp-md xl:grid-cols-3">
               <SettingRow
                 label="addEmptyLineBetweenElements"
@@ -255,52 +255,6 @@ export default function FormatterPlayground(): ReactNode {
               </SettingRow>
 
               <SettingRow
-                label="indentJsxContent"
-                enabled={settings.indentJsxContent.enabled}
-                onToggle={() =>
-                  updateSetting('indentJsxContent', {
-                    enabled: !settings.indentJsxContent.enabled,
-                  })
-                }
-              >
-                <label className="text-caption text-muted">containerComponents</label>
-                <input
-                  type="text"
-                  value={settings.indentJsxContent.containerComponents}
-                  onChange={(e) =>
-                    updateSetting('indentJsxContent', {
-                      containerComponents: e.target.value,
-                    })
-                  }
-                  placeholder="Comp1, Comp2"
-                  className="w-36 rounded border border-muted/30 bg-code-bg px-hsp-xs py-0.5 text-caption text-fg placeholder:text-muted/50"
-                />
-              </SettingRow>
-
-              <SettingRow
-                label="addEmptyLinesInBlockJsx"
-                enabled={settings.addEmptyLinesInBlockJsx.enabled}
-                onToggle={() =>
-                  updateSetting('addEmptyLinesInBlockJsx', {
-                    enabled: !settings.addEmptyLinesInBlockJsx.enabled,
-                  })
-                }
-              >
-                <label className="text-caption text-muted">blockComponents</label>
-                <input
-                  type="text"
-                  value={settings.addEmptyLinesInBlockJsx.blockComponents}
-                  onChange={(e) =>
-                    updateSetting('addEmptyLinesInBlockJsx', {
-                      blockComponents: e.target.value,
-                    })
-                  }
-                  placeholder="Comp1, Comp2"
-                  className="w-36 rounded border border-muted/30 bg-code-bg px-hsp-xs py-0.5 text-caption text-fg placeholder:text-muted/50"
-                />
-              </SettingRow>
-
-              <SettingRow
                 label="formatYamlFrontmatter"
                 enabled={settings.formatYamlFrontmatter.enabled}
                 onToggle={() =>
@@ -329,6 +283,55 @@ export default function FormatterPlayground(): ReactNode {
                   })
                 }
               />
+            </div>
+
+            {/* Text input settings — full width to avoid overlap */}
+            <div className="flex flex-col gap-vsp-xs">
+              <SettingRow
+                label="indentJsxContent"
+                enabled={settings.indentJsxContent.enabled}
+                onToggle={() =>
+                  updateSetting('indentJsxContent', {
+                    enabled: !settings.indentJsxContent.enabled,
+                  })
+                }
+              >
+                <label className="text-caption text-muted shrink-0">containerComponents</label>
+                <input
+                  type="text"
+                  value={settings.indentJsxContent.containerComponents}
+                  onChange={(e) =>
+                    updateSetting('indentJsxContent', {
+                      containerComponents: e.target.value,
+                    })
+                  }
+                  placeholder="Comp1, Comp2"
+                  className="min-w-0 flex-1 rounded border border-muted/30 bg-code-bg px-hsp-xs py-0.5 text-caption text-fg placeholder:text-muted/50"
+                />
+              </SettingRow>
+
+              <SettingRow
+                label="addEmptyLinesInBlockJsx"
+                enabled={settings.addEmptyLinesInBlockJsx.enabled}
+                onToggle={() =>
+                  updateSetting('addEmptyLinesInBlockJsx', {
+                    enabled: !settings.addEmptyLinesInBlockJsx.enabled,
+                  })
+                }
+              >
+                <label className="text-caption text-muted shrink-0">blockComponents</label>
+                <input
+                  type="text"
+                  value={settings.addEmptyLinesInBlockJsx.blockComponents}
+                  onChange={(e) =>
+                    updateSetting('addEmptyLinesInBlockJsx', {
+                      blockComponents: e.target.value,
+                    })
+                  }
+                  placeholder="Comp1, Comp2"
+                  className="min-w-0 flex-1 rounded border border-muted/30 bg-code-bg px-hsp-xs py-0.5 text-caption text-fg placeholder:text-muted/50"
+                />
+              </SettingRow>
             </div>
           </div>
         )}
