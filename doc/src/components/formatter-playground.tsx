@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useState } from 'react';
 import { format } from '@takazudo/mdx-formatter/browser';
 import type { DeepPartial, FormatterSettings } from '@takazudo/mdx-formatter/browser';
 import type { format as wasmFormat } from '../wasm-pkg/mdx_formatter_wasm';
@@ -65,16 +65,18 @@ const defaultSettings: SettingsState = {
 
 type WasmModule = { format: typeof wasmFormat };
 
-async function loadWasm(
-  cache: React.RefObject<WasmModule | null>,
-): Promise<WasmModule> {
-  if (cache.current) return cache.current;
-  const mod = await import('../wasm-pkg/mdx_formatter_wasm');
-  await mod.default(
-    `${import.meta.env.BASE_URL}wasm/mdx_formatter_wasm_bg.wasm`,
-  );
-  cache.current = mod;
-  return mod;
+let wasmPromise: Promise<WasmModule> | null = null;
+
+function loadWasm(): Promise<WasmModule> {
+  if (wasmPromise) return wasmPromise;
+  wasmPromise = (async () => {
+    const mod = await import('../wasm-pkg/mdx_formatter_wasm');
+    await mod.default(
+      `${import.meta.env.BASE_URL}wasm/mdx_formatter_wasm_bg.wasm`,
+    );
+    return mod as WasmModule;
+  })();
+  return wasmPromise;
 }
 
 function buildFormatterSettings(s: SettingsState): DeepPartial<FormatterSettings> {
@@ -148,8 +150,6 @@ export default function FormatterPlayground(): ReactNode {
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(defaultSettings);
-  const wasmRef = useRef<WasmModule | null>(null);
-
   const updateSetting = useCallback(
     <K extends keyof SettingsState>(key: K, patch: Partial<SettingsState[K]>) => {
       setSettings((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
@@ -165,7 +165,7 @@ export default function FormatterPlayground(): ReactNode {
       let result: string;
       if (version === 'rust') {
         setIsLoadingWasm(true);
-        const wasm = await loadWasm(wasmRef);
+        const wasm = await loadWasm();
         const settingsJson = JSON.stringify(formatterSettings);
         result = wasm.format(input, settingsJson);
       } else {
