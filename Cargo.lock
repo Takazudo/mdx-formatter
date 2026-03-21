@@ -309,7 +309,6 @@ dependencies = [
  "colored",
  "glob",
  "mdx-formatter-core",
- "serde_json",
 ]
 
 [[package]]

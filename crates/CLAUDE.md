@@ -27,6 +27,7 @@ Uses the same hybrid approach as the TypeScript implementation:
 4. Convergence loop: repeat up to 3 times until output stabilizes
 
 Key modules in `mdx-formatter-core/src/`:
+
 - `formatter.rs` — Hybrid formatter (convergence loop + all rules)
 - `html_formatter.rs` — HTML block indentation formatter
 - `config.rs` — Config file loading (3-layer merge)
