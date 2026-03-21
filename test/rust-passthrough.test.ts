@@ -526,7 +526,7 @@ Next paragraph here.`;
       });
     });
 
-    describe('Issue 1: Empty lines between JSX elements and text', () => {
+    describe('Issue 14: Empty lines between JSX elements and text', () => {
       it('should add empty line between JSX component and following text paragraph', async () => {
         const input = `<ExImg src="/test.jpg" alt="test" />
 次の段落のテキストです。`;
@@ -586,7 +586,7 @@ This text already has a blank line before it.`;
       });
     });
 
-    describe('Issue 2: List indentation (should have no leading spaces)', () => {
+    describe('Issue 15: List indentation (should have no leading spaces)', () => {
       it('should format lists without leading spaces', async () => {
         const input = `  - First item
   - Second item
