@@ -33,6 +33,10 @@ runs:
       run: pnpm install --frozen-lockfile
       shell: bash
 
+    - name: Build main package
+      run: pnpm build
+      shell: bash
+
     - name: Build Astro site
       run: pnpm build
       shell: bash
