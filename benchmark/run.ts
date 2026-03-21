@@ -3,6 +3,14 @@
  *
  * Compares wall-clock time for both formatters across varying input sizes.
  * Uses median timing for stable results and reports cold-start vs warm performance.
+ *
+ * IMPORTANT: Build the Rust napi module with --release for production-representative
+ * numbers. Debug builds (cargo build without --release) typically show only ~1.0-1.6x
+ * speedup over TypeScript. Release builds show ~3.4-6.0x median speedup over TypeScript,
+ * with up to ~9.7x improvement on single-call latency.
+ *
+ *   pnpm build:rust   # or manually: cargo build -p mdx-formatter-napi --release
+ *                     # then copy the .node file to crates/mdx-formatter-napi/
  */
 
 import { readFileSync } from 'fs';
@@ -115,7 +123,9 @@ async function benchmarkRust(content: string): Promise<BenchResult> {
 async function main() {
   const rustAvailable = isRustFormatterAvailable();
 
-  console.log('=== mdx-formatter Performance Benchmark ===\n');
+  console.log('=== mdx-formatter Performance Benchmark ===');
+  console.log('NOTE: Use a release build (pnpm build:rust) for production-representative Rust numbers.');
+  console.log('      Debug builds typically show only ~1-2x speedup over TypeScript.\n');
 
   // Load fixtures
   const fixtures: FixtureInfo[] = FIXTURE_FILES.map((file) => {
