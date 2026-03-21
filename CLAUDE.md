@@ -8,7 +8,7 @@ AST-based markdown and MDX formatter built on the unified/remark ecosystem. Publ
 - **Runtime**: Node.js >= 18
 - **Package manager**: pnpm
 - **Test framework**: vitest
-- **Linting**: ESLint (flat config) + Prettier + lint-staged (via husky)
+- **Linting**: ESLint (flat config) + Prettier + lefthook (pre-commit hooks)
 - **Build**: `tsc` (output to `dist/`)
 - **Doc site**: zudo-doc / Astro (workspace in `doc/`)
 - **Rust implementation**: Production-ready Rust engine in `crates/` (markdown-rs + napi-rs + WASM)
