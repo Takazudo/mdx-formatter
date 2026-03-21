@@ -1,7 +1,6 @@
 import { type ReactNode, useCallback, useState } from 'react';
 import { format } from '@takazudo/mdx-formatter/browser';
 import type { DeepPartial, FormatterSettings } from '@takazudo/mdx-formatter/browser';
-import type { format as wasmFormat } from '../wasm-pkg/mdx_formatter_wasm';
 
 const SAMPLE_INPUT = `---
 title: Example Document
@@ -63,14 +62,20 @@ const defaultSettings: SettingsState = {
   autoDetectIndent: { enabled: false },
 };
 
-type WasmModule = { format: typeof wasmFormat };
+interface WasmModule {
+  format: (content: string, settingsJson: string | undefined) => string;
+}
 
 let wasmPromise: Promise<WasmModule> | null = null;
 
 function loadWasm(): Promise<WasmModule> {
   if (wasmPromise) return wasmPromise;
   wasmPromise = (async () => {
-    const mod = await import('../wasm-pkg/mdx_formatter_wasm');
+    // Dynamic import with variable path to prevent Rollup from resolving
+    // at build time — the wasm-pkg dir is a build artifact from wasm-pack
+    // that may not exist in CI environments without Rust toolchain.
+    const wasmPath = '../wasm-pkg/mdx_formatter_wasm';
+    const mod = await import(/* @vite-ignore */ wasmPath);
     await mod.default(
       `${import.meta.env.BASE_URL}wasm/mdx_formatter_wasm_bg.wasm`,
     );
