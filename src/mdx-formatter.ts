@@ -1252,6 +1252,8 @@ export class MdxFormatter {
 
   collectJsxIndentOperations(operations: FormatterOperation[]): void {
     const containerNames = this.settings.indentJsxContent.containerComponents || [];
+    const indentSize = this.settings.indentJsxContent.indentSize || 2;
+    const indent = ' '.repeat(indentSize);
 
     visit(this.ast, (node: Node) => {
       if (this.isFormattableJsxNode(node)) {
@@ -1271,11 +1273,11 @@ export class MdxFormatter {
             }
 
             // If not indented, add operation
-            if (!line.startsWith('  ')) {
+            if (!line.startsWith(indent)) {
               operations.push({
                 type: 'indentLine',
                 startLine: i,
-                indent: '  ',
+                indent,
               });
             }
           }
@@ -1430,6 +1432,10 @@ export class MdxFormatter {
     visit(this.ast, (node: Node) => {
       if (node.type === 'yaml' && node.position) {
         const yamlNode = node as YamlNode;
+        // Skip empty frontmatter (---\n---) to avoid reversed-range operation
+        if (!yamlNode.value || !yamlNode.value.trim()) {
+          return;
+        }
         try {
           let yamlToParse = yamlNode.value;
 
