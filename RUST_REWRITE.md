@@ -82,11 +82,15 @@ All formatting rules from the TypeScript version are implemented:
 
 The remaining plugin (fix-paragraph-spacing) is covered by the block-level spacing post-processor.
 
-## Not Yet Implemented (Infrastructure)
+## Infrastructure
 
-- [ ] Config file loading (`.mdx-formatter.json`, `package.json` key)
-- [ ] CLI binary (standalone Rust CLI)
-- [ ] napi-rs CI build pipeline (cross-platform binaries)
+- [x] Config file loading (`.mdx-formatter.json`, `package.json` "mdx-formatter" key, 3-layer merge)
+- [x] CLI binary (`mdx-formatter-cli` crate — `--write`, `--check`, `--config`, `--ignore`, glob patterns)
+- [x] Auto-detect bridge (TS `format()` auto-prefers Rust napi when available, falls back to TS)
+
+## Not Yet Implemented
+
+- [ ] napi-rs CI build pipeline (cross-platform binary generation for macOS/Linux/Windows)
 - [ ] Browser/WASM support
 
 ## npm Distribution Plan
