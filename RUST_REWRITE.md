@@ -51,7 +51,7 @@ cp target/debug/libmdx_formatter_napi.so crates/mdx-formatter-napi/mdx-formatter
 ## Testing
 
 ```bash
-# Run Rust unit tests (315 tests)
+# Run Rust unit tests (342 tests)
 cargo test
 
 # Run JS tests against Rust formatter (requires build first)
@@ -90,7 +90,7 @@ The remaining plugin (fix-paragraph-spacing) is covered by the block-level spaci
 
 ## Not Yet Implemented
 
-- [ ] napi-rs CI build pipeline (cross-platform binary generation for macOS/Linux/Windows)
+- [ ] napi-rs CI build pipeline (cross-platform binary generation for macOS/Linux/Windows) — **In Progress**
 - [ ] Browser/WASM support
 
 ## npm Distribution Plan

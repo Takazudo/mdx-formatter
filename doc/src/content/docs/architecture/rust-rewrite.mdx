@@ -73,8 +73,7 @@ crates/
 │   └── tests/
 │       ├── cross_platform.rs    ← 165 cross-platform validation tests
 │       ├── plugin_validation.rs ← 42 plugin validation tests
-│       ├── spacing_recursion.rs ← 11 spacing recursion tests
-│       └── html_formatting.rs   ← HTML block formatting tests
+│       └── spacing_recursion.rs ← 11 spacing recursion tests
 │
 ├── mdx-formatter-cli/           ← Standalone CLI binary
 │   └── src/
@@ -123,7 +122,7 @@ All formatting rules from the TypeScript version are implemented in Rust:
 | Config file loading | Done | `.mdx-formatter.json`, `package.json` key, 3-layer merge |
 | CLI binary | Done | `mdx-formatter-cli` crate with `--write`, `--check`, `--config`, glob patterns |
 | Auto-detect bridge | Done | TS `format()` auto-prefers Rust napi when available |
-| napi-rs CI pipeline | Pending | Cross-platform binary generation (macOS/Linux/Windows) |
+| napi-rs CI pipeline | In Progress | Cross-platform binary generation (macOS/Linux/Windows) |
 | Browser/WASM | Pending | Compile to WASM for browser use |
 
 ## Test Coverage
@@ -133,7 +132,7 @@ All formatting rules from the TypeScript version are implemented in Rust:
 | Rust cargo tests | 342 | Unit + cross-platform + plugin validation + spacing + HTML + config |
 | TS passthrough | 85/85 | Rust matches TS behavior for all formatting |
 | Rust-specific TS | 29/29 | Tests via napi bridge |
-| Existing TS tests | 209/209 | Including auto-detect engine tests |
+| Existing TS tests | 207/207 | All TypeScript formatting tests |
 
 ## npm Distribution Plan
 
@@ -153,5 +152,5 @@ When a user runs `npm install @takazudo/mdx-formatter`, npm's optional dependenc
 
 The formatting engine and core infrastructure are complete. Remaining tasks:
 
-- napi-rs CI build pipeline (GitHub Actions for cross-platform `.node` binary generation)
+- napi-rs CI build pipeline (GitHub Actions for cross-platform `.node` binary generation) — **In Progress**
 - Browser/WASM support (compile Rust core to WASM for browser use)
