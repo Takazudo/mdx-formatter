@@ -38,8 +38,9 @@
     "check": "prettier --check . && eslint .",
     "check:fix": "prettier --write . && eslint --fix .",
     "test:rust": "vitest run --config vitest.rust.config.ts",
-    "build:rust": "cd crates/mdx-formatter-napi && cargo build",
-    "build:rust:release": "cd crates/mdx-formatter-napi && cargo build --release",
+    "test:rust-passthrough": "vitest run --config vitest.rust-passthrough.config.ts",
+    "build:rust": ". \"$HOME/.cargo/env\" && cargo build -p mdx-formatter-napi && cp target/debug/libmdx_formatter_napi.so crates/mdx-formatter-napi/mdx-formatter-napi.node",
+    "build:rust:release": ". \"$HOME/.cargo/env\" && cargo build -p mdx-formatter-napi --release && cp target/release/libmdx_formatter_napi.so crates/mdx-formatter-napi/mdx-formatter-napi.node",
     "b4push": "./scripts/run-b4push.sh",
     "doc:start": "pnpm --dir doc start",
     "prepublishOnly": "tsc && vitest run"

@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
 import mdx from '@astrojs/mdx';
 import react from '@astrojs/react';
@@ -13,6 +15,8 @@ import { rehypeHeadingLinks } from './src/plugins/rehype-heading-links';
 import { rehypeMermaid } from './src/plugins/rehype-mermaid';
 import { rehypeStripMdExtension } from './src/plugins/rehype-strip-md-extension';
 import { claudeResourcesIntegration } from './src/integrations/claude-resources';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const activeScheme = colorSchemes[settings.colorScheme];
 const shikiTheme = activeScheme?.shikiTheme ?? 'dracula';
@@ -46,6 +50,11 @@ export default defineConfig({
   ],
   vite: {
     plugins: [tailwindcss()],
+    resolve: {
+      alias: {
+        '@takazudo/mdx-formatter/browser': path.resolve(__dirname, '../dist/browser.js'),
+      },
+    },
   },
   markdown: {
     shikiConfig,

@@ -65,7 +65,7 @@ fn heading_spacing_already_correct() {
 #[test]
 fn multiple_headings_with_content() {
     let input = "# First\nContent\n## Second\nMore content";
-    let expected = "# First\n\nContent\n## Second\n\nMore content";
+    let expected = "# First\n\nContent\n\n## Second\n\nMore content";
     let result = format(input, &default_settings());
     assert_eq!(result, expected);
 }
