@@ -22,7 +22,7 @@ Another paragraph without spacing</textarea
 
       window.formatText = () => {
         const input = document.getElementById('input').value;
-        const result = format(input, null);
+        const result = format(input, undefined);
         document.getElementById('output').textContent = result;
       };
     </script>
