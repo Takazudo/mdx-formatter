@@ -23,9 +23,9 @@ use std::sync::LazyLock;
 //   - normalize-lists.ts      — List markers preserved, no merging needed
 //   - html-definition-list.ts — HTML content preserved as-is
 //
-// PARTIALLY COVERED by existing spacing rule:
-//   - fix-paragraph-spacing.ts — Heading/JSX spacing handled; collapsed JSX
-//     artifact doesn't occur; import/export spacing may need future work.
+// MOSTLY COVERED by spacing rules (AST-based + post-processing):
+//   - fix-paragraph-spacing.ts — Heading/JSX/list/code-fence spacing handled;
+//     collapsed JSX artifact doesn't occur; import/export spacing may need future work.
 //
 // See tests/plugin_validation.rs for test cases validating each finding.
 
@@ -134,7 +134,10 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
         apply_operation(&mut result_lines, op);
     }
 
-    // 8. Join and normalize multiple empty lines
+    // 8. Post-processing: ensure blank lines between adjacent block elements
+    ensure_block_element_spacing(&mut result_lines);
+
+    // 9. Join and normalize multiple empty lines
     let result = result_lines.join("\n");
     normalize_empty_lines(&result)
 }
@@ -1475,6 +1478,124 @@ fn apply_operation(lines: &mut Vec<String>, op: &FormatterOperation) {
     }
 }
 
+/// Check if a line is a list item start (unordered or ordered).
+fn is_list_line(trimmed: &str) -> bool {
+    trimmed.starts_with("- ")
+        || trimmed.starts_with("* ")
+        || trimmed.starts_with("+ ")
+        || trimmed == "-"
+        || trimmed == "*"
+        || trimmed == "+"
+        || is_ordered_list_marker(trimmed)
+}
+
+/// Check if a line is a code fence (opening or closing).
+fn is_code_fence_line(trimmed: &str) -> bool {
+    trimmed.starts_with("```")
+}
+
+/// Check if a line is plain paragraph text (not a block element start).
+fn is_paragraph_line(trimmed: &str) -> bool {
+    !trimmed.is_empty()
+        && !trimmed.starts_with('#')
+        && !is_list_line(trimmed)
+        && !is_code_fence_line(trimmed)
+        && !trimmed.starts_with('<')
+        && !trimmed.starts_with('>')
+        && trimmed != "---"
+        && !trimmed.starts_with(":::")
+}
+
+/// Post-processing pass: ensure blank lines between adjacent block elements.
+///
+/// Walks through result lines and inserts blank lines where two adjacent
+/// non-empty lines represent different block contexts that need separation.
+/// Only handles cases NOT already covered by the AST-based spacing operations
+/// (which handle headings and JSX).
+fn ensure_block_element_spacing(lines: &mut Vec<String>) {
+    let mut inside_code_fence = false;
+    let mut inside_frontmatter = false;
+    let mut at_start = true;
+    let mut insertions: Vec<usize> = Vec::new();
+
+    let mut i = 0;
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
+
+        // Track frontmatter boundaries (only at start of file)
+        if trimmed == "---" {
+            if at_start && !inside_frontmatter {
+                inside_frontmatter = true;
+                i += 1;
+                continue;
+            } else if inside_frontmatter {
+                inside_frontmatter = false;
+                at_start = false;
+                i += 1;
+                continue;
+            }
+        }
+
+        if inside_frontmatter {
+            i += 1;
+            continue;
+        }
+
+        // Track code fence boundaries
+        if is_code_fence_line(trimmed) {
+            inside_code_fence = !inside_code_fence;
+        }
+
+        // Skip lines inside code blocks (but not the fence lines themselves)
+        if inside_code_fence && !is_code_fence_line(trimmed) {
+            i += 1;
+            continue;
+        }
+
+        if !trimmed.is_empty() {
+            at_start = false;
+        }
+
+        // Look for pairs of adjacent non-empty lines that need blank line separation
+        if !trimmed.is_empty() && i + 1 < lines.len() {
+            let next_trimmed = lines[i + 1].trim();
+            if !next_trimmed.is_empty() {
+                let next_is_heading = next_trimmed.starts_with('#')
+                    && (next_trimmed.starts_with("# ")
+                        || next_trimmed.starts_with("## ")
+                        || next_trimmed.starts_with("### ")
+                        || next_trimmed.starts_with("#### ")
+                        || next_trimmed.starts_with("##### ")
+                        || next_trimmed.starts_with("###### "));
+                let needs_spacing =
+                    // Paragraph → Heading
+                    (is_paragraph_line(trimmed) && next_is_heading)
+                    // Paragraph → List
+                    || (is_paragraph_line(trimmed) && is_list_line(next_trimmed))
+                    // List → Paragraph
+                    || (is_list_line(trimmed) && is_paragraph_line(next_trimmed))
+                    // Paragraph → Code fence (opening)
+                    || (is_paragraph_line(trimmed) && is_code_fence_line(next_trimmed))
+                    // Code fence (closing) → Paragraph
+                    || (is_code_fence_line(trimmed) && !inside_code_fence && is_paragraph_line(next_trimmed))
+                    // List → Code fence
+                    || (is_list_line(trimmed) && is_code_fence_line(next_trimmed));
+
+                if needs_spacing {
+                    insertions.push(i + 1);
+                }
+            }
+        }
+
+        i += 1;
+    }
+
+    // Insert blank lines in reverse order to preserve indices
+    for &pos in insertions.iter().rev() {
+        lines.insert(pos, String::new());
+    }
+}
+
 /// Normalize consecutive empty lines to at most one empty line.
 fn normalize_empty_lines(content: &str) -> String {
     MULTIPLE_NEWLINES_RE.replace_all(content, "\n\n").to_string()
@@ -1501,10 +1622,8 @@ mod tests {
 
     #[test]
     fn test_multiple_headings() {
-        // Note: The Rust formatter currently only adds spacing after headings,
-        // not between paragraphs and headings (that's a separate rule in TS).
         let input = "# First\nContent\n## Second\nMore content";
-        let expected = "# First\n\nContent\n## Second\n\nMore content";
+        let expected = "# First\n\nContent\n\n## Second\n\nMore content";
         let result = format(input, &FormatterSettings::default());
         assert_eq!(result, expected);
     }
