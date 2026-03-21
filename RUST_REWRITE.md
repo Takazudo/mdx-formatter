@@ -91,7 +91,7 @@ The remaining plugin (fix-paragraph-spacing) is covered by the block-level spaci
 ## Not Yet Implemented
 
 - [ ] napi-rs CI build pipeline (cross-platform binary generation for macOS/Linux/Windows) — **In Progress**
-- [ ] Browser/WASM support
+- [x] Browser/WASM support (wasm-pack, web + bundler targets)
 
 ## npm Distribution Plan
 

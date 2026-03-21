@@ -1,6 +1,8 @@
 # Rust Replacement Verification Report
 
 Date: 2026-03-22
+Git SHA: `6e3a5f9` (base: `main`)
+Environment: Linux (WSL2), Node.js, Rust release build
 
 ## Summary
 
@@ -30,7 +32,7 @@ All verification checks pass. The Rust implementation is ready to fully replace 
 ### Full TypeScript Test Suite (pnpm test)
 
 - **207 tests passed** across 6 test files (0 failed)
-- Includes all formatter, settings, CLI, and integration tests
+- Includes formatter, settings, config loading, and integration tests
 
 ## Performance Benchmarks
 
@@ -38,9 +40,9 @@ Release build, 100 iterations, median timing:
 
 | Input | TS (ms) | Rust (ms) | Speedup |
 | --- | --- | --- | --- |
-| small.mdx (22 lines) | 0.57 | 0.19 | 3.1x |
-| medium.mdx (132 lines) | 1.56 | 0.45 | 3.5x |
-| large.mdx (507 lines) | 7.52 | 1.38 | 5.4x |
+| small.mdx (21 lines) | 0.57 | 0.19 | 3.1x |
+| medium.mdx (131 lines) | 1.56 | 0.45 | 3.5x |
+| large.mdx (506 lines) | 7.52 | 1.38 | 5.4x |
 
 Single-call latency (first timed call):
 
@@ -58,7 +60,7 @@ Single-call latency (first timed call):
 | CLI binary (`mdx-formatter`) | OK |
 | WASM (web target) | OK |
 | WASM (doc site) | OK |
-| TS auto-detect bridge | OK — `isRustFormatterAvailable()` returns `true` |
+| Rust napi module loadable | OK — `isRustFormatterAvailable()` returns `true` |
 
 ## CLI Verification
 
@@ -81,16 +83,15 @@ All 10 formatting settings verified through passthrough tests:
 7. formatYamlFrontmatter
 8. indentJsxContent
 9. preserveAdmonitions
-10. throwOnError
+10. errorHandling (throwOnError)
 
 ## Plugin Validation
 
 Rust validates that 9 of 10 TypeScript remark plugins are NOT needed (hybrid approach preserves original text):
 
-- preserve-jsx, preserve-image-alt, fix-autolink-output
-- preprocess-japanese, japanese-text, fix-formatting-issues
-- docusaurus-admonitions, normalize-lists, html-definition-list
-- fix-paragraph-spacing: Partially covered by block-level spacing post-processor
+**Not needed (9):** preserve-jsx, preserve-image-alt, fix-autolink-output, preprocess-japanese, japanese-text, fix-formatting-issues, docusaurus-admonitions, normalize-lists, html-definition-list
+
+**Partially covered (1):** fix-paragraph-spacing — handled by block-level spacing post-processor
 
 ## Conclusion
 
