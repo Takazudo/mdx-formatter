@@ -1,18 +1,19 @@
 # @takazudo/mdx-formatter
 
-AST-based markdown and MDX formatter with Japanese text support. Uses remark for AST parsing, then applies targeted line-based operations to the original source text.
+AST-based markdown and MDX formatter with Japanese text support. Powered by a Rust engine (via napi-rs) for fast, reliable formatting.
 
 ## Features
 
-- **Hybrid formatter** — Parses via remark AST, applies edits to original source lines (no lossy round-trip)
+- **Rust-powered** — Native Rust engine via napi-rs, 3-7x faster than pure JS
+- **Hybrid formatter** — Parses AST for analysis, applies edits to original source lines (no lossy round-trip)
 - **MDX support** — Full support for MDX syntax including JSX components, imports, exports
 - **Japanese text handling** — Preserves Japanese punctuation and text formatting
 - **Docusaurus admonitions** — Preserves `:::note`, `:::tip`, `:::warning` etc. syntax
-- **HTML block formatting** — Proper indentation for HTML blocks (dl, table, ul, div, etc.) via Prettier
+- **HTML block formatting** — Proper indentation for HTML blocks (dl, table, ul, div, etc.)
 - **GFM features** — Tables, strikethrough, task lists
 - **YAML frontmatter** — Formatting with safe value pre-processing
 - **CLI and API** — Use as command-line tool or import as library
-- **Browser export** — `@takazudo/mdx-formatter/browser` for Vite/WebView/Tauri builds
+- **WASM support** — Browser-compatible WASM build available
 - **Configurable** — 10 independently toggleable rules via config file or API
 
 ## Installation
@@ -77,9 +78,9 @@ Full documentation at **[takazudomodular.com/pj/mdx-formatter](https://takazudom
 - [Architecture](https://takazudomodular.com/pj/mdx-formatter/docs/architecture) — Hybrid formatter approach, Rust rewrite strategy
 - [Changelog](https://takazudomodular.com/pj/mdx-formatter/docs/changelog) — Release history
 
-## Rust Implementation
+## Architecture
 
-A production-ready Rust implementation using [markdown-rs](https://github.com/wooorm/markdown-rs) and [napi-rs](https://napi.rs/) is available at `crates/`. It provides 3-7x performance improvement over TypeScript, with full feature parity (342 Rust tests + 85 passthrough tests). Includes a standalone CLI binary and WASM support for browsers. See [Architecture: Rust Rewrite](https://takazudomodular.com/pj/mdx-formatter/docs/architecture/rust-rewrite) for details.
+The formatting engine is written in Rust using [markdown-rs](https://github.com/wooorm/markdown-rs) and [napi-rs](https://napi.rs/). The npm package loads the native Rust module at runtime. A standalone CLI binary and WASM build for browsers are also available. See [Architecture](https://takazudomodular.com/pj/mdx-formatter/docs/architecture) for details.
 
 ## Development
 

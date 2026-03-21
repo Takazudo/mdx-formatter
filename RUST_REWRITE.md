@@ -86,7 +86,7 @@ The remaining plugin (fix-paragraph-spacing) is covered by the block-level spaci
 
 - [x] Config file loading (`.mdx-formatter.json`, `package.json` "mdx-formatter" key, 3-layer merge)
 - [x] CLI binary (`mdx-formatter-cli` crate — `--write`, `--check`, `--config`, `--ignore`, glob patterns)
-- [x] Auto-detect bridge (TS `format()` auto-prefers Rust napi when available, falls back to TS)
+- [x] napi-rs Node.js bindings (sole engine for the npm package, TS engine removed)
 
 ## Not Yet Implemented
 

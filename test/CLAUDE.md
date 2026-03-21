@@ -12,15 +12,16 @@ Tests use vitest with `globals: true` (no need to import `describe`/`it`/`expect
 
 - `formatter.test.ts` — Core formatting: headings, paragraphs, spacing, frontmatter, lists, MDX/JSX
 - `html-blocks.test.ts` — HTML block formatting within MDX
-- `mdx-formatter.test.ts` — MdxFormatter internals (AST operations, JSX handling)
+- `mdx-formatter.test.ts` — Advanced formatting: JSX, block components, indentation, edge cases
 - `url-autolink.test.ts` — URL autolink handling
-- `idempotency.test.ts` — Single-pass stability tests
+- `idempotency.test.ts` — Single-pass stability and convergence tests
 - `load-config.test.ts` — Config file loading and merging
-- `rust-formatter.test.ts` — Rust napi formatter tests (skips if native module unavailable)
-- `rust-passthrough.test.ts` — TS vs Rust behavior comparison (85 passthrough tests)
+- `rust-formatter.test.ts` — Additional Rust engine tests
+- `rust-passthrough.test.ts` — Formatting behavior validation (85 tests)
 
 ## Patterns
 
 - Test files are named `{feature}.test.ts`
 - Tests use inline markdown strings with the `format()` API
+- All tests run through the Rust napi engine
 - Typical pattern: `expect(await format(input, { settings: testSettings })).toBe(expected)`

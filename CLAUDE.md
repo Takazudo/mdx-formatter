@@ -1,6 +1,6 @@
 # @takazudo/mdx-formatter
 
-AST-based markdown and MDX formatter built on the unified/remark ecosystem. Published as a scoped npm package (ESM-only).
+AST-based markdown and MDX formatter powered by a Rust engine (via napi-rs). Published as a scoped npm package (ESM-only).
 
 ## Tech Stack
 
