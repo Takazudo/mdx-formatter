@@ -5,7 +5,7 @@ sidebar_position: 2
 
 # Rust Rewrite
 
-mdx-formatter has an experimental Rust rewrite that reimplements the core formatting engine for better performance and distribution flexibility. The Rust version uses the same hybrid approach (AST analysis + line operations) as the TypeScript implementation.
+mdx-formatter has a Rust implementation that reimplements the full formatting engine for better performance and distribution flexibility. The Rust version uses the same hybrid approach (AST analysis + line operations) as the TypeScript implementation and passes all TS formatting tests.
 
 ## Why Rust?
 
@@ -37,30 +37,6 @@ The Rust implementation uses [markdown-rs](https://github.com/wooorm/markdown-rs
 - MDX, GFM, and frontmatter extensions are all supported
 - The AST structure is close enough to the TypeScript version that formatting rules can be ported directly
 
-The parser configuration in `crates/mdx-formatter-core/src/parser.rs` enables the same constructs as the TypeScript parser:
-
-```rust
-let parse_options = ParseOptions {
-    constructs: Constructs {
-        frontmatter: true,
-        gfm_table: true,
-        gfm_task_list_item: true,
-        gfm_strikethrough: true,
-        gfm_autolink_literal: true,
-        mdx_jsx_flow: true,
-        mdx_jsx_text: true,
-        mdx_esm: true,
-        mdx_expression_flow: true,
-        mdx_expression_text: true,
-        // Disable HTML when MDX is enabled (MDX JSX replaces HTML)
-        html_flow: false,
-        html_text: false,
-        ..Constructs::default()
-    },
-    ..ParseOptions::default()
-};
-```
-
 When MDX parsing fails, the parser falls back to basic markdown parsing with GFM extensions, and finally to plain CommonMark — ensuring the formatter never crashes on malformed input.
 
 ### napi-rs for Node.js Bindings
@@ -82,6 +58,68 @@ pub fn format(content: String, settings_json: Option<String>) -> napi::Result<St
 
 Settings are passed as a JSON string and deserialized on the Rust side, keeping the JavaScript/Rust boundary simple.
 
+## Crate Structure
+
+```
+crates/
+├── mdx-formatter-core/          ← Core Rust library
+│   ├── src/
+│   │   ├── lib.rs               ← Public exports
+│   │   ├── formatter.rs         ← Hybrid formatter (convergence loop + all rules)
+│   │   ├── html_formatter.rs    ← HTML block indentation formatter
+│   │   ├── parser.rs            ← markdown-rs integration (mdast parsing)
+│   │   └── types.rs             ← Settings, operations, type definitions
+│   └── tests/
+│       ├── cross_platform.rs    ← 165 cross-platform validation tests
+│       ├── plugin_validation.rs ← 42 plugin validation tests
+│       ├── spacing_recursion.rs ← 11 spacing recursion tests
+│       └── html_formatting.rs   ← HTML block formatting tests
+│
+└── mdx-formatter-napi/          ← napi-rs Node.js bindings
+    ├── src/
+    │   └── lib.rs               ← format() function exposed to JavaScript
+    └── build.rs                 ← napi-rs build configuration
+```
+
+The core library (`mdx-formatter-core`) has no Node.js dependency and can be used from any Rust project. The napi bridge (`mdx-formatter-napi`) is a thin wrapper that adds the JavaScript interface.
+
+## Implemented Formatting Rules
+
+All formatting rules from the TypeScript version are implemented in Rust:
+
+| Rule | Status | Notes |
+| --- | --- | --- |
+| Heading/JSX spacing | Done | Works at all AST depths (blockquotes, JSX containers) |
+| Block-level spacing | Done | Paragraph ↔ heading, list, code block transitions |
+| List indentation | Done | Normalizes nesting to 2-space indent |
+| JSX multi-line formatting | Done | Attribute indentation, standalone `/>` fix |
+| Block JSX empty lines | Done | Opening/closing tag spacing for configured components |
+| JSX content indentation | Done | For configured container components |
+| YAML frontmatter formatting | Done | Parse, reformat, unsafe value quoting |
+| HTML block formatting | Done | Minimal indentation formatter (replaces Prettier) |
+| Settings deserialization | Done | All 10 fields via serde with camelCase JSON |
+
+### Plugin Validation
+
+9 of 10 TypeScript plugins are **not needed** in Rust. The hybrid approach preserves original text (no AST round-tripping), eliminating the bugs that the TS plugins work around:
+
+- `preserve-jsx` — JSX never mangled
+- `preserve-image-alt` — Colons in alt text preserved
+- `fix-autolink-output` — No angle brackets added to URLs
+- `preprocess-japanese` / `japanese-text` — No backslash insertion or punctuation escaping
+- `fix-formatting-issues` — No bold spacing or entity issues
+- `docusaurus-admonitions` — `:::` syntax preserved as-is
+- `normalize-lists` / `html-definition-list` — Content preserved as-is
+
+## Test Coverage
+
+| Suite | Count | Description |
+| --- | --- | --- |
+| Rust cargo tests | 315 | Unit + cross-platform + plugin validation + spacing + HTML |
+| TS passthrough | 85/85 | Rust matches TS behavior for all formatting |
+| Rust-specific TS | 29/29 | Tests via napi bridge |
+| Existing TS tests | 207/207 | No regressions |
+
 ## npm Distribution Plan
 
 For production distribution, napi-rs publishes platform-specific binaries as optional npm dependencies:
@@ -96,56 +134,11 @@ For production distribution, napi-rs publishes platform-specific binaries as opt
 
 When a user runs `npm install @takazudo/mdx-formatter`, npm's optional dependency resolution automatically downloads only the binary matching their platform. This is the same approach used by SWC, Biome, and Lightning CSS.
 
-## Crate Structure
+## Remaining Work
 
-```
-crates/
-├── mdx-formatter-core/          ← Core Rust library
-│   ├── src/
-│   │   ├── lib.rs               ← Public exports
-│   │   ├── formatter.rs         ← Hybrid formatter (convergence loop + rules)
-│   │   ├── parser.rs            ← markdown-rs integration (mdast parsing)
-│   │   └── types.rs             ← Settings, operations, type definitions
-│   └── tests/
-│       └── cross_platform.rs    ← 144 cross-platform validation tests
-│
-└── mdx-formatter-napi/          ← napi-rs Node.js bindings
-    ├── src/
-    │   └── lib.rs               ← format() function exposed to JavaScript
-    └── build.rs                 ← napi-rs build configuration
-```
+The formatting engine is complete. Remaining tasks are infrastructure:
 
-The core library (`mdx-formatter-core`) has no Node.js dependency and can be used from any Rust project. The napi bridge (`mdx-formatter-napi`) is a thin wrapper that adds the JavaScript interface.
-
-## Current Status
-
-### Working
-
-- Markdown parsing via markdown-rs (CommonMark + GFM + MDX + frontmatter)
-- Spacing rule (empty lines between elements at root level)
-- List indentation normalization
-- Convergence loop (max 3 iterations)
-- Empty line normalization (collapse 3+ consecutive newlines)
-- napi-rs bindings (scaffold with format function)
-- Settings deserialization from partial JSON
-- 162 Rust tests passing (18 unit + 144 cross-platform)
-
-### Not Yet Implemented
-
-- YAML frontmatter formatting
-- JSX multi-line formatting
-- HTML block formatting (Prettier equivalent)
-- Japanese text handling
-- Block JSX empty lines
-- Admonition preservation
-- Config file loading
-- CLI binary
-
-## Known Limitations
-
-The Rust POC has several known limitations documented for future work:
-
-- **Spacing only at root level**: The `collect_spacing_operations` function only processes direct children of the Root node. The TypeScript version uses `unist-util-visit` to recurse into all depths (blockquotes, JSX containers, etc.)
-- **Partial settings deserialization**: `from_partial_json` manually handles 5 of 10 settings fields. The remaining fields are silently ignored. This should be migrated to serde derive with `#[serde(default)]`
-- **No content in dedup key**: Two different `InsertLine` operations targeting the same line would collide in the dedup set. The TypeScript version avoids this because it uses more specific keys
-- **Unused description fields**: Each settings struct carries a `description: String` field inherited from the TypeScript structure that adds unnecessary heap allocation in Rust
+- Config file loading (`.mdx-formatter.json`, `package.json` key)
+- CLI binary (standalone Rust CLI)
+- napi-rs CI build pipeline (cross-platform binary generation)
+- Browser/WASM support
