@@ -41,6 +41,7 @@
     "test:rust-passthrough": "vitest run --config vitest.rust-passthrough.config.ts",
     "build:rust": ". \"$HOME/.cargo/env\" && cargo build -p mdx-formatter-napi && cp target/debug/libmdx_formatter_napi.so crates/mdx-formatter-napi/mdx-formatter-napi.node",
     "build:rust:release": ". \"$HOME/.cargo/env\" && cargo build -p mdx-formatter-napi --release && cp target/release/libmdx_formatter_napi.so crates/mdx-formatter-napi/mdx-formatter-napi.node",
+    "benchmark": "npx tsx benchmark/run.ts",
     "b4push": "./scripts/run-b4push.sh",
     "doc:start": "pnpm --dir doc start",
     "prepublishOnly": "tsc && vitest run"
