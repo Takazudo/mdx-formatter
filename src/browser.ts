@@ -17,6 +17,7 @@ import { deepCloneSettings, deepMerge, formatWithConvergence } from './utils.js'
 import type { FormatterSettings, DeepPartial } from './types.js';
 
 export { detectMdx };
+export type { FormatterSettings, DeepPartial };
 
 // Browser-safe defaults: disable formatHtmlBlocksInMdx (requires prettier/Node.js)
 const browserDefaults: FormatterSettings = {
