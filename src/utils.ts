@@ -38,6 +38,9 @@ export function deepMerge(
   const result = deepCloneSettings(target);
 
   for (const key of Object.keys(source)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      continue;
+    }
     const sourceVal = source[key];
     const targetVal = result[key];
 
