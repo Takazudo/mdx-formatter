@@ -238,7 +238,7 @@ export default function FormatterPlayground(): ReactNode {
         </button>
         {settingsOpen && (
           <div id="pg-settings" className="border-t border-muted/30 p-hsp-md">
-            <div className="grid grid-cols-1 gap-vsp-xs md:grid-cols-2 md:gap-hsp-md">
+            <div className="grid grid-cols-1 gap-vsp-xs sm:grid-cols-2 sm:gap-hsp-md xl:grid-cols-3">
               <SettingRow
                 label="addEmptyLineBetweenElements"
                 enabled={settings.addEmptyLineBetweenElements.enabled}
