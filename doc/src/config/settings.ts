@@ -78,5 +78,6 @@ export const settings = {
     { label: 'Architecture', path: '/docs/architecture', categoryMatch: 'architecture' },
     { label: 'Changelog', path: '/docs/changelog', categoryMatch: 'changelog' },
     { label: 'Claude', path: '/docs/claude', categoryMatch: 'claude' },
+    { label: 'Playground', path: '/docs/playground', categoryMatch: 'playground' },
   ] satisfies HeaderNavItem[],
 };
