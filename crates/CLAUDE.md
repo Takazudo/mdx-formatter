@@ -12,7 +12,7 @@ Experimental Rust implementation of mdx-formatter using markdown-rs and napi-rs.
 ```bash
 . "$HOME/.cargo/env"     # Source Rust environment
 cargo build              # Build all crates
-cargo test               # Run all Rust tests (162 tests)
+cargo test               # Run all Rust tests (274 tests)
 cargo build -p mdx-formatter-napi  # Build just the napi module
 ```
 
@@ -27,13 +27,18 @@ Uses the same hybrid approach as the TypeScript implementation:
 
 ## Current Status
 
-- Spacing rule (empty lines after headings) — working
+- Spacing rule (empty lines after headings/JSX) — working at all AST depths
+- JSX multi-line formatting — working (attribute indentation, self-closing fix, block JSX empty lines)
+- YAML frontmatter formatting — working (parse, reformat, unsafe value quoting)
 - List indentation normalization — working
-- 162 tests passing (18 unit + 144 cross-platform)
+- Full settings deserialization — all 10 fields via serde with camelCase JSON
+- 274 tests passing (77 unit + 144 cross-platform + 42 plugin validation + 11 spacing recursion)
 - napi-rs scaffold ready (needs `@napi-rs/cli` to build `.node`)
+- TS plugin validation complete — 9 of 10 plugins NOT needed in Rust (see formatter.rs header)
 
 ## Known Limitations
 
-- Spacing only at root level (no recursion into blockquotes, JSX)
-- Partial settings deserialization (5 of 10 fields)
-- JSX formatting, YAML formatting, HTML blocks, Japanese text not yet implemented
+- HTML block formatting not yet implemented (needs Prettier replacement decision)
+- Config file loading not yet implemented
+- CLI binary not yet implemented
+- napi-rs build step not wired up
