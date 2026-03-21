@@ -1,15 +1,15 @@
 /**
- * Wrapper for the Rust napi formatter.
- * This module loads the native Rust formatter compiled via napi-rs
- * and exposes the same format() API as the TypeScript implementation.
+ * Rust napi formatter loader.
+ * Loads the native Rust formatter compiled via napi-rs.
+ * This is the sole formatting engine — no TypeScript fallback.
  */
 
 import { createRequire } from 'module';
 import { platform, arch } from 'os';
-import type { FormatOptions } from './types.js';
-import { loadConfig } from './load-config.js';
 
 const require = createRequire(import.meta.url);
+
+type NativeFormat = (content: string, settingsJson: string) => string;
 
 function getPackageName(): string {
   const platformName = platform();
@@ -31,51 +31,38 @@ function getPackageName(): string {
   return platformMap[platformName]?.[archName] ?? '';
 }
 
-type NativeFormat = (content: string, settingsJson: string) => string;
-
-let nativeFormat: NativeFormat | null = null;
-
-// Try platform-specific npm package first
-const packageName = getPackageName();
-if (packageName) {
-  try {
-    const native = require(packageName) as { format: NativeFormat };
-    nativeFormat = native.format;
-  } catch {
-    // Platform package not installed
+function loadNativeModule(): NativeFormat {
+  // Try platform-specific npm package first
+  const packageName = getPackageName();
+  if (packageName) {
+    try {
+      const native = require(packageName) as { format: NativeFormat };
+      return native.format;
+    } catch {
+      // Platform package not installed, try local build
+    }
   }
-}
 
-// Fall back to local build
-if (!nativeFormat) {
+  // Try local build
   try {
     const native = require('../crates/mdx-formatter-napi/mdx-formatter-napi.node') as {
       format: NativeFormat;
     };
-    nativeFormat = native.format;
+    return native.format;
   } catch {
-    // Native module not available
+    throw new Error('Rust native module not available. Build it with: pnpm build:rust');
   }
 }
+
+/**
+ * The native format function. Loaded once at module init.
+ * Throws if the native module is not available.
+ */
+export const nativeFormat: NativeFormat = loadNativeModule();
 
 /**
  * Check if the Rust formatter is available
  */
 export function isRustFormatterAvailable(): boolean {
-  return nativeFormat !== null;
-}
-
-/**
- * Format markdown/MDX content using the Rust formatter
- * API-compatible with the TypeScript format() function
- */
-export async function format(content: string, options: FormatOptions = {}): Promise<string> {
-  if (!nativeFormat) {
-    throw new Error('Rust formatter not available. Build it first with: pnpm build:rust');
-  }
-
-  const settings = loadConfig(options);
-  const settingsJson = JSON.stringify(settings);
-
-  return nativeFormat(content, settingsJson);
+  return true; // If we got here, the module loaded successfully
 }

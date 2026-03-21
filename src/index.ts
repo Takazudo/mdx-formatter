@@ -1,28 +1,23 @@
 /**
- * Main entry point for the markdown formatter
- * Uses MdxFormatter for AST-based formatting
+ * Main entry point for mdx-formatter.
+ * Uses the Rust napi formatter as the sole formatting engine.
  */
 
 import { promises as fs } from 'fs';
 import { loadConfig } from './load-config.js';
 import { detectMdx } from './detect-mdx.js';
-import { formatWithConvergence } from './utils.js';
+import { nativeFormat } from './rust-formatter.js';
 import type { FormatOptions } from './types.js';
 
 export { detectMdx };
 
 /**
- * Format markdown/MDX content using hybrid AST approach
+ * Format markdown/MDX content using the Rust formatter.
  */
 export async function format(content: string, options: FormatOptions = {}): Promise<string> {
-  try {
-    const settings = loadConfig(options);
-    return await formatWithConvergence(content, settings);
-  } catch {
-    // Silently return original content if formatting fails
-    // This is expected for files with certain JSX patterns that remark-mdx doesn't like
-    return content;
-  }
+  const settings = loadConfig(options);
+  const settingsJson = JSON.stringify(settings);
+  return nativeFormat(content, settingsJson);
 }
 
 /**
@@ -49,7 +44,6 @@ export async function checkFile(filePath: string, options: FormatOptions = {}): 
   return content !== formatted;
 }
 
-// Export all functions
 export default {
   format,
   formatFile,

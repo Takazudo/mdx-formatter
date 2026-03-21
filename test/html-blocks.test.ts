@@ -4,11 +4,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { MdxFormatter } from '../src/mdx-formatter.js';
+import { format } from '../src/index.js';
 import { testSettings } from './test-helpers.js';
-import { loadConfig } from '../src/load-config.js';
-
-const settings = loadConfig({ settings: testSettings });
 
 describe('HTML Block Formatting in MDX', () => {
   describe('Definition Lists (dl/dt/dd)', () => {
@@ -23,8 +20,7 @@ describe('HTML Block Formatting in MDX', () => {
   <dd>Definition 1</dd>
 </dl>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
 
@@ -39,8 +35,7 @@ describe('HTML Block Formatting in MDX', () => {
   <dd>Definition with spaces</dd>
 </dl>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
 
@@ -67,8 +62,7 @@ describe('HTML Block Formatting in MDX', () => {
   </div>
 </dl>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
 
@@ -93,8 +87,7 @@ describe('HTML Block Formatting in MDX', () => {
   </dd>
 </dl>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
   });
@@ -123,8 +116,7 @@ describe('HTML Block Formatting in MDX', () => {
   </tr>
 </table>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
 
@@ -159,8 +151,7 @@ describe('HTML Block Formatting in MDX', () => {
   </tbody>
 </table>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
 
@@ -177,8 +168,7 @@ describe('HTML Block Formatting in MDX', () => {
   </tr>
 </table>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
   });
@@ -197,8 +187,7 @@ describe('HTML Block Formatting in MDX', () => {
   <li>Item 3</li>
 </ul>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
 
@@ -215,8 +204,7 @@ describe('HTML Block Formatting in MDX', () => {
   <li>Third</li>
 </ol>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
   });
@@ -235,8 +223,7 @@ describe('HTML Block Formatting in MDX', () => {
   </div>
 </div>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
 
@@ -245,8 +232,7 @@ describe('HTML Block Formatting in MDX', () => {
 <span class="highlight">Important</span> text with <span>inline</span> elements.
 </div>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       // Formatter may collapse short inline content into single line
       expect(result).toContain('Important');
       expect(result).toContain('inline');
@@ -269,8 +255,7 @@ describe('HTML Block Formatting in MDX', () => {
   </ul>
 </div>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
   });
@@ -289,8 +274,7 @@ describe('HTML Block Formatting in MDX', () => {
   <option value="3">Option 3</option>
 </select>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
   });
@@ -331,8 +315,7 @@ More content here.
   </tr>
 </table>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
 
@@ -342,8 +325,7 @@ More content here.
 [Link](https://example.com) in a div.
 </div>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       // Formatter may collapse short content; verify content is preserved
       expect(result).toContain('Bold text');
       expect(result).toContain('italic text');
@@ -361,8 +343,7 @@ More content here.
 <span></span>
 <p></p>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
 
@@ -379,8 +360,7 @@ More content here.
   <hr />
 </div>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
 
@@ -417,8 +397,7 @@ More content here.
   </section>
 </div>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
   });
@@ -431,9 +410,11 @@ More content here.
 </dl>`;
 
       // Test with rule disabled
-      const formatter = new MdxFormatter(input, settings);
-      formatter.settings.formatHtmlBlocksInMdx = { enabled: false };
-      const result = await formatter.format();
+      const disabledSettings = {
+        ...testSettings,
+        formatHtmlBlocksInMdx: { enabled: false },
+      };
+      const result = await format(input, { settings: disabledSettings });
       expect(result).toBe(input); // Should not change when disabled
     });
 
@@ -442,8 +423,7 @@ More content here.
 <p>Content</p>
 </div>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       // Formatter preserves long attribute lines without wrapping
       expect(result).toContain('very-long-class-name-that-exceeds-normal-width');
       expect(result).toContain('<p>Content</p>');
@@ -457,8 +437,7 @@ More content here.
   <dd>   Definition with spaces   </dd>
 </dl>`;
 
-      const formatter = new MdxFormatter(input, settings);
-      const result = await formatter.format();
+      const result = await format(input, { settings: testSettings });
       // Content whitespace should be trimmed
       expect(result).toContain('<dt>Term with spaces</dt>');
       expect(result).toContain('<dd>Definition with spaces</dd>');

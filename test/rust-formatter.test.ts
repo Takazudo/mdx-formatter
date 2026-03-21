@@ -1,14 +1,6 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { format, isRustFormatterAvailable } from '../src/rust-formatter.js';
+import { describe, it, expect } from 'vitest';
+import { format } from '../src/index.js';
 import { testSettings } from './test-helpers.js';
-
-// Skip all tests if Rust formatter is not built
-beforeAll(() => {
-  if (!isRustFormatterAvailable()) {
-    console.warn('Rust formatter not available. Build with: cargo build -p mdx-formatter-napi');
-    // Don't skip - let tests fail explicitly so CI catches it
-  }
-});
 
 describe('Rust Formatter - Basic Markdown', () => {
   it('should format headings with proper spacing', async () => {
