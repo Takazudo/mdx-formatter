@@ -50,7 +50,7 @@ export default function FormatterPlayground(): ReactNode {
     } finally {
       setIsFormatting(false);
     }
-  }, [input]);
+  }, [input, version]);
 
   return (
     <div className="flex flex-col gap-vsp-sm">
@@ -69,17 +69,18 @@ export default function FormatterPlayground(): ReactNode {
           >
             TypeScript
           </button>
-          <button
-            type="button"
-            disabled
-            className="group relative rounded px-hsp-md py-hsp-2xs text-caption font-medium bg-surface text-muted cursor-not-allowed opacity-50"
-            title="Coming soon — requires WASM build"
-          >
-            Rust (WASM)
+          <span className="group relative">
+            <button
+              type="button"
+              disabled
+              className="rounded px-hsp-md py-hsp-2xs text-caption font-medium bg-surface text-muted cursor-not-allowed opacity-50"
+            >
+              Rust (WASM)
+            </button>
             <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-p0 px-hsp-sm py-hsp-2xs text-caption text-p7 opacity-0 group-hover:opacity-100 transition-opacity">
               Coming soon — requires WASM build
             </span>
-          </button>
+          </span>
         </div>
       </div>
 
