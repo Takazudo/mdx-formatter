@@ -7,19 +7,13 @@
  * HTML block tests are skipped — not yet implemented in Rust.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { format, isRustFormatterAvailable } from '../src/rust-formatter.js';
 import { testSettings } from './test-helpers.js';
 
-beforeAll(() => {
-  if (!isRustFormatterAvailable()) {
-    throw new Error(
-      'Rust formatter not available. Build it first: pnpm build:rust',
-    );
-  }
-});
+const rustAvailable = isRustFormatterAvailable();
 
-describe('Rust Passthrough: Markdown Formatter', () => {
+describe.skipIf(!rustAvailable)('Rust Passthrough: Markdown Formatter', () => {
   describe('Basic Markdown Formatting', () => {
     it('should format headings with proper spacing', async () => {
       const input = '# Heading\nContent';

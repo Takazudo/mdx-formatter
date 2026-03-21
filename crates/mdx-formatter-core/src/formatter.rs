@@ -1491,17 +1491,28 @@ fn is_list_line(trimmed: &str) -> bool {
 
 /// Check if a line is a code fence (opening or closing).
 fn is_code_fence_line(trimmed: &str) -> bool {
-    trimmed.starts_with("```")
+    trimmed.starts_with("```") || trimmed.starts_with("~~~")
+}
+
+/// Check if a line is a heading (# through ######).
+fn is_heading_line(trimmed: &str) -> bool {
+    trimmed.starts_with("# ")
+        || trimmed.starts_with("## ")
+        || trimmed.starts_with("### ")
+        || trimmed.starts_with("#### ")
+        || trimmed.starts_with("##### ")
+        || trimmed.starts_with("###### ")
 }
 
 /// Check if a line is plain paragraph text (not a block element start).
 fn is_paragraph_line(trimmed: &str) -> bool {
     !trimmed.is_empty()
-        && !trimmed.starts_with('#')
+        && !is_heading_line(trimmed)
         && !is_list_line(trimmed)
         && !is_code_fence_line(trimmed)
         && !trimmed.starts_with('<')
         && !trimmed.starts_with('>')
+        && !trimmed.starts_with('|')
         && trimmed != "---"
         && !trimmed.starts_with(":::")
 }
@@ -1560,16 +1571,9 @@ fn ensure_block_element_spacing(lines: &mut Vec<String>) {
         if !trimmed.is_empty() && i + 1 < lines.len() {
             let next_trimmed = lines[i + 1].trim();
             if !next_trimmed.is_empty() {
-                let next_is_heading = next_trimmed.starts_with('#')
-                    && (next_trimmed.starts_with("# ")
-                        || next_trimmed.starts_with("## ")
-                        || next_trimmed.starts_with("### ")
-                        || next_trimmed.starts_with("#### ")
-                        || next_trimmed.starts_with("##### ")
-                        || next_trimmed.starts_with("###### "));
                 let needs_spacing =
                     // Paragraph → Heading
-                    (is_paragraph_line(trimmed) && next_is_heading)
+                    (is_paragraph_line(trimmed) && is_heading_line(next_trimmed))
                     // Paragraph → List
                     || (is_paragraph_line(trimmed) && is_list_line(next_trimmed))
                     // List → Paragraph
@@ -1578,6 +1582,8 @@ fn ensure_block_element_spacing(lines: &mut Vec<String>) {
                     || (is_paragraph_line(trimmed) && is_code_fence_line(next_trimmed))
                     // Code fence (closing) → Paragraph
                     || (is_code_fence_line(trimmed) && !inside_code_fence && is_paragraph_line(next_trimmed))
+                    // Code fence (closing) → List
+                    || (is_code_fence_line(trimmed) && !inside_code_fence && is_list_line(next_trimmed))
                     // List → Code fence
                     || (is_list_line(trimmed) && is_code_fence_line(next_trimmed));
 
