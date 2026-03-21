@@ -31,6 +31,10 @@ pnpm --dir doc build             # Production build
 - llms.txt generation, doc history, versioning (empty)
 - Futura + Noto Sans JP font stack
 
+## Styling
+
+Before writing or modifying any CSS, components, or layouts in `doc/`, invoke `/l-design-system` to load the design token reference. The doc site uses a **tight token strategy** (Tailwind v4 with no default theme) — default Tailwind classes like `h-3`, `w-4`, `text-sm` do not exist. Always use the project's semantic tokens (`text-caption`, `px-hsp-md`, `bg-surface`, etc.).
+
 ## Adding Documentation
 
 - Each category needs `_category_.json` with `label` and `position`
