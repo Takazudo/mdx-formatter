@@ -15,6 +15,9 @@ Tests use vitest with `globals: true` (no need to import `describe`/`it`/`expect
 - `mdx-formatter.test.ts` — MdxFormatter internals (AST operations, JSX handling)
 - `url-autolink.test.ts` — URL autolink handling
 - `idempotency.test.ts` — Single-pass stability tests
+- `load-config.test.ts` — Config file loading and merging
+- `rust-formatter.test.ts` — Rust napi formatter tests (skips if native module unavailable)
+- `rust-passthrough.test.ts` — TS vs Rust behavior comparison (85 passthrough tests)
 
 ## Patterns
 

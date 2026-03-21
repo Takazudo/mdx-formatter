@@ -689,7 +689,7 @@ fn format_jsx_element(
     if !self_closing {
         let block_components = &settings.add_empty_lines_in_block_jsx.block_components;
         let is_block_component = settings.add_empty_lines_in_block_jsx.enabled
-            && block_components.contains(&name.to_string());
+            && block_components.iter().any(|c| c == name);
 
         let children_text = extract_children_text(name, original_text);
         if !children_text.is_empty() {
@@ -703,7 +703,7 @@ fn format_jsx_element(
 
             let container_components = &settings.indent_jsx_content.container_components;
             let is_container =
-                settings.indent_jsx_content.enabled && container_components.contains(&name.to_string());
+                settings.indent_jsx_content.enabled && container_components.iter().any(|c| c == name);
 
             if is_container {
                 for child_line in children_text.split('\n') {

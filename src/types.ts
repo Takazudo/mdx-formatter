@@ -9,41 +9,6 @@ import type { Root } from 'mdast';
 export type { Node, Parent, Position, Root };
 
 /**
- * Common AST node interfaces used across plugins
- */
-export interface ParentNode extends Node {
-  children: Node[];
-}
-
-export interface TextNode extends Node {
-  type: 'text';
-  value: string;
-}
-
-export interface HeadingNode extends Node {
-  type: 'heading';
-  children: Node[];
-}
-
-export interface HtmlNode extends Node {
-  value?: string;
-}
-
-export interface ListNode extends Node {
-  type: 'list';
-  ordered?: boolean;
-  start?: number | null;
-  spread?: boolean;
-  children: ListItemNode[];
-}
-
-export interface ListItemNode extends Node {
-  type: 'listItem';
-  spread?: boolean;
-  data?: Record<string, unknown>;
-}
-
-/**
  * MDX JSX attribute value expression node
  */
 export interface MdxJsxAttributeValueExpression {
@@ -214,15 +179,6 @@ export type FormatterOperation =
       endLine: number;
       content: string;
     };
-
-/**
- * Position map entry for line/character mapping
- */
-export interface PositionMapEntry {
-  line: number;
-  start: number;
-  end: number;
-}
 
 /**
  * Indent detector interface (for duck-typed fallback)

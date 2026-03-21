@@ -35,7 +35,11 @@ function findConfigFile(configPath?: string): Record<string, unknown> | null {
   if (configPath) {
     try {
       const content = readFileSync(resolve(configPath), 'utf-8');
-      return JSON.parse(content) as Record<string, unknown>;
+      const parsed: unknown = JSON.parse(content);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        return null;
+      }
+      return parsed as Record<string, unknown>;
     } catch {
       return null;
     }
@@ -44,7 +48,11 @@ function findConfigFile(configPath?: string): Record<string, unknown> | null {
   // Try .mdx-formatter.json in cwd
   try {
     const content = readFileSync(resolve('.mdx-formatter.json'), 'utf-8');
-    return JSON.parse(content) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(content);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
   } catch {
     // Not found, try package.json
   }

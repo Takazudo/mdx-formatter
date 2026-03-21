@@ -61,41 +61,14 @@ pub fn try_parse(content: &str) -> Result<Node, String> {
 ///
 /// Enables MDX, GFM, and frontmatter constructs for full compatibility
 /// with the TypeScript formatter's remark-based parser.
+/// Returns an empty root node if all parsing attempts fail.
 pub fn parse(content: &str) -> Node {
-    let parse_options = mdx_parse_options();
-
-    match markdown::to_mdast(content, &parse_options) {
-        Ok(node) => node,
-        Err(_) => {
-            // If MDX parsing fails, fall back to basic markdown parsing
-            // This handles cases where MDX constructs cause parse errors
-            let fallback_options = ParseOptions {
-                constructs: Constructs {
-                    frontmatter: true,
-                    gfm_table: true,
-                    gfm_task_list_item: true,
-                    gfm_strikethrough: true,
-                    gfm_autolink_literal: true,
-                    ..Constructs::default()
-                },
-                ..ParseOptions::default()
-            };
-            match markdown::to_mdast(content, &fallback_options) {
-                Ok(node) => node,
-                Err(_) => {
-                    // Last resort: parse as basic markdown
-                    markdown::to_mdast(content, &ParseOptions::default())
-                        .unwrap_or_else(|_| {
-                            // Return an empty root node if all parsing fails
-                            Node::Root(markdown::mdast::Root {
-                                children: vec![],
-                                position: None,
-                            })
-                        })
-                }
-            }
-        }
-    }
+    try_parse(content).unwrap_or_else(|_| {
+        Node::Root(markdown::mdast::Root {
+            children: vec![],
+            position: None,
+        })
+    })
 }
 
 #[cfg(test)]

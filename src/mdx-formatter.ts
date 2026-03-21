@@ -16,7 +16,6 @@ import { deepCloneSettings } from './utils.js';
 import type {
   FormatterSettings,
   FormatterOperation,
-  PositionMapEntry,
   IndentDetectorLike,
   MdxJsxElement,
   MdxJsxAttribute,
@@ -57,18 +56,15 @@ const LIST_MARKER_RE = /^[-*+]\s/;
 const NUMBERED_LIST_RE = /^\d+\.\s/;
 
 export class MdxFormatter {
-  private readonly originalContent: string;
   private content: string;
   private lines: string[];
   settings: FormatterSettings;
   private ast: Root;
-  private positionMap: PositionMapEntry[];
   private indentDetector: IndentDetectorLike | null;
   private readonly htmlFormatter: HtmlBlockFormatter;
 
   constructor(content: string, settings: FormatterSettings | null = null) {
-    this.originalContent = content;
-    this.content = content; // Use content directly without preprocessing
+    this.content = content;
     this.lines = this.content.split('\n');
     this.settings = settings ? deepCloneSettings(settings) : deepCloneSettings(formatterSettings);
     this.indentDetector = null;
@@ -81,9 +77,6 @@ export class MdxFormatter {
 
     // Parse the AST
     this.ast = this.parseAST(this.content);
-
-    // Build a position map for accurate text extraction
-    this.positionMap = this.buildPositionMap();
   }
 
   parseAST(content: string): Root {
@@ -135,23 +128,6 @@ export class MdxFormatter {
     return fixed.join('\n');
   }
 
-  buildPositionMap(): PositionMapEntry[] {
-    // Create a map of line numbers to character positions
-    const map: PositionMapEntry[] = [];
-    let charPos = 0;
-
-    for (let i = 0; i < this.lines.length; i++) {
-      map.push({
-        line: i,
-        start: charPos,
-        end: charPos + this.lines[i].length,
-      });
-      charPos += this.lines[i].length + 1; // +1 for newline
-    }
-
-    return map;
-  }
-
   /**
    * Get the list of components to ignore during formatting.
    */
@@ -199,7 +175,7 @@ export class MdxFormatter {
       this.indentDetector = detector;
     } else {
       // Use fallback settings if confidence is too low
-      const fallbackSize = this.settings.autoDetectIndent.fallbackIndentSize || 2;
+      const fallbackSize = this.settings.autoDetectIndent.fallbackIndentSize ?? 2;
       const fallbackType = this.settings.autoDetectIndent.fallbackIndentType || 'space';
 
       // Apply fallback indentation to all settings for consistency
@@ -682,7 +658,7 @@ export class MdxFormatter {
       if (node.type === 'listItem' && node.position) {
         const listItemNode = node as ListItemNode;
         const key = `${listItemNode.position.start.line}-${listItemNode.position.start.column}`;
-        const nestingLevel = listNestingLevels.get(key) || 0;
+        const nestingLevel = listNestingLevels.get(key) ?? 0;
         const expectedIndent = nestingLevel * 2;
 
         // Find the line with the list marker
@@ -743,7 +719,7 @@ export class MdxFormatter {
 
     const attributes = node.attributes || [];
     const isMultiLine = node.position!.start.line !== node.position!.end.line;
-    const propsThreshold = this.settings.expandSingleLineJsx.propsThreshold || 2;
+    const propsThreshold = this.settings.expandSingleLineJsx.propsThreshold ?? 2;
 
     // Rule 4: Single-line with threshold+ attributes needs expansion
     if (
@@ -760,7 +736,7 @@ export class MdxFormatter {
       const lines = originalText.split('\n');
       const expectedIndent = this.indentDetector
         ? this.indentDetector.getIndentString()
-        : ' '.repeat(this.settings.formatMultiLineJsx.indentSize || 2);
+        : ' '.repeat(this.settings.formatMultiLineJsx.indentSize ?? 2);
 
       // Determine where the opening tag ends so we only check attribute lines.
       // For self-closing elements the opening tag ends at /> or the last line.
@@ -843,8 +819,8 @@ export class MdxFormatter {
     // Use detected indentation or fallback to settings
     const indent = this.indentDetector
       ? this.indentDetector.getIndentString()
-      : ' '.repeat(this.settings.formatMultiLineJsx.indentSize || 2);
-    const propsThreshold = this.settings.expandSingleLineJsx.propsThreshold || 2;
+      : ' '.repeat(this.settings.formatMultiLineJsx.indentSize ?? 2);
+    const propsThreshold = this.settings.expandSingleLineJsx.propsThreshold ?? 2;
 
     // Build formatted JSX
     const lines: string[] = [];
@@ -1075,16 +1051,7 @@ export class MdxFormatter {
 
     // If we have position info, extract from original text
     if (expr.position) {
-      const text = this.extractNodeText(expr.position);
-      return text;
-    }
-
-    // Try to get from data
-    if (expr.data && expr.data.estree) {
-      // For complex expressions, try to extract from position
-      if (expr.position) {
-        return this.extractNodeText(expr.position);
-      }
+      return this.extractNodeText(expr.position);
     }
 
     return '';
@@ -1252,6 +1219,8 @@ export class MdxFormatter {
 
   collectJsxIndentOperations(operations: FormatterOperation[]): void {
     const containerNames = this.settings.indentJsxContent.containerComponents || [];
+    const indentSize = this.settings.indentJsxContent.indentSize ?? 2;
+    const indent = ' '.repeat(indentSize);
 
     visit(this.ast, (node: Node) => {
       if (this.isFormattableJsxNode(node)) {
@@ -1271,11 +1240,11 @@ export class MdxFormatter {
             }
 
             // If not indented, add operation
-            if (!line.startsWith('  ')) {
+            if (!line.startsWith(indent)) {
               operations.push({
                 type: 'indentLine',
                 startLine: i,
-                indent: '  ',
+                indent,
               });
             }
           }
@@ -1430,6 +1399,10 @@ export class MdxFormatter {
     visit(this.ast, (node: Node) => {
       if (node.type === 'yaml' && node.position) {
         const yamlNode = node as YamlNode;
+        // Skip empty frontmatter (---\n---) to avoid reversed-range operation
+        if (!yamlNode.value || !yamlNode.value.trim()) {
+          return;
+        }
         try {
           let yamlToParse = yamlNode.value;
 
@@ -1446,8 +1419,8 @@ export class MdxFormatter {
           // to preserve string representations (dates, etc.)
           const formatted = yaml.dump(parsed, {
             schema: yaml.JSON_SCHEMA,
-            indent: yamlSettings.indent || 2,
-            lineWidth: yamlSettings.lineWidth || 100,
+            indent: yamlSettings.indent ?? 2,
+            lineWidth: yamlSettings.lineWidth ?? 100,
             quotingType: (yamlSettings.quotingType || '"') as '"' | "'",
             forceQuotes: yamlSettings.forceQuotes || false,
             noCompatMode: yamlSettings.noCompatMode !== false, // Default true
@@ -1519,15 +1492,6 @@ export class MdxFormatter {
         operations.splice(i, 1);
       }
     }
-  }
-
-  getLineAtPosition(charPos: number): number {
-    for (let i = 0; i < this.positionMap.length; i++) {
-      if (charPos >= this.positionMap[i].start && charPos <= this.positionMap[i].end) {
-        return i;
-      }
-    }
-    return this.positionMap.length - 1;
   }
 
   applyOperation(lines: string[], op: FormatterOperation): void {

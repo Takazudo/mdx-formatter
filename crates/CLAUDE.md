@@ -54,4 +54,4 @@ All formatting rules implemented and tested:
 ## Known Limitations
 
 - napi-rs CI build pipeline — in progress (cross-platform binary generation)
-- Browser/WASM support — not yet implemented
+- Browser/WASM support — implemented (`mdx-formatter-wasm` crate, web + bundler targets)

@@ -88,12 +88,17 @@ The crate re-exports through `lib.rs`:
 
 | Symbol | Module | Description |
 | --- | --- | --- |
-| `format` | `formatter` | The main formatting function |
-| `FormatterSettings` | `types` | Settings struct (re-exported at crate root) |
-| `FormatterOperation` | `types` | Operation enum (for advanced use) |
+| `format` | `formatter` | The main formatting function (panics on error if `throw_on_error` is true) |
+| `try_format` | `formatter` | Returns `Result<String, String>` instead of panicking |
+| `FormatterSettings` | `types` | Settings struct |
 | `format_html_block` | `html_formatter` | HTML block indentation formatter |
+| `load_config` | `config` | Load and merge config from file |
+| `load_full_config` | `config` | Load config + exclude patterns |
+| `load_full_config_from` | `config` | Load config from a specific directory |
+| `load_exclude_patterns` | `config` | Load only exclude patterns |
+| `FullConfig` | `config` | Settings + exclude patterns struct |
 
-Both `format` and `FormatterSettings` are re-exported at the crate root, so `use mdx_formatter_core::{format, FormatterSettings}` works directly. The `parser`, `types`, and `html_formatter` modules are also public for consumers who need lower-level access.
+All symbols are re-exported at the crate root, so `use mdx_formatter_core::{format, FormatterSettings}` works directly. The `parser`, `types`, and `html_formatter` modules are also public for consumers who need lower-level access.
 
 ## Status
 

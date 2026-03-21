@@ -6,9 +6,114 @@
 import * as prettier from 'prettier';
 import type { FormatHtmlBlocksInMdxSetting } from './types.js';
 
+// Module-level constant — avoids rebuilding on every instantiation
+const HTML_ELEMENTS = new Set([
+  // Structure
+  'html',
+  'head',
+  'body',
+  'div',
+  'span',
+  'section',
+  'article',
+  'aside',
+  'header',
+  'footer',
+  'main',
+  'nav',
+  'figure',
+  'figcaption',
+  // Text
+  'p',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'blockquote',
+  'pre',
+  'code',
+  'em',
+  'strong',
+  'i',
+  'b',
+  'u',
+  's',
+  'mark',
+  'small',
+  'del',
+  'ins',
+  'sub',
+  'sup',
+  'cite',
+  'q',
+  'abbr',
+  'address',
+  'time',
+  // Lists
+  'ul',
+  'ol',
+  'li',
+  'dl',
+  'dt',
+  'dd',
+  // Tables
+  'table',
+  'thead',
+  'tbody',
+  'tfoot',
+  'tr',
+  'td',
+  'th',
+  'caption',
+  'colgroup',
+  'col',
+  // Forms
+  'form',
+  'input',
+  'textarea',
+  'button',
+  'select',
+  'option',
+  'optgroup',
+  'label',
+  'fieldset',
+  'legend',
+  'datalist',
+  'output',
+  'progress',
+  'meter',
+  // Media
+  'img',
+  'audio',
+  'video',
+  'source',
+  'track',
+  'picture',
+  'iframe',
+  'embed',
+  'object',
+  'param',
+  'canvas',
+  'svg',
+  // Other
+  'a',
+  'br',
+  'hr',
+  'details',
+  'summary',
+  'dialog',
+  'menu',
+  'menuitem',
+  'script',
+  'noscript',
+  'template',
+  'slot',
+]);
+
 export class HtmlBlockFormatter {
   private settings: FormatHtmlBlocksInMdxSetting;
-  private readonly htmlElements: Set<string>;
 
   constructor(settings: Partial<FormatHtmlBlocksInMdxSetting> = {}) {
     this.settings = {
@@ -21,112 +126,6 @@ export class HtmlBlockFormatter {
       },
       ...settings,
     } as FormatHtmlBlocksInMdxSetting;
-
-    // List of HTML elements (not JSX components which start with uppercase)
-    this.htmlElements = new Set([
-      // Structure
-      'html',
-      'head',
-      'body',
-      'div',
-      'span',
-      'section',
-      'article',
-      'aside',
-      'header',
-      'footer',
-      'main',
-      'nav',
-      'figure',
-      'figcaption',
-      // Text
-      'p',
-      'h1',
-      'h2',
-      'h3',
-      'h4',
-      'h5',
-      'h6',
-      'blockquote',
-      'pre',
-      'code',
-      'em',
-      'strong',
-      'i',
-      'b',
-      'u',
-      's',
-      'mark',
-      'small',
-      'del',
-      'ins',
-      'sub',
-      'sup',
-      'cite',
-      'q',
-      'abbr',
-      'address',
-      'time',
-      // Lists
-      'ul',
-      'ol',
-      'li',
-      'dl',
-      'dt',
-      'dd',
-      // Tables
-      'table',
-      'thead',
-      'tbody',
-      'tfoot',
-      'tr',
-      'td',
-      'th',
-      'caption',
-      'colgroup',
-      'col',
-      // Forms
-      'form',
-      'input',
-      'textarea',
-      'button',
-      'select',
-      'option',
-      'optgroup',
-      'label',
-      'fieldset',
-      'legend',
-      'datalist',
-      'output',
-      'progress',
-      'meter',
-      // Media
-      'img',
-      'audio',
-      'video',
-      'source',
-      'track',
-      'picture',
-      'iframe',
-      'embed',
-      'object',
-      'param',
-      'canvas',
-      'svg',
-      // Other
-      'a',
-      'br',
-      'hr',
-      'details',
-      'summary',
-      'dialog',
-      'menu',
-      'menuitem',
-      'script',
-      'noscript',
-      'template',
-      'slot',
-    ]);
   }
 
   /**
@@ -135,7 +134,7 @@ export class HtmlBlockFormatter {
   isHtmlElement(tagName: string): boolean {
     if (!tagName) return false;
     // HTML elements are lowercase or known HTML elements
-    return this.htmlElements.has(tagName.toLowerCase());
+    return HTML_ELEMENTS.has(tagName.toLowerCase());
   }
 
   /**
@@ -160,7 +159,7 @@ export class HtmlBlockFormatter {
       const formatted = await prettier.format(preprocessed, {
         parser: this.settings.formatterConfig.parser || 'html',
         printWidth: 999999, // Never wrap lines
-        tabWidth: this.settings.formatterConfig.tabWidth || 2,
+        tabWidth: this.settings.formatterConfig.tabWidth ?? 2,
         useTabs: this.settings.formatterConfig.useTabs || false,
         htmlWhitespaceSensitivity: 'css', // Use CSS mode to handle whitespace better
         bracketSameLine: true, // Keep closing bracket on same line to prevent broken tags

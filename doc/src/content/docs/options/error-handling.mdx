@@ -41,11 +41,12 @@ Content without closing tag
 
 Output: the original content is returned unchanged, no error thrown.
 
-### Limitation of throwOnError: true
+### throwOnError: true
 
-The `throwOnError` option is defined in the configuration and triggers internal MDX validation in the line-based formatter stage. However, the main `format()` function in `src/index.ts` catches all errors unconditionally and returns the original content. This means that even with `throwOnError: true`, errors do not propagate to the caller -- the original content is silently returned.
+The behavior of `throwOnError` differs between the TypeScript and Rust implementations:
 
-This is a known limitation. The option exists in the settings schema but currently has no observable effect on the public API.
+- **Rust (napi/WASM/CLI)**: When `throwOnError` is `true` and parsing fails, the Rust formatter returns an error (or throws via napi). The Rust CLI uses `try_format()` for graceful error reporting.
+- **TypeScript**: The main `format()` function in `src/index.ts` catches all errors unconditionally and returns the original content. This means that with the TS engine, `throwOnError: true` does not propagate errors to the caller.
 
 ### CI Validation with checkFile()
 

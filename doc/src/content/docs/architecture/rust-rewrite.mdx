@@ -79,10 +79,15 @@ crates/
 │   └── src/
 │       └── main.rs              ← clap-based CLI (--write, --check, --config)
 │
-└── mdx-formatter-napi/          ← napi-rs Node.js bindings
+├── mdx-formatter-napi/          ← napi-rs Node.js bindings
+│   ├── src/
+│   │   └── lib.rs               ← format() function exposed to JavaScript
+│   └── build.rs                 ← napi-rs build configuration
+│
+└── mdx-formatter-wasm/          ← WASM bindings for browser use
     ├── src/
-    │   └── lib.rs               ← format() function exposed to JavaScript
-    └── build.rs                 ← napi-rs build configuration
+    │   └── lib.rs               ← format() and format_with_defaults() for WASM
+    └── Cargo.toml
 ```
 
 The core library (`mdx-formatter-core`) has no Node.js dependency and can be used from any Rust project. The napi bridge (`mdx-formatter-napi`) is a thin wrapper that adds the JavaScript interface.
@@ -123,7 +128,7 @@ All formatting rules from the TypeScript version are implemented in Rust:
 | CLI binary | Done | `mdx-formatter-cli` crate with `--write`, `--check`, `--config`, glob patterns |
 | Auto-detect bridge | Done | TS `format()` auto-prefers Rust napi when available |
 | napi-rs CI pipeline | In Progress | Cross-platform binary generation (macOS/Linux/Windows) |
-| Browser/WASM | Pending | Compile to WASM for browser use |
+| Browser/WASM | Done | wasm-pack, web + bundler targets, used by doc site playground |
 
 ## Test Coverage
 
@@ -150,7 +155,6 @@ When a user runs `npm install @takazudo/mdx-formatter`, npm's optional dependenc
 
 ## Remaining Work
 
-The formatting engine and core infrastructure are complete. Remaining tasks:
+The formatting engine, WASM support, and core infrastructure are complete. Remaining task:
 
 - napi-rs CI build pipeline (GitHub Actions for cross-platform `.node` binary generation) — **In Progress**
-- Browser/WASM support (compile Rust core to WASM for browser use)

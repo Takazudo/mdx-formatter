@@ -1,7 +1,7 @@
 use clap::Parser;
 use colored::Colorize;
 use glob::glob;
-use mdx_formatter_core::{format, load_full_config, FullConfig};
+use mdx_formatter_core::{try_format, load_full_config, FullConfig};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
@@ -124,7 +124,19 @@ fn main() {
 
         match fs::read_to_string(file) {
             Ok(content) => {
-                let formatted = format(&content, &loaded.settings);
+                let formatted = match try_format(&content, &loaded.settings) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        error_count += 1;
+                        eprintln!(
+                            "{} {} {}",
+                            "✗".red(),
+                            path_str.dimmed(),
+                            e.to_string().red()
+                        );
+                        continue;
+                    }
+                };
                 let needs_formatting = formatted != content;
 
                 if cli.write {

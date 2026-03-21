@@ -77,13 +77,9 @@
     "glob": "^13.0.1",
     "js-yaml": "^4.1.1",
     "prettier": "^3.8.0",
-    "remark": "^15.0.1",
-    "remark-directive": "^3.0.0",
     "remark-frontmatter": "^5.0.0",
-    "remark-gfm": "^4.0.0",
     "remark-mdx": "^3.0.0",
     "remark-parse": "^11.0.0",
-    "remark-stringify": "^11.0.0",
     "unified": "^11.0.4",
     "unist-util-visit": "^5.0.0"
   },

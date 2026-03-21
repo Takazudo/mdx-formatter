@@ -95,13 +95,3 @@ export const formatterSettings: FormatterSettings = {
     minConfidence: 0.7, // Minimum confidence score to use detected indentation
   },
 };
-
-// Export function to get only enabled rules
-export function getEnabledRules(): Partial<FormatterSettings> {
-  return Object.entries(formatterSettings)
-    .filter(([_, config]) => (config as { enabled?: boolean }).enabled)
-    .reduce((acc, [key, config]) => {
-      (acc as Record<string, unknown>)[key] = config;
-      return acc;
-    }, {} as Partial<FormatterSettings>);
-}
