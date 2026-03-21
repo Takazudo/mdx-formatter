@@ -95,22 +95,11 @@ Each rule is independently toggleable via `.mdx-formatter.json` configuration:
 
 Rules are applied in order during the operation collection phase. After all operations are collected, conflict resolution and deduplication happen before the operations are applied to the source lines.
 
-## Plugin System
+## No Plugin System Needed
 
-The formatter uses remark-compatible plugins for specialized transformations. These run during AST processing in `src/mdx-formatter.ts`:
+The TypeScript formatter originally used 10 remark plugins to work around AST round-trip issues (`preserve-jsx.ts`, `preserve-image-alt.ts`, `fix-autolink-output.ts`, etc.). The hybrid approach — which uses the AST only for analysis, never for output — eliminates the need for these plugins. The Rust implementation validates that 9 of 10 plugins are unnecessary (see [Rust Rewrite: Plugin Validation](/docs/architecture/rust-rewrite#plugin-validation)).
 
-| Plugin | Purpose |
-| --- | --- |
-| `preserve-jsx.ts` | Protect JSX elements from remark modifications |
-| `preserve-image-alt.ts` | Preserve image alt text formatting |
-| `fix-autolink-output.ts` | Fix remark's autolink serialization |
-| `fix-formatting-issues.ts` | Post-processing fixes for common formatting problems |
-| `fix-paragraph-spacing.ts` | Ensure correct blank lines between paragraphs |
-| `docusaurus-admonitions.ts` | Preserve `:::note`, `:::tip` syntax |
-| `preprocess-japanese.ts` | Handle Japanese text spacing rules |
-| `japanese-text.ts` | Japanese punctuation and URL handling |
-| `normalize-lists.ts` | Normalize list formatting |
-| `html-definition-list.ts` | Handle `<dl>/<dt>/<dd>` in MDX |
+The formatting logic now lives entirely in `src/mdx-formatter.ts` as operation-based rules, not as remark plugins.
 
 ## Key Source Files
 

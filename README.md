@@ -77,16 +77,16 @@ Full documentation at **[takazudomodular.com/pj/mdx-formatter](https://takazudom
 - [Architecture](https://takazudomodular.com/pj/mdx-formatter/docs/architecture) — Hybrid formatter approach, Rust rewrite strategy
 - [Changelog](https://takazudomodular.com/pj/mdx-formatter/docs/changelog) — Release history
 
-## Rust Rewrite (Experimental)
+## Rust Implementation
 
-An experimental Rust implementation using [markdown-rs](https://github.com/wooorm/markdown-rs) and [napi-rs](https://napi.rs/) is in progress at `crates/`. See [Architecture: Rust Rewrite](https://takazudomodular.com/pj/mdx-formatter/docs/architecture/rust-rewrite) for details.
+A production-ready Rust implementation using [markdown-rs](https://github.com/wooorm/markdown-rs) and [napi-rs](https://napi.rs/) is available at `crates/`. It provides 3-7x performance improvement over TypeScript, with full feature parity (342 Rust tests + 85 passthrough tests). Includes a standalone CLI binary and WASM support for browsers. See [Architecture: Rust Rewrite](https://takazudomodular.com/pj/mdx-formatter/docs/architecture/rust-rewrite) for details.
 
 ## Development
 
 ```bash
 pnpm install        # Install dependencies
 pnpm build          # Compile TypeScript
-pnpm test           # Run tests (274 tests)
+pnpm test           # Run tests (207 tests)
 pnpm test:watch     # Watch mode
 pnpm test:coverage  # Coverage report
 pnpm lint           # ESLint check

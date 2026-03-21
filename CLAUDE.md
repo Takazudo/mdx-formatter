@@ -11,7 +11,7 @@ AST-based markdown and MDX formatter built on the unified/remark ecosystem. Publ
 - **Linting**: ESLint (flat config) + Prettier + lint-staged (via husky)
 - **Build**: `tsc` (output to `dist/`)
 - **Doc site**: zudo-doc / Astro (workspace in `doc/`)
-- **Rust POC**: Experimental Rust rewrite in `crates/` (markdown-rs + napi-rs)
+- **Rust implementation**: Production-ready Rust engine in `crates/` (markdown-rs + napi-rs + WASM)
 
 ## Commands
 
