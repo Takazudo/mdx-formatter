@@ -1,6 +1,4 @@
 import { type ReactNode, useCallback, useState } from 'react';
-import { format } from '@takazudo/mdx-formatter/browser';
-import type { DeepPartial, FormatterSettings } from '@takazudo/mdx-formatter/browser';
 
 const SAMPLE_INPUT = `---
 title: Example Document
@@ -30,8 +28,6 @@ This is a JSX component in MDX.
 
 Some text with a [link](https://example.com) and **bold** content.
 `;
-
-type Version = 'typescript' | 'rust';
 
 interface SettingToggle {
   enabled: boolean;
@@ -84,7 +80,7 @@ function loadWasm(): Promise<WasmModule> {
   return wasmPromise;
 }
 
-function buildFormatterSettings(s: SettingsState): DeepPartial<FormatterSettings> {
+function buildFormatterSettings(s: SettingsState): Record<string, unknown> {
   return {
     addEmptyLineBetweenElements: { enabled: s.addEmptyLineBetweenElements.enabled },
     formatMultiLineJsx: {
@@ -149,9 +145,7 @@ function SettingRow({
 export default function FormatterPlayground(): ReactNode {
   const [input, setInput] = useState(SAMPLE_INPUT);
   const [output, setOutput] = useState('');
-  const [version, setVersion] = useState<Version>('typescript');
   const [isFormatting, setIsFormatting] = useState(false);
-  const [isLoadingWasm, setIsLoadingWasm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(defaultSettings);
@@ -166,56 +160,19 @@ export default function FormatterPlayground(): ReactNode {
     setIsFormatting(true);
     setError(null);
     try {
-      const formatterSettings = buildFormatterSettings(settings);
-      let result: string;
-      if (version === 'rust') {
-        setIsLoadingWasm(true);
-        const wasm = await loadWasm();
-        const settingsJson = JSON.stringify(formatterSettings);
-        result = wasm.format(input, settingsJson);
-      } else {
-        result = await format(input, formatterSettings);
-      }
+      const wasm = await loadWasm();
+      const settingsJson = JSON.stringify(buildFormatterSettings(settings));
+      const result = wasm.format(input, settingsJson);
       setOutput(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'An unexpected error occurred');
     } finally {
       setIsFormatting(false);
-      setIsLoadingWasm(false);
     }
-  }, [input, settings, version]);
+  }, [input, settings]);
 
   return (
     <div className="flex flex-col gap-vsp-sm">
-      {/* Version toggle */}
-      <div className="flex items-center gap-hsp-md">
-        <span className="text-caption font-semibold text-muted">Engine:</span>
-        <div className="flex gap-hsp-xs">
-          <button
-            type="button"
-            onClick={() => setVersion('typescript')}
-            className={`rounded px-hsp-md py-hsp-2xs text-caption font-medium transition-colors ${
-              version === 'typescript'
-                ? 'bg-accent text-bg'
-                : 'bg-surface text-muted hover:text-fg'
-            }`}
-          >
-            TypeScript
-          </button>
-          <button
-            type="button"
-            onClick={() => setVersion('rust')}
-            className={`rounded px-hsp-md py-hsp-2xs text-caption font-medium transition-colors ${
-              version === 'rust'
-                ? 'bg-accent text-bg'
-                : 'bg-surface text-muted hover:text-fg'
-            }`}
-          >
-            Rust (WASM)
-          </button>
-        </div>
-      </div>
-
       {/* Settings panel */}
       <div className="rounded-lg border border-muted/30 bg-surface">
         <button
@@ -411,10 +368,10 @@ export default function FormatterPlayground(): ReactNode {
         <button
           type="button"
           onClick={handleFormat}
-          disabled={isFormatting || isLoadingWasm || !input.trim()}
+          disabled={isFormatting || !input.trim()}
           className="rounded-lg bg-accent px-hsp-xl py-hsp-xs text-caption font-semibold text-bg transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isLoadingWasm ? 'Loading WASM...' : isFormatting ? 'Formatting...' : 'Format'}
+          {isFormatting ? 'Formatting...' : 'Format'}
         </button>
         {error && (
           <span className="text-caption text-danger">{error}</span>
