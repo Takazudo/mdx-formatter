@@ -124,7 +124,9 @@ async function main() {
   const rustAvailable = isRustFormatterAvailable();
 
   console.log('=== mdx-formatter Performance Benchmark ===');
-  console.log('NOTE: Use a release build (pnpm build:rust) for production-representative Rust numbers.');
+  console.log(
+    'NOTE: Use a release build (pnpm build:rust) for production-representative Rust numbers.',
+  );
   console.log('      Debug builds typically show only ~1-2x speedup over TypeScript.\n');
 
   // Load fixtures
