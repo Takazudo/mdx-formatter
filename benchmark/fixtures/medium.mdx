@@ -1,0 +1,137 @@
+---
+title: React Component Patterns
+author: Takazudo
+date: 2025-01-15
+tags:
+  - react
+  - patterns
+  - typescript
+---
+
+# React Component Patterns
+
+This guide covers common React component patterns used in modern TypeScript applications.
+
+## Compound Components
+
+Compound components let you create expressive APIs where components share implicit state.
+
+```tsx
+import { createContext, useContext, useState } from 'react';
+
+interface TabsContextType {
+  activeIndex: number;
+  setActiveIndex: (index: number) => void;
+}
+
+const TabsContext = createContext<TabsContextType | null>(null);
+
+function Tabs({ children }: { children: React.ReactNode }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  return (
+    <TabsContext.Provider value={{ activeIndex, setActiveIndex }}>
+      <div className="tabs-container">{children}</div>
+    </TabsContext.Provider>
+  );
+}
+```
+
+### Tab Component
+
+Each tab renders its content only when active.
+
+```tsx
+function Tab({ index, children }: { index: number; children: React.ReactNode }) {
+  const context = useContext(TabsContext);
+  if (!context) throw new Error('Tab must be used within Tabs');
+
+  return context.activeIndex === index ? <div>{children}</div> : null;
+}
+```
+
+## Render Props
+
+Render props provide a way to share behavior between components without using higher-order components.
+
+- The parent component owns the logic
+- The child receives data through a function
+- This pattern is highly composable
+
+```tsx
+interface MousePosition {
+  x: number;
+  y: number;
+}
+
+function MouseTracker({
+  render,
+}: {
+  render: (position: MousePosition) => React.ReactNode;
+}) {
+  const [position, setPosition] = useState<MousePosition>({ x: 0, y: 0 });
+
+  return (
+    <div onMouseMove={(e) => setPosition({ x: e.clientX, y: e.clientY })}>
+      {render(position)}
+    </div>
+  );
+}
+```
+
+## Custom Hooks
+
+Custom hooks are the modern replacement for render props and HOCs. They encapsulate stateful logic for reuse.
+
+### useLocalStorage
+
+```tsx
+function useLocalStorage<T>(key: string, initialValue: T) {
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch {
+      return initialValue;
+    }
+  });
+
+  const setValue = (value: T | ((val: T) => T)) => {
+    const valueToStore = value instanceof Function ? value(storedValue) : value;
+    setStoredValue(valueToStore);
+    window.localStorage.setItem(key, JSON.stringify(valueToStore));
+  };
+
+  return [storedValue, setValue] as const;
+}
+```
+
+### useDebounce
+
+A debounce hook is useful for search inputs and API calls.
+
+```tsx
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+```
+
+## Summary
+
+| Pattern            | Use Case                        | Complexity |
+|--------------------|----------------------------------|------------|
+| Compound Components | Related UI with shared state    | Medium     |
+| Render Props       | Flexible rendering logic         | Medium     |
+| Custom Hooks       | Reusable stateful logic          | Low        |
+
+<Callout type="tip">
+  Start with custom hooks for most use cases. They are the simplest and most composable option.
+</Callout>
+
+> **Note:** These patterns can be combined. For example, a compound component might use custom hooks internally to manage its state.
