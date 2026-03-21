@@ -221,7 +221,9 @@ export default function FormatterPlayground(): ReactNode {
           className="flex w-full items-center gap-hsp-xs p-hsp-md text-caption font-semibold text-muted hover:text-fg transition-colors"
         >
           <svg
-            className={`h-3 w-3 transition-transform ${settingsOpen ? 'rotate-90' : ''}`}
+            width="12"
+            height="12"
+            className={`shrink-0 transition-transform ${settingsOpen ? 'rotate-90' : ''}`}
             viewBox="0 0 12 12"
             fill="currentColor"
           >
