@@ -32,13 +32,13 @@ Uses the same hybrid approach as the TypeScript implementation:
 - YAML frontmatter formatting — working (parse, reformat, unsafe value quoting)
 - List indentation normalization — working
 - Full settings deserialization — all 10 fields via serde with camelCase JSON
-- 274 tests passing (77 unit + 144 cross-platform + 42 plugin validation + 11 spacing recursion)
+- 342 tests passing (124 unit + 165 cross-platform + 42 plugin validation + 11 spacing recursion)
 - napi-rs scaffold ready (needs `@napi-rs/cli` to build `.node`)
 - TS plugin validation complete — 9 of 10 plugins NOT needed in Rust (see formatter.rs header)
 
 ## Known Limitations
 
 - HTML block formatting not yet implemented (needs Prettier replacement decision)
-- Config file loading not yet implemented
+- Config file loading — working (3-layer merge, .mdx-formatter.json + package.json, exclude patterns)
 - CLI binary not yet implemented
 - napi-rs build step not wired up
