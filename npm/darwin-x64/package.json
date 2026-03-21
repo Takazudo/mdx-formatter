@@ -1,0 +1,14 @@
+{
+  "name": "@takazudo/mdx-formatter-darwin-x64",
+  "version": "0.5.0-next.3",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "main": "mdx-formatter-napi.node",
+  "files": ["mdx-formatter-napi.node"],
+  "description": "Platform-specific binary for @takazudo/mdx-formatter (darwin-x64)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Takazudo/mdx-formatter.git"
+  }
+}

@@ -31,3 +31,6 @@ worktrees/
 # Rust
 /target/
 *.node
+
+# napi platform packages
+npm/*/*.node

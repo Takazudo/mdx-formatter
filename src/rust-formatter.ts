@@ -5,21 +5,53 @@
  */
 
 import { createRequire } from 'module';
+import { platform, arch } from 'os';
 import type { FormatOptions } from './types.js';
 import { loadConfig } from './load-config.js';
 
 const require = createRequire(import.meta.url);
 
-// Try to load the native module
+function getPackageName(): string {
+  const platformName = platform();
+  const archName = arch();
+
+  const platformMap: Record<string, Record<string, string>> = {
+    darwin: {
+      arm64: '@takazudo/mdx-formatter-darwin-arm64',
+      x64: '@takazudo/mdx-formatter-darwin-x64',
+    },
+    linux: {
+      x64: '@takazudo/mdx-formatter-linux-x64-gnu',
+    },
+    win32: {
+      x64: '@takazudo/mdx-formatter-win32-x64-msvc',
+    },
+  };
+
+  return platformMap[platformName]?.[archName] ?? '';
+}
+
 let nativeFormat: ((content: string, settingsJson: string) => string) | null = null;
 
 try {
-  const native = require('../crates/mdx-formatter-napi/mdx-formatter-napi.node') as {
-    format: (content: string, settingsJson: string) => string;
-  };
-  nativeFormat = native.format;
+  // Try platform-specific npm package first
+  const packageName = getPackageName();
+  if (packageName) {
+    const native = require(packageName) as {
+      format: (content: string, settingsJson: string) => string;
+    };
+    nativeFormat = native.format;
+  }
 } catch {
-  // Native module not available - not built yet or wrong platform
+  // Fall back to local build
+  try {
+    const native = require('../crates/mdx-formatter-napi/mdx-formatter-napi.node') as {
+      format: (content: string, settingsJson: string) => string;
+    };
+    nativeFormat = native.format;
+  } catch {
+    // Native module not available
+  }
 }
 
 /**
