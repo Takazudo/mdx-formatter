@@ -74,10 +74,7 @@ interface PaginatedResponse<T> extends ApiResponse<T[]> {
   };
 }
 
-async function fetchPaginated<T>(
-  url: string,
-  page: number = 1,
-): Promise<PaginatedResponse<T>> {
+async function fetchPaginated<T>(url: string, page: number = 1): Promise<PaginatedResponse<T>> {
   const response = await fetch(`${url}?page=${page}`);
   if (!response.ok) {
     throw new Error(`HTTP error: ${response.status}`);
@@ -106,9 +103,7 @@ function useForm(initialValues: Record<FormFieldName, string>) {
     touched: {},
   });
 
-  const handleChange = (field: FormFieldName) => (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleChange = (field: FormFieldName) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setState((prev) => ({
       ...prev,
       values: { ...prev.values, [field]: e.target.value },
@@ -219,12 +214,12 @@ function DataFetcher<T>({ url, children }: DataFetcherProps<T>) {
 
 テストは以下の階層で構成します。
 
-| レベル | 対象 | ツール | 実行速度 |
-|--------|------|--------|----------|
-| ユニットテスト | 関数、フック | Vitest | 高速 |
-| コンポーネントテスト | UIコンポーネント | Testing Library | 中速 |
-| 統合テスト | 画面遷移、API連携 | Playwright | 低速 |
-| E2Eテスト | ユーザーシナリオ | Playwright | 最低速 |
+| レベル               | 対象              | ツール          | 実行速度 |
+| -------------------- | ----------------- | --------------- | -------- |
+| ユニットテスト       | 関数、フック      | Vitest          | 高速     |
+| コンポーネントテスト | UIコンポーネント  | Testing Library | 中速     |
+| 統合テスト           | 画面遷移、API連携 | Playwright      | 低速     |
+| E2Eテスト            | ユーザーシナリオ  | Playwright      | 最低速   |
 
 ### ユニットテストの書き方
 
@@ -387,12 +382,12 @@ import { format, parseISO } from 'date-fns';
 
 <ImageOptimizer>
 
-| フォーマット | 用途 | 圧縮率 | ブラウザサポート |
-|-------------|------|--------|----------------|
-| WebP | 写真、イラスト | 高 | モダンブラウザ |
-| AVIF | 写真 | 最高 | 限定的 |
-| SVG | アイコン、ロゴ | 可変 | 全ブラウザ |
-| PNG | 透明画像 | 低 | 全ブラウザ |
+| フォーマット | 用途           | 圧縮率 | ブラウザサポート |
+| ------------ | -------------- | ------ | ---------------- |
+| WebP         | 写真、イラスト | 高     | モダンブラウザ   |
+| AVIF         | 写真           | 最高   | 限定的           |
+| SVG          | アイコン、ロゴ | 可変   | 全ブラウザ       |
+| PNG          | 透明画像       | 低     | 全ブラウザ       |
 
 </ImageOptimizer>
 
@@ -417,19 +412,10 @@ function Modal({
   if (!isOpen) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="modal-title"
-      className="modal-overlay"
-    >
+    <div role="dialog" aria-modal="true" aria-labelledby="modal-title" className="modal-overlay">
       <div className="modal-content">
         <h2 id="modal-title">{title}</h2>
-        <button
-          onClick={onClose}
-          aria-label="閉じる"
-          className="modal-close"
-        >
+        <button onClick={onClose} aria-label="閉じる" className="modal-close">
           ×
         </button>
         {children}
@@ -475,11 +461,7 @@ function DropdownMenu({ items }: { items: MenuItem[] }) {
 
   return (
     <div onKeyDown={handleKeyDown}>
-      <button
-        aria-expanded={isOpen}
-        aria-haspopup="true"
-        onClick={() => setIsOpen(!isOpen)}
-      >
+      <button aria-expanded={isOpen} aria-haspopup="true" onClick={() => setIsOpen(!isOpen)}>
         メニュー
       </button>
       {isOpen && (
@@ -505,15 +487,15 @@ function DropdownMenu({ items }: { items: MenuItem[] }) {
 
 このガイドで紹介した主なトピックを振り返ります。
 
-| トピック | 重要度 | 難易度 |
-|---------|--------|--------|
-| TypeScript活用 | 高 | 中 |
-| コンポーネント設計 | 高 | 中 |
-| テスト戦略 | 高 | 高 |
-| パフォーマンス最適化 | 中 | 高 |
-| アクセシビリティ | 高 | 中 |
-| 状態管理 | 中 | 中 |
-| エラーハンドリング | 高 | 低 |
+| トピック             | 重要度 | 難易度 |
+| -------------------- | ------ | ------ |
+| TypeScript活用       | 高     | 中     |
+| コンポーネント設計   | 高     | 中     |
+| テスト戦略           | 高     | 高     |
+| パフォーマンス最適化 | 中     | 高     |
+| アクセシビリティ     | 高     | 中     |
+| 状態管理             | 中     | 中     |
+| エラーハンドリング   | 高     | 低     |
 
 <Summary>
 

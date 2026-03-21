@@ -63,17 +63,11 @@ interface MousePosition {
   y: number;
 }
 
-function MouseTracker({
-  render,
-}: {
-  render: (position: MousePosition) => React.ReactNode;
-}) {
+function MouseTracker({ render }: { render: (position: MousePosition) => React.ReactNode }) {
   const [position, setPosition] = useState<MousePosition>({ x: 0, y: 0 });
 
   return (
-    <div onMouseMove={(e) => setPosition({ x: e.clientX, y: e.clientY })}>
-      {render(position)}
-    </div>
+    <div onMouseMove={(e) => setPosition({ x: e.clientX, y: e.clientY })}>{render(position)}</div>
   );
 }
 ```
@@ -124,11 +118,11 @@ function useDebounce<T>(value: T, delay: number): T {
 
 ## Summary
 
-| Pattern            | Use Case                        | Complexity |
-|--------------------|----------------------------------|------------|
-| Compound Components | Related UI with shared state    | Medium     |
-| Render Props       | Flexible rendering logic         | Medium     |
-| Custom Hooks       | Reusable stateful logic          | Low        |
+| Pattern             | Use Case                     | Complexity |
+| ------------------- | ---------------------------- | ---------- |
+| Compound Components | Related UI with shared state | Medium     |
+| Render Props        | Flexible rendering logic     | Medium     |
+| Custom Hooks        | Reusable stateful logic      | Low        |
 
 <Callout type="tip">
   Start with custom hooks for most use cases. They are the simplest and most composable option.
