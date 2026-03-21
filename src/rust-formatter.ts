@@ -35,9 +35,7 @@ export function isRustFormatterAvailable(): boolean {
  */
 export async function format(content: string, options: FormatOptions = {}): Promise<string> {
   if (!nativeFormat) {
-    throw new Error(
-      'Rust formatter not available. Build it first with: pnpm build:rust',
-    );
+    throw new Error('Rust formatter not available. Build it first with: pnpm build:rust');
   }
 
   const settings = loadConfig(options);

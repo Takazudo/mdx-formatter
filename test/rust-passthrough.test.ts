@@ -94,8 +94,7 @@ describe.skipIf(!rustAvailable)('Rust Passthrough: Markdown Formatter', () => {
 
     it('should preserve nested content in admonitions', async () => {
       const input = ':::warning\n- Item 1\n- Item 2\n\n```js\ncode();\n```\n:::';
-      const expected =
-        ':::warning\n- Item 1\n- Item 2\n\n```js\ncode();\n```\n:::';
+      const expected = ':::warning\n- Item 1\n- Item 2\n\n```js\ncode();\n```\n:::';
       const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
@@ -143,10 +142,8 @@ describe.skipIf(!rustAvailable)('Rust Passthrough: Markdown Formatter', () => {
 
     describe('Image Alt Text Preservation', () => {
       it('should preserve colon followed by text in image alt', async () => {
-        const input =
-          '![図:VCAによるオーディオシグナルの減衰処理](/images/p/vca-exp-2)';
-        const expected =
-          '![図:VCAによるオーディオシグナルの減衰処理](/images/p/vca-exp-2)';
+        const input = '![図:VCAによるオーディオシグナルの減衰処理](/images/p/vca-exp-2)';
+        const expected = '![図:VCAによるオーディオシグナルの減衰処理](/images/p/vca-exp-2)';
         const result = await format(input, { settings: testSettings });
         expect(result).toBe(expected);
       });
@@ -321,9 +318,7 @@ describe.skipIf(!rustAvailable)('Rust Passthrough: Markdown Formatter', () => {
         const result = await format(input, { settings: testSettings });
         expect(result).toContain('  </LayoutDivideItem>');
         const lines = result.split('\n');
-        const hasSingleSpaceIndent = lines.some(
-          (line) => line === ' </LayoutDivideItem>',
-        );
+        const hasSingleSpaceIndent = lines.some((line) => line === ' </LayoutDivideItem>');
         expect(hasSingleSpaceIndent).toBe(false);
       });
     });
@@ -433,13 +428,9 @@ Takazudo Modular Highlightsなどというメルマガの名前にしてみま�
         expect(result).toContain('\n\n</Outro>');
         const lines = result.split('\n');
         expect(
-          lines.some((line) =>
-            line.includes('Synth Module Proの紹介は以上になります。'),
-          ),
+          lines.some((line) => line.includes('Synth Module Proの紹介は以上になります。')),
         ).toBe(true);
-        expect(
-          lines.some((line) => line.includes('ご参考になれば幸いです。')),
-        ).toBe(true);
+        expect(lines.some((line) => line.includes('ご参考になれば幸いです。'))).toBe(true);
       });
     });
 
@@ -453,16 +444,10 @@ Takazudo Modular Highlightsなどというメルマガの名前にしてみま�
         const result = await format(input, { settings: testSettings });
         const lines = result.split('\n');
         expect(
-          lines.some((line) =>
-            line.includes('現在、詳細な商品紹介ページが公開されています：'),
-          ),
+          lines.some((line) => line.includes('現在、詳細な商品紹介ページが公開されています：')),
         ).toBe(true);
-        expect(
-          lines.some((line) => line.includes('- [Synth Module Pro')),
-        ).toBe(true);
-        expect(
-          lines.some((line) => line.includes('- [Synth Pipe Pro')),
-        ).toBe(true);
+        expect(lines.some((line) => line.includes('- [Synth Module Pro'))).toBe(true);
+        expect(lines.some((line) => line.includes('- [Synth Pipe Pro'))).toBe(true);
       });
     });
 
