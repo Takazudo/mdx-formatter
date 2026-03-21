@@ -1,0 +1,506 @@
+---
+title: フロントエンド開発ガイド
+author: 田中太郎
+date: 2025-03-01
+description: モダンなフロントエンド開発のベストプラクティスと設計パターンを解説します
+category: engineering
+tags:
+  - frontend
+  - react
+  - typescript
+  - testing
+  - performance
+  - accessibility
+draft: false
+---
+
+# フロントエンド開発ガイド
+
+このドキュメントでは、モダンなフロントエンド開発における設計パターン、テスト戦略、パフォーマンス最適化について包括的に解説します。
+
+## プロジェクト構成
+
+プロジェクトのディレクトリ構成は、チームの生産性に大きな影響を与えます。以下に推奨される構成を示します。
+
+```
+src/
+├── components/
+│   ├── ui/
+│   │   ├── Button/
+│   │   │   ├── Button.tsx
+│   │   │   ├── Button.test.tsx
+│   │   │   └── Button.module.css
+│   │   └── Input/
+│   │       ├── Input.tsx
+│   │       └── Input.module.css
+│   └── features/
+│       ├── auth/
+│       └── dashboard/
+├── hooks/
+├── utils/
+├── types/
+└── styles/
+```
+
+### コンポーネント設計の原則
+
+コンポーネントは以下の原則に従って設計します。
+
+1. 単一責任の原則に従う
+2. Props のインターフェースを明確に定義する
+3. 副作用をカスタムフックに分離する
+4. テスト可能な設計にする
+
+## TypeScript の活用
+
+TypeScript を効果的に活用することで、開発体験とコード品質を大幅に向上できます。
+
+### ジェネリック型の活用
+
+```tsx
+interface ApiResponse<T> {
+  data: T;
+  status: number;
+  message: string;
+  timestamp: string;
+}
+
+interface PaginatedResponse<T> extends ApiResponse<T[]> {
+  pagination: {
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    itemsPerPage: number;
+  };
+}
+
+async function fetchPaginated<T>(url: string, page: number = 1): Promise<PaginatedResponse<T>> {
+  const response = await fetch(`${url}?page=${page}`);
+  if (!response.ok) {
+    throw new Error(`HTTP error: ${response.status}`);
+  }
+  return response.json();
+}
+```
+
+### 型安全なイベントハンドラー
+
+イベントハンドラーの型を正確に定義することで、実行時エラーを防ぎます。
+
+```tsx
+type FormFieldName = 'username' | 'email' | 'password' | 'confirmPassword';
+
+interface FormState {
+  values: Record<FormFieldName, string>;
+  errors: Partial<Record<FormFieldName, string>>;
+  touched: Partial<Record<FormFieldName, boolean>>;
+}
+
+function useForm(initialValues: Record<FormFieldName, string>) {
+  const [state, setState] = useState<FormState>({
+    values: initialValues,
+    errors: {},
+    touched: {},
+  });
+
+  const handleChange = (field: FormFieldName) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setState((prev) => ({
+      ...prev,
+      values: { ...prev.values, [field]: e.target.value },
+      touched: { ...prev.touched, [field]: true },
+    }));
+  };
+
+  const validate = (): boolean => {
+    const errors: Partial<Record<FormFieldName, string>> = {};
+
+    if (!state.values.username) {
+      errors.username = 'ユーザー名は必須です';
+    }
+    if (!state.values.email.includes('@')) {
+      errors.email = '有効なメールアドレスを入力してください';
+    }
+    if (state.values.password.length < 8) {
+      errors.password = 'パスワードは8文字以上で入力してください';
+    }
+    if (state.values.password !== state.values.confirmPassword) {
+      errors.confirmPassword = 'パスワードが一致しません';
+    }
+
+    setState((prev) => ({ ...prev, errors }));
+    return Object.keys(errors).length === 0;
+  };
+
+  return { state, handleChange, validate };
+}
+```
+
+## コンポーネントパターン
+
+### コンパウンドコンポーネント
+
+コンパウンドコンポーネントは、関連するUIの部品をグループ化するパターンです。
+
+<Card>
+
+#### 使用例
+
+```tsx
+<Accordion>
+  <Accordion.Item>
+    <Accordion.Header>セクション1</Accordion.Header>
+    <Accordion.Panel>
+      <p>セクション1の内容がここに表示されます。</p>
+    </Accordion.Panel>
+  </Accordion.Item>
+  <Accordion.Item>
+    <Accordion.Header>セクション2</Accordion.Header>
+    <Accordion.Panel>
+      <p>セクション2の内容がここに表示されます。</p>
+    </Accordion.Panel>
+  </Accordion.Item>
+</Accordion>
+```
+
+</Card>
+
+### レンダープロップス
+
+レンダープロップスは、コンポーネント間でロジックを共有するための柔軟なパターンです。
+
+```tsx
+interface DataFetcherProps<T> {
+  url: string;
+  children: (data: {
+    data: T | null;
+    loading: boolean;
+    error: Error | null;
+    refetch: () => void;
+  }) => React.ReactNode;
+}
+
+function DataFetcher<T>({ url, children }: DataFetcherProps<T>) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(url);
+      const json = await response.json();
+      setData(json);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  }, [url]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return <>{children({ data, loading, error, refetch: fetchData })}</>;
+}
+```
+
+## テスト戦略
+
+テストは品質を保証するために不可欠です。ここでは、フロントエンドのテスト戦略について説明します。
+
+### テストピラミッド
+
+テストは以下の階層で構成します。
+
+| レベル               | 対象              | ツール          | 実行速度 |
+| -------------------- | ----------------- | --------------- | -------- |
+| ユニットテスト       | 関数、フック      | Vitest          | 高速     |
+| コンポーネントテスト | UIコンポーネント  | Testing Library | 中速     |
+| 統合テスト           | 画面遷移、API連携 | Playwright      | 低速     |
+| E2Eテスト            | ユーザーシナリオ  | Playwright      | 最低速   |
+
+### ユニットテストの書き方
+
+```tsx
+import { describe, it, expect } from 'vitest';
+import { formatCurrency, parseQueryString, debounce } from './utils';
+
+describe('formatCurrency', () => {
+  it('should format positive numbers', () => {
+    expect(formatCurrency(1234)).toBe('¥1,234');
+    expect(formatCurrency(0)).toBe('¥0');
+  });
+
+  it('should handle negative numbers', () => {
+    expect(formatCurrency(-500)).toBe('-¥500');
+  });
+
+  it('should handle decimal values', () => {
+    expect(formatCurrency(1234.56)).toBe('¥1,234.56');
+  });
+});
+
+describe('parseQueryString', () => {
+  it('should parse simple query strings', () => {
+    const result = parseQueryString('?page=1&sort=name');
+    expect(result).toEqual({ page: '1', sort: 'name' });
+  });
+
+  it('should handle empty query strings', () => {
+    expect(parseQueryString('')).toEqual({});
+    expect(parseQueryString('?')).toEqual({});
+  });
+
+  it('should decode URI components', () => {
+    const result = parseQueryString('?name=%E7%94%B0%E4%B8%AD');
+    expect(result).toEqual({ name: '田中' });
+  });
+});
+```
+
+### コンポーネントテスト
+
+```tsx
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { SearchInput } from './SearchInput';
+
+describe('SearchInput', () => {
+  it('should render with placeholder', () => {
+    render(<SearchInput placeholder="検索..." onSearch={vi.fn()} />);
+    expect(screen.getByPlaceholderText('検索...')).toBeInTheDocument();
+  });
+
+  it('should call onSearch when form is submitted', () => {
+    const onSearch = vi.fn();
+    render(<SearchInput placeholder="検索..." onSearch={onSearch} />);
+
+    const input = screen.getByPlaceholderText('検索...');
+    fireEvent.change(input, { target: { value: 'テスト' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(onSearch).toHaveBeenCalledWith('テスト');
+  });
+
+  it('should clear input when clear button is clicked', () => {
+    render(<SearchInput placeholder="検索..." onSearch={vi.fn()} />);
+
+    const input = screen.getByPlaceholderText('検索...');
+    fireEvent.change(input, { target: { value: 'テスト' } });
+
+    const clearButton = screen.getByRole('button', { name: 'クリア' });
+    fireEvent.click(clearButton);
+
+    expect(input).toHaveValue('');
+  });
+});
+```
+
+## パフォーマンス最適化
+
+### メモ化の戦略
+
+React のメモ化APIを適切に使用することで、不要な再レンダリングを防ぎます。
+
+```tsx
+import { memo, useMemo, useCallback } from 'react';
+
+interface UserListProps {
+  users: User[];
+  onSelect: (userId: string) => void;
+  filter: string;
+}
+
+const UserList = memo(function UserList({ users, onSelect, filter }: UserListProps) {
+  const filteredUsers = useMemo(
+    () => users.filter((user) => user.name.includes(filter)),
+    [users, filter],
+  );
+
+  const handleSelect = useCallback(
+    (userId: string) => {
+      onSelect(userId);
+    },
+    [onSelect],
+  );
+
+  return (
+    <ul>
+      {filteredUsers.map((user) => (
+        <li key={user.id} onClick={() => handleSelect(user.id)}>
+          {user.name}
+        </li>
+      ))}
+    </ul>
+  );
+});
+```
+
+### バンドルサイズの最適化
+
+バンドルサイズを削減するためのテクニックを紹介します。
+
+> **重要:** バンドルサイズの最適化は、ユーザー体験に直接影響します。初期ロード時間を短縮することで、ユーザーの離脱率を大幅に削減できます。
+
+1. コード分割（Code Splitting）
+
+```tsx
+import { lazy, Suspense } from 'react';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Analytics = lazy(() => import('./pages/Analytics'));
+
+function App() {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <Routes>
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/analytics" element={<Analytics />} />
+      </Routes>
+    </Suspense>
+  );
+}
+```
+
+2. ツリーシェイキング対応のインポート
+
+```tsx
+// 良い例: 名前付きインポート
+import { format, parseISO } from 'date-fns';
+
+// 悪い例: デフォルトインポート（全体がバンドルされる）
+// import dateFns from 'date-fns';
+```
+
+### 画像の最適化
+
+画像は Web パフォーマンスにおいて最も大きな影響を持つ要素の一つです。
+
+<ImageOptimizer>
+
+| フォーマット | 用途           | 圧縮率 | ブラウザサポート |
+| ------------ | -------------- | ------ | ---------------- |
+| WebP         | 写真、イラスト | 高     | モダンブラウザ   |
+| AVIF         | 写真           | 最高   | 限定的           |
+| SVG          | アイコン、ロゴ | 可変   | 全ブラウザ       |
+| PNG          | 透明画像       | 低     | 全ブラウザ       |
+
+</ImageOptimizer>
+
+## アクセシビリティ
+
+アクセシビリティ（a11y）は、すべてのユーザーがアプリケーションを利用できるようにするための重要な要素です。
+
+### WAI-ARIA の活用
+
+```tsx
+function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div role="dialog" aria-modal="true" aria-labelledby="modal-title" className="modal-overlay">
+      <div className="modal-content">
+        <h2 id="modal-title">{title}</h2>
+        <button onClick={onClose} aria-label="閉じる" className="modal-close">
+          ×
+        </button>
+        {children}
+      </div>
+    </div>
+  );
+}
+```
+
+### キーボードナビゲーション
+
+すべてのインタラクティブな要素がキーボードで操作可能であることを確認します。
+
+```tsx
+function DropdownMenu({ items }: { items: MenuItem[] }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
+  const menuRef = useRef<HTMLUListElement>(null);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setFocusedIndex((prev) => Math.min(prev + 1, items.length - 1));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setFocusedIndex((prev) => Math.max(prev - 1, 0));
+        break;
+      case 'Escape':
+        setIsOpen(false);
+        setFocusedIndex(-1);
+        break;
+      case 'Enter':
+      case ' ':
+        if (focusedIndex >= 0) {
+          items[focusedIndex].onClick();
+          setIsOpen(false);
+        }
+        break;
+    }
+  };
+
+  return (
+    <div onKeyDown={handleKeyDown}>
+      <button aria-expanded={isOpen} aria-haspopup="true" onClick={() => setIsOpen(!isOpen)}>
+        メニュー
+      </button>
+      {isOpen && (
+        <ul ref={menuRef} role="menu">
+          {items.map((item, index) => (
+            <li
+              key={item.id}
+              role="menuitem"
+              tabIndex={index === focusedIndex ? 0 : -1}
+              className={index === focusedIndex ? 'focused' : ''}
+            >
+              {item.label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+```
+
+## まとめ
+
+このガイドで紹介した主なトピックを振り返ります。
+
+| トピック             | 重要度 | 難易度 |
+| -------------------- | ------ | ------ |
+| TypeScript活用       | 高     | 中     |
+| コンポーネント設計   | 高     | 中     |
+| テスト戦略           | 高     | 高     |
+| パフォーマンス最適化 | 中     | 高     |
+| アクセシビリティ     | 高     | 中     |
+| 状態管理             | 中     | 中     |
+| エラーハンドリング   | 高     | 低     |
+
+<Summary>
+
+フロントエンド開発は常に進化しています。このガイドで紹介したパターンとプラクティスを基盤に、プロジェクトの要件に合わせてカスタマイズしてください。
+
+最も重要なのは、ユーザーにとって価値のある体験を提供することです。技術的な選択はすべて、その目標に向かって行うべきです。
+
+</Summary>

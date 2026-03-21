@@ -113,6 +113,13 @@ fn has_multiline_tags(html: &str) -> bool {
 static OPENING_TAG_START_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^<[a-zA-Z][a-zA-Z0-9]*").unwrap());
 
+/// Regex for post-processing dt/dd whitespace trimming.
+static POSTPROCESS_DT_DD_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<(dt|dd)>\s*(.*?)\s*</(dt|dd)>").unwrap());
+
+/// Regex for collapsing whitespace.
+static WHITESPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
+
 /// Pre-process: collapse whitespace inside `<dt>` and `<dd>` tags so their
 /// content becomes a single line. This matches the TS formatter behavior.
 fn preprocess_dt_dd(html: &str) -> String {
@@ -131,14 +138,14 @@ fn preprocess_dt_dd(html: &str) -> String {
 
 /// Post-process: trim whitespace inside dt/dd tags.
 fn postprocess_dt_dd(html: &str) -> String {
-    let re = Regex::new(r"<(dt|dd)>\s*(.*?)\s*</(dt|dd)>").unwrap();
-    re.replace_all(html, "<$1>$2</$3>").into_owned()
+    POSTPROCESS_DT_DD_RE
+        .replace_all(html, "<$1>$2</$3>")
+        .into_owned()
 }
 
 /// Collapse multiple whitespace characters (including newlines) into a single space, then trim.
 fn collapse_whitespace(s: &str) -> String {
-    let re = Regex::new(r"\s+").unwrap();
-    re.replace_all(s, " ").trim().to_string()
+    WHITESPACE_RE.replace_all(s, " ").trim().to_string()
 }
 
 /// Compute depth changes for a single line.

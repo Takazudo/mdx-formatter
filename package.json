@@ -41,6 +41,9 @@
     "test:rust-passthrough": "vitest run --config vitest.rust-passthrough.config.ts",
     "build:rust": ". \"$HOME/.cargo/env\" && cargo build -p mdx-formatter-napi && cp target/debug/libmdx_formatter_napi.so crates/mdx-formatter-napi/mdx-formatter-napi.node",
     "build:rust:release": ". \"$HOME/.cargo/env\" && cargo build -p mdx-formatter-napi --release && cp target/release/libmdx_formatter_napi.so crates/mdx-formatter-napi/mdx-formatter-napi.node",
+    "benchmark": "npx tsx benchmark/run.ts",
+    "build:wasm": ". \"$HOME/.cargo/env\" && wasm-pack build crates/mdx-formatter-wasm --target web --out-dir ../../wasm/pkg",
+    "build:wasm:bundler": ". \"$HOME/.cargo/env\" && wasm-pack build crates/mdx-formatter-wasm --target bundler --out-dir ../../wasm/pkg-bundler",
     "b4push": "./scripts/run-b4push.sh",
     "doc:start": "pnpm --dir doc start",
     "prepublishOnly": "tsc && vitest run"
@@ -99,5 +102,14 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "napi": {
+    "binaryName": "mdx-formatter-napi",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc"
+    ]
   }
 }

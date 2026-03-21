@@ -51,7 +51,7 @@ cp target/debug/libmdx_formatter_napi.so crates/mdx-formatter-napi/mdx-formatter
 ## Testing
 
 ```bash
-# Run Rust unit tests (315 tests)
+# Run Rust unit tests (342 tests)
 cargo test
 
 # Run JS tests against Rust formatter (requires build first)
@@ -82,11 +82,15 @@ All formatting rules from the TypeScript version are implemented:
 
 The remaining plugin (fix-paragraph-spacing) is covered by the block-level spacing post-processor.
 
-## Not Yet Implemented (Infrastructure)
+## Infrastructure
 
-- [ ] Config file loading (`.mdx-formatter.json`, `package.json` key)
-- [ ] CLI binary (standalone Rust CLI)
-- [ ] napi-rs CI build pipeline (cross-platform binaries)
+- [x] Config file loading (`.mdx-formatter.json`, `package.json` "mdx-formatter" key, 3-layer merge)
+- [x] CLI binary (`mdx-formatter-cli` crate — `--write`, `--check`, `--config`, `--ignore`, glob patterns)
+- [x] Auto-detect bridge (TS `format()` auto-prefers Rust napi when available, falls back to TS)
+
+## Not Yet Implemented
+
+- [ ] napi-rs CI build pipeline (cross-platform binary generation for macOS/Linux/Windows) — **In Progress**
 - [ ] Browser/WASM support
 
 ## npm Distribution Plan

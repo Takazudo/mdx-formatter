@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+  <head>
+    <title>mdx-formatter WASM Test</title>
+  </head>
+  <body>
+    <h1>mdx-formatter WASM Test</h1>
+    <textarea id="input" rows="10" cols="80">
+# Hello World
+Some text without spacing after heading
+- List item 1
+- List item 2
+Another paragraph without spacing</textarea
+    >
+    <br />
+    <button onclick="formatText()">Format</button>
+    <pre id="output"></pre>
+    <script type="module">
+      import init, { format } from './pkg/mdx_formatter_wasm.js';
+
+      await init();
+
+      window.formatText = () => {
+        const input = document.getElementById('input').value;
+        const result = format(input, undefined);
+        document.getElementById('output').textContent = result;
+      };
+    </script>
+  </body>
+</html>

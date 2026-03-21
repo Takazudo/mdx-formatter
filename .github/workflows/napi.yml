@@ -1,0 +1,69 @@
+name: Build napi binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            build: |
+              cargo build -p mdx-formatter-napi --release --target aarch64-apple-darwin
+              mv target/aarch64-apple-darwin/release/libmdx_formatter_napi.dylib mdx-formatter-napi.darwin-arm64.node
+          - host: macos-13
+            target: x86_64-apple-darwin
+            build: |
+              cargo build -p mdx-formatter-napi --release --target x86_64-apple-darwin
+              mv target/x86_64-apple-darwin/release/libmdx_formatter_napi.dylib mdx-formatter-napi.darwin-x64.node
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            build: |
+              cargo build -p mdx-formatter-napi --release --target x86_64-unknown-linux-gnu
+              mv target/x86_64-unknown-linux-gnu/release/libmdx_formatter_napi.so mdx-formatter-napi.linux-x64-gnu.node
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            build: |
+              cargo build -p mdx-formatter-napi --release --target x86_64-pc-windows-msvc
+              mv target/x86_64-pc-windows-msvc/release/mdx_formatter_napi.dll mdx-formatter-napi.win32-x64-msvc.node
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
+      - name: Build
+        shell: bash
+        run: ${{ matrix.settings.build }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: mdx-formatter-napi.*.node
+          if-no-files-found: error
+
+  prepare-publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Copy binaries to platform packages
+        run: |
+          cp artifacts/bindings-aarch64-apple-darwin/mdx-formatter-napi.darwin-arm64.node npm/darwin-arm64/mdx-formatter-napi.node
+          cp artifacts/bindings-x86_64-apple-darwin/mdx-formatter-napi.darwin-x64.node npm/darwin-x64/mdx-formatter-napi.node
+          cp artifacts/bindings-x86_64-unknown-linux-gnu/mdx-formatter-napi.linux-x64-gnu.node npm/linux-x64-gnu/mdx-formatter-napi.node
+          cp artifacts/bindings-x86_64-pc-windows-msvc/mdx-formatter-napi.win32-x64-msvc.node npm/win32-x64-msvc/mdx-formatter-napi.node
+      - name: List artifacts
+        run: |
+          echo "=== Downloaded artifacts ==="
+          ls -lR artifacts/
+          echo "=== Platform packages ==="
+          ls -lR npm/

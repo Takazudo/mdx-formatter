@@ -1,0 +1,15 @@
+[package]
+name = "mdx-formatter-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI binary for mdx-formatter"
+
+[[bin]]
+name = "mdx-formatter"
+path = "src/main.rs"
+
+[dependencies]
+mdx-formatter-core = { path = "../mdx-formatter-core" }
+clap = { version = "4", features = ["derive"] }
+glob = "0.3"
+colored = "2"
