@@ -658,7 +658,7 @@ export class MdxFormatter {
       if (node.type === 'listItem' && node.position) {
         const listItemNode = node as ListItemNode;
         const key = `${listItemNode.position.start.line}-${listItemNode.position.start.column}`;
-        const nestingLevel = listNestingLevels.get(key) || 0;
+        const nestingLevel = listNestingLevels.get(key) ?? 0;
         const expectedIndent = nestingLevel * 2;
 
         // Find the line with the list marker
@@ -1051,16 +1051,7 @@ export class MdxFormatter {
 
     // If we have position info, extract from original text
     if (expr.position) {
-      const text = this.extractNodeText(expr.position);
-      return text;
-    }
-
-    // Try to get from data
-    if (expr.data && expr.data.estree) {
-      // For complex expressions, try to extract from position
-      if (expr.position) {
-        return this.extractNodeText(expr.position);
-      }
+      return this.extractNodeText(expr.position);
     }
 
     return '';
@@ -1429,7 +1420,7 @@ export class MdxFormatter {
           const formatted = yaml.dump(parsed, {
             schema: yaml.JSON_SCHEMA,
             indent: yamlSettings.indent ?? 2,
-            lineWidth: yamlSettings.lineWidth || 100,
+            lineWidth: yamlSettings.lineWidth ?? 100,
             quotingType: (yamlSettings.quotingType || '"') as '"' | "'",
             forceQuotes: yamlSettings.forceQuotes || false,
             noCompatMode: yamlSettings.noCompatMode !== false, // Default true
