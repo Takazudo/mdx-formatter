@@ -17,7 +17,7 @@ jobs:
             build: |
               cargo build -p mdx-formatter-napi --release --target aarch64-apple-darwin
               mv target/aarch64-apple-darwin/release/libmdx_formatter_napi.dylib mdx-formatter-napi.darwin-arm64.node
-          - host: macos-13
+          - host: macos-latest
             target: x86_64-apple-darwin
             build: |
               cargo build -p mdx-formatter-napi --release --target x86_64-apple-darwin
