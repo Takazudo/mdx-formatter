@@ -34,3 +34,7 @@ worktrees/
 
 # napi platform packages
 npm/*/*.node
+
+# WASM build output
+wasm/pkg/
+wasm/pkg-bundler/
