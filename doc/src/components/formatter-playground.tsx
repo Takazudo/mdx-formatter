@@ -1,6 +1,7 @@
-import { type ReactNode, useCallback, useState } from 'react';
+import { type ReactNode, useCallback, useRef, useState } from 'react';
 import { format } from '@takazudo/mdx-formatter/browser';
 import type { DeepPartial, FormatterSettings } from '@takazudo/mdx-formatter/browser';
+import type { format as wasmFormat } from '../wasm-pkg/mdx_formatter_wasm';
 
 const SAMPLE_INPUT = `---
 title: Example Document
@@ -61,6 +62,20 @@ const defaultSettings: SettingsState = {
   preserveAdmonitions: { enabled: true },
   autoDetectIndent: { enabled: false },
 };
+
+type WasmModule = { format: typeof wasmFormat };
+
+async function loadWasm(
+  cache: React.RefObject<WasmModule | null>,
+): Promise<WasmModule> {
+  if (cache.current) return cache.current;
+  const mod = await import('../wasm-pkg/mdx_formatter_wasm');
+  await mod.default(
+    `${import.meta.env.BASE_URL}wasm/mdx_formatter_wasm_bg.wasm`,
+  );
+  cache.current = mod;
+  return mod;
+}
 
 function buildFormatterSettings(s: SettingsState): DeepPartial<FormatterSettings> {
   return {
@@ -129,9 +144,11 @@ export default function FormatterPlayground(): ReactNode {
   const [output, setOutput] = useState('');
   const [version, setVersion] = useState<Version>('typescript');
   const [isFormatting, setIsFormatting] = useState(false);
+  const [isLoadingWasm, setIsLoadingWasm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(defaultSettings);
+  const wasmRef = useRef<WasmModule | null>(null);
 
   const updateSetting = useCallback(
     <K extends keyof SettingsState>(key: K, patch: Partial<SettingsState[K]>) => {
@@ -145,14 +162,23 @@ export default function FormatterPlayground(): ReactNode {
     setError(null);
     try {
       const formatterSettings = buildFormatterSettings(settings);
-      const result = await format(input, formatterSettings);
+      let result: string;
+      if (version === 'rust') {
+        setIsLoadingWasm(true);
+        const wasm = await loadWasm(wasmRef);
+        const settingsJson = JSON.stringify(formatterSettings);
+        result = wasm.format(input, settingsJson);
+      } else {
+        result = await format(input, formatterSettings);
+      }
       setOutput(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'An unexpected error occurred');
     } finally {
       setIsFormatting(false);
+      setIsLoadingWasm(false);
     }
-  }, [input, settings]);
+  }, [input, settings, version]);
 
   return (
     <div className="flex flex-col gap-vsp-sm">
@@ -171,18 +197,17 @@ export default function FormatterPlayground(): ReactNode {
           >
             TypeScript
           </button>
-          <span className="group relative">
-            <button
-              type="button"
-              disabled
-              className="rounded px-hsp-md py-hsp-2xs text-caption font-medium bg-surface text-muted cursor-not-allowed opacity-50"
-            >
-              Rust (WASM)
-            </button>
-            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-p0 px-hsp-sm py-hsp-2xs text-caption text-p7 opacity-0 group-hover:opacity-100 transition-opacity">
-              Coming soon — requires WASM build
-            </span>
-          </span>
+          <button
+            type="button"
+            onClick={() => setVersion('rust')}
+            className={`rounded px-hsp-md py-hsp-2xs text-caption font-medium transition-colors ${
+              version === 'rust'
+                ? 'bg-accent text-bg'
+                : 'bg-surface text-muted hover:text-fg'
+            }`}
+          >
+            Rust (WASM)
+          </button>
         </div>
       </div>
 
@@ -379,10 +404,10 @@ export default function FormatterPlayground(): ReactNode {
         <button
           type="button"
           onClick={handleFormat}
-          disabled={isFormatting || !input.trim()}
+          disabled={isFormatting || isLoadingWasm || !input.trim()}
           className="rounded-lg bg-accent px-hsp-xl py-hsp-xs text-caption font-semibold text-bg transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isFormatting ? 'Formatting...' : 'Format'}
+          {isLoadingWasm ? 'Loading WASM...' : isFormatting ? 'Formatting...' : 'Format'}
         </button>
         {error && (
           <span className="text-caption text-danger">{error}</span>

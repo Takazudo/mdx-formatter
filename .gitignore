@@ -38,3 +38,4 @@ npm/*/*.node
 # WASM build output
 wasm/pkg/
 wasm/pkg-bundler/
+doc/src/wasm-pkg/*.wasm

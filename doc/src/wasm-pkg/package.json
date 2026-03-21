@@ -1,0 +1,16 @@
+{
+  "name": "mdx-formatter-wasm",
+  "type": "module",
+  "description": "WASM bindings for mdx-formatter",
+  "version": "0.1.0",
+  "files": [
+    "mdx_formatter_wasm_bg.wasm",
+    "mdx_formatter_wasm.js",
+    "mdx_formatter_wasm.d.ts"
+  ],
+  "main": "mdx_formatter_wasm.js",
+  "types": "mdx_formatter_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
