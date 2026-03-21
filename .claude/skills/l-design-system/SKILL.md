@@ -18,14 +18,14 @@ For full token values, read `references/tokens.md`.
 
 ## Colors (semantic — auto light/dark)
 
-| Token | Use |
-| --- | --- |
-| `bg` / `fg` | Page background / main text |
-| `surface` | Panels, cards, elevated backgrounds |
-| `muted` | Borders, secondary text, disabled. Use `muted/30` for subtle borders |
-| `accent` / `accent-hover` | Links, CTAs, focus rings, hover |
-| `code-bg` / `code-fg` | Code blocks and inline code |
-| `success` / `danger` / `warning` / `info` | Status colors |
+| Token                                     | Use                                                                  |
+| ----------------------------------------- | -------------------------------------------------------------------- |
+| `bg` / `fg`                               | Page background / main text                                          |
+| `surface`                                 | Panels, cards, elevated backgrounds                                  |
+| `muted`                                   | Borders, secondary text, disabled. Use `muted/30` for subtle borders |
+| `accent` / `accent-hover`                 | Links, CTAs, focus rings, hover                                      |
+| `code-bg` / `code-fg`                     | Code blocks and inline code                                          |
+| `success` / `danger` / `warning` / `info` | Status colors                                                        |
 
 ## Spacing
 
@@ -37,14 +37,14 @@ Usage: `px-hsp-md`, `py-vsp-sm`, `gap-hsp-xs`, `gap-vsp-md`, `gap-x-hsp-md`, `ga
 
 ## Typography
 
-| Token | Size | Use |
-| --- | --- | --- |
-| `text-caption` | 14px | Labels, small UI, buttons, inputs |
-| `text-small` | 16px | Nav, table headers, code blocks |
-| `text-body` | 19.2px | Paragraphs, main content |
-| `text-subheading` | 22.4px | Card titles, h3 |
-| `text-heading` | 48px | Page headings |
-| `text-display` | 60px | Hero text |
+| Token             | Size   | Use                               |
+| ----------------- | ------ | --------------------------------- |
+| `text-caption`    | 14px   | Labels, small UI, buttons, inputs |
+| `text-small`      | 16px   | Nav, table headers, code blocks   |
+| `text-body`       | 19.2px | Paragraphs, main content          |
+| `text-subheading` | 22.4px | Card titles, h3                   |
+| `text-heading`    | 48px   | Page headings                     |
+| `text-display`    | 60px   | Hero text                         |
 
 **Fonts:** `font-sans` (Noto Sans JP), `font-futura` (headings/nav), `font-mono` (code)
 
