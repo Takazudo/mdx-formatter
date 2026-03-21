@@ -9,6 +9,8 @@
 //!
 //! Current Rust formatter capabilities:
 //! - Spacing rule (empty lines after headings and JSX at root level)
+//! - JSX multi-line formatting (attribute indentation, self-closing fix, block JSX empty lines)
+//! - YAML frontmatter formatting (parse, reformat, unsafe value quoting)
 //! - List indentation normalization
 //! - Convergence loop (max 3 iterations)
 //! - Empty line normalization (collapse 3+ newlines to 2)
@@ -1095,76 +1097,56 @@ fn complex_document_with_jsx_and_lists() {
 }
 
 // ============================================================================
-// 15. TODO: Features not yet implemented in Rust
+// 15. Features ported from TypeScript (previously TODO)
 // ============================================================================
 
 #[test]
-fn todo_jsx_empty_lines_in_block_component() {
-    // TODO: Once addEmptyLinesInBlockJsx is implemented, expected should be:
-    // "<InfoBox>\n\nContent\n\n</InfoBox>"
-    // Currently the Rust formatter just applies spacing rules (no block JSX rule)
+fn jsx_empty_lines_in_block_component() {
+    // addEmptyLinesInBlockJsx: adds empty lines after opening and before closing tags
     let settings = settings_with_block_components();
     let input = "<InfoBox>\nContent\n</InfoBox>";
+    let expected = "<InfoBox>\n\nContent\n\n</InfoBox>";
     let result = format(input, &settings);
-    // For now, verify it doesn't crash and preserves content
-    assert!(result.contains("InfoBox"), "Component name preserved");
-    assert!(result.contains("Content"), "Content preserved");
+    assert_eq!(result, expected);
 }
 
 #[test]
-fn todo_jsx_multiline_indentation() {
-    // TODO: Once formatMultiLineJsx is implemented, expected should be:
-    // "<InfoBox>\n  Content here\n</InfoBox>"
-    // Currently Rust doesn't indent JSX content
+fn jsx_multiline_indentation_disabled_by_default() {
+    // indentJsxContent is disabled by default, so content is preserved as-is
     let input = "<InfoBox>\nContent here\n</InfoBox>";
     let result = format(input, &default_settings());
-    assert!(result.contains("InfoBox"));
-    assert!(result.contains("Content here"));
+    assert_eq!(result, input);
 }
 
 #[test]
-fn todo_nested_jsx_indentation() {
-    // TODO: Once formatMultiLineJsx is implemented, expected should be:
-    // "<Outer>\n  <Inner>\n    Content\n  </Inner>\n</Outer>"
-    // Currently Rust doesn't indent nested JSX
+fn nested_jsx_indentation_disabled_by_default() {
+    // indentJsxContent is disabled by default, so nested content is preserved as-is
     let input = "<Outer>\n<Inner>\nContent\n</Inner>\n</Outer>";
     let result = format(input, &default_settings());
-    assert!(result.contains("Outer"));
-    assert!(result.contains("Inner"));
-    assert!(result.contains("Content"));
+    assert_eq!(result, input);
 }
 
 #[test]
-fn todo_admonition_preservation() {
-    // TODO: Once preserveAdmonitions is implemented, this should pass as-is
-    // Currently the Rust formatter doesn't know about ::: syntax
+fn admonition_preservation() {
+    // Admonitions (:::) are preserved as-is — no special handling needed in Rust
     let input = ":::note\nThis is a note\n:::";
     let result = format(input, &default_settings());
-    // Admonitions use ::: which isn't standard markdown — verify content survives
-    assert!(
-        result.contains("note"),
-        "Admonition keyword should survive"
-    );
-    assert!(
-        result.contains("This is a note"),
-        "Admonition content should survive"
-    );
+    assert_eq!(result, input);
 }
 
 #[test]
-fn todo_admonition_with_title() {
-    // TODO: Once preserveAdmonitions is implemented
+fn admonition_with_title() {
+    // Admonitions with bracket titles are preserved as-is
     let input = ":::tip[Pro Tip]\nThis is a tip\n:::";
     let result = format(input, &default_settings());
-    assert!(result.contains("tip"));
-    assert!(result.contains("This is a tip"));
+    assert_eq!(result, input);
 }
 
 #[test]
 fn todo_html_definition_list_formatting() {
-    // TODO: Once formatHtmlBlocksInMdx is implemented, expected should be:
+    // TODO: HTML block formatting not yet implemented — blocked on Prettier replacement decision.
+    // Once implemented, expected should be:
     // "<dl>\n  <dt>Term</dt>\n  <dd>Definition</dd>\n</dl>"
-    // Currently the Rust formatter doesn't format HTML blocks
     let input = "<dl>\n<dt>Term</dt>\n<dd>Definition</dd>\n</dl>";
     let result = format(input, &default_settings());
     assert!(result.contains("Term"));
@@ -1172,14 +1154,12 @@ fn todo_html_definition_list_formatting() {
 }
 
 #[test]
-fn todo_yaml_frontmatter_formatting() {
-    // TODO: Once formatYamlFrontmatter is implemented
-    // The Rust formatter currently preserves frontmatter as-is without reformatting
+fn yaml_frontmatter_formatting() {
+    // YAML frontmatter is reformatted: extra spaces are normalized
     let input = "---\ntitle:   Test   \n---\n\nContent";
+    let expected = "---\ntitle: Test\n---\n\nContent";
     let result = format(input, &default_settings());
-    // Currently just preserved as-is
-    assert!(result.contains("---"));
-    assert!(result.contains("Content"));
+    assert_eq!(result, expected);
 }
 
 // ============================================================================
