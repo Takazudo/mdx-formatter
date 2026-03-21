@@ -50,7 +50,39 @@ static MULTIPLE_NEWLINES_RE: LazyLock<Regex> =
 ///
 /// Runs the formatter in a convergence loop (up to 3 iterations) until
 /// the output stabilizes, ensuring idempotency.
+///
+/// When `settings.error_handling.throw_on_error` is true, parse failures
+/// are propagated via `try_format()`. Otherwise, errors return the original content.
 pub fn format(content: &str, settings: &FormatterSettings) -> String {
+    if settings.error_handling.throw_on_error {
+        match try_format(content, settings) {
+            Ok(result) => result,
+            Err(e) => panic!("mdx-formatter: {}", e),
+        }
+    } else {
+        let mut result = content.to_string();
+        const MAX_ITERATIONS: usize = 3;
+
+        for _ in 0..MAX_ITERATIONS {
+            let formatted = format_once(&result, settings);
+            if formatted == result {
+                break;
+            }
+            result = formatted;
+        }
+        result
+    }
+}
+
+/// Format markdown/MDX content, returning an error on parse failure.
+///
+/// Same convergence loop as `format()`, but propagates parse errors instead
+/// of silently returning the original content.
+pub fn try_format(content: &str, settings: &FormatterSettings) -> Result<String, String> {
+    // Validate parsability once upfront. format_once() uses parse() internally
+    // which always succeeds via fallback, so no need to re-validate each iteration.
+    parser::try_parse(content)?;
+
     let mut result = content.to_string();
     const MAX_ITERATIONS: usize = 3;
 
@@ -61,7 +93,7 @@ pub fn format(content: &str, settings: &FormatterSettings) -> String {
         }
         result = formatted;
     }
-    result
+    Ok(result)
 }
 
 /// Single formatting pass: parse AST, collect operations, apply them.
@@ -103,7 +135,7 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
 
     // HTML block formatting
     if settings.format_html_blocks_in_mdx.enabled {
-        collect_html_block_operations(&ast, &lines, &mut operations);
+        collect_html_block_operations(&ast, &lines, settings, &mut operations);
     }
 
     // 4. Filter overlapping replacements
@@ -1088,6 +1120,7 @@ fn is_numbered_list_line(line: &str) -> bool {
 fn collect_html_block_operations(
     node: &Node,
     lines: &[&str],
+    settings: &FormatterSettings,
     operations: &mut Vec<FormatterOperation>,
 ) {
     let mut html_nodes: Vec<(usize, usize)> = Vec::new(); // (start_line_0, end_line_0)
@@ -1095,6 +1128,8 @@ fn collect_html_block_operations(
 
     // Walk AST to find top-level HTML flow elements
     collect_html_flow_elements(node, &mut html_nodes, &mut processed_ranges);
+
+    let tab_width = settings.format_html_blocks_in_mdx.formatter_config.tab_width;
 
     // Process each top-level HTML node
     for (start_line, end_line) in html_nodes {
@@ -1107,7 +1142,7 @@ fn collect_html_block_operations(
         let html_content = html_lines.join("\n");
 
         // Format the HTML block
-        let formatted = html_formatter::format_html_block(&html_content, 2);
+        let formatted = html_formatter::format_html_block(&html_content, tab_width);
 
         // Only emit operation if formatting changed the content
         if formatted != html_content {
@@ -1431,9 +1466,10 @@ fn quote_string(s: &str, quoting_type: &str) -> String {
 }
 
 /// Remove replacement operations that are strictly contained within a wider replacement.
+/// Uses O(n log n) sort + single-pass instead of O(n^2) nested loops.
 fn filter_overlapping_replacements(operations: &mut Vec<FormatterOperation>) {
-    // Collect replacement ranges
-    let replace_ranges: Vec<(usize, usize, usize)> = operations
+    // Collect replacement ranges with their original indices
+    let mut replace_ranges: Vec<(usize, usize, usize)> = operations
         .iter()
         .enumerate()
         .filter_map(|(idx, op)| match op {
@@ -1451,21 +1487,30 @@ fn filter_overlapping_replacements(operations: &mut Vec<FormatterOperation>) {
         })
         .collect();
 
-    let mut to_remove: HashSet<usize> = HashSet::new();
+    if replace_ranges.len() <= 1 {
+        return;
+    }
 
-    for &(inner_idx, inner_start, inner_end) in &replace_ranges {
-        for &(outer_idx, outer_start, outer_end) in &replace_ranges {
-            if inner_idx == outer_idx {
-                continue;
-            }
-            // Inner is strictly contained in outer
-            if inner_start >= outer_start
-                && inner_end <= outer_end
-                && (inner_start != outer_start || inner_end != outer_end)
-            {
-                to_remove.insert(inner_idx);
-                break;
-            }
+    // Sort by start position ascending, then by span length descending (widest first)
+    replace_ranges.sort_unstable_by(|a, b| {
+        a.1.cmp(&b.1)
+            .then_with(|| (b.2 - b.1).cmp(&(a.2 - a.1)))
+    });
+
+    // Single pass: track the widest range seen so far.
+    // Any subsequent range that fits inside it is marked for removal.
+    let mut to_remove: HashSet<usize> = HashSet::new();
+    let mut max_end = 0usize;
+    let mut max_start = 0usize;
+
+    for &(idx, start, end) in &replace_ranges {
+        if start >= max_start && end <= max_end && (start != max_start || end != max_end) {
+            // Strictly contained in the current widest range
+            to_remove.insert(idx);
+        } else if end > max_end {
+            // This range extends further — becomes the new widest
+            max_start = start;
+            max_end = end;
         }
     }
 

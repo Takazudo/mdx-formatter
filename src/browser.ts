@@ -11,15 +11,12 @@
  * path is never reached, bundlers can tree-shake the prettier import away.
  */
 
-import { MdxFormatter } from './mdx-formatter.js';
 import { detectMdx } from './detect-mdx.js';
 import { formatterSettings } from './settings.js';
-import { deepCloneSettings, deepMerge } from './utils.js';
+import { deepCloneSettings, deepMerge, formatWithConvergence } from './utils.js';
 import type { FormatterSettings, DeepPartial } from './types.js';
 
 export { detectMdx };
-
-const MAX_ITERATIONS = 3;
 
 // Browser-safe defaults: disable formatHtmlBlocksInMdx (requires prettier/Node.js)
 const browserDefaults: FormatterSettings = {
@@ -45,14 +42,7 @@ export async function format(
     settings as Record<string, unknown>,
   ) as unknown as FormatterSettings;
   try {
-    let result = content;
-    for (let i = 0; i < MAX_ITERATIONS; i++) {
-      const formatter = new MdxFormatter(result, merged);
-      const formatted = await formatter.format();
-      if (formatted === result) break;
-      result = formatted;
-    }
-    return result;
+    return await formatWithConvergence(content, merged);
   } catch {
     return content;
   }

@@ -4,9 +4,9 @@
  */
 
 import { promises as fs } from 'fs';
-import { MdxFormatter } from './mdx-formatter.js';
 import { loadConfig } from './load-config.js';
 import { detectMdx } from './detect-mdx.js';
+import { formatWithConvergence } from './utils.js';
 import type { FormatOptions } from './types.js';
 
 export { detectMdx };
@@ -17,18 +17,7 @@ export { detectMdx };
 export async function format(content: string, options: FormatOptions = {}): Promise<string> {
   try {
     const settings = loadConfig(options);
-    let result = content;
-    // Some rule interactions (e.g., list indent normalization + addEmptyLinesInBlockJsx)
-    // may require multiple passes to converge. 3 iterations is sufficient for all known
-    // cases (most files converge in 1, edge cases in 2).
-    const MAX_ITERATIONS = 3;
-    for (let i = 0; i < MAX_ITERATIONS; i++) {
-      const formatter = new MdxFormatter(result, settings);
-      const formatted = await formatter.format();
-      if (formatted === result) break;
-      result = formatted;
-    }
-    return result;
+    return await formatWithConvergence(content, settings);
   } catch {
     // Silently return original content if formatting fails
     // This is expected for files with certain JSX patterns that remark-mdx doesn't like

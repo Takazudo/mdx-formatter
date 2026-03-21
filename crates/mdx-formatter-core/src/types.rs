@@ -42,12 +42,32 @@ impl Default for FormatMultiLineJsxSetting {
     }
 }
 
+/// Formatter config for HTML blocks (parser, tab width, use tabs)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct HtmlFormatterConfig {
+    pub parser: String,
+    pub tab_width: usize,
+    pub use_tabs: bool,
+}
+
+impl Default for HtmlFormatterConfig {
+    fn default() -> Self {
+        Self {
+            parser: "html".into(),
+            tab_width: 2,
+            use_tabs: false,
+        }
+    }
+}
+
 /// Individual rule: format HTML blocks in MDX
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct FormatHtmlBlocksInMdxSetting {
     pub enabled: bool,
     pub description: String,
+    pub formatter_config: HtmlFormatterConfig,
 }
 
 impl Default for FormatHtmlBlocksInMdxSetting {
@@ -55,6 +75,7 @@ impl Default for FormatHtmlBlocksInMdxSetting {
         Self {
             enabled: true,
             description: "Format all HTML blocks within MDX using Prettier".into(),
+            formatter_config: HtmlFormatterConfig::default(),
         }
     }
 }

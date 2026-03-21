@@ -11,5 +11,10 @@ pub fn format(content: String, settings_json: Option<String>) -> napi::Result<St
         FormatterSettings::default()
     };
 
-    Ok(mdx_formatter_core::format(&content, &settings))
+    if settings.error_handling.throw_on_error {
+        mdx_formatter_core::try_format(&content, &settings)
+            .map_err(|e| napi::Error::from_reason(e))
+    } else {
+        Ok(mdx_formatter_core::format(&content, &settings))
+    }
 }

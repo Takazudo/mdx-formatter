@@ -2,6 +2,29 @@
  * Shared utility functions for mdx-formatter
  */
 
+import { MdxFormatter } from './mdx-formatter.js';
+import type { FormatterSettings } from './types.js';
+
+/**
+ * Run the formatter in a convergence loop until output stabilizes.
+ * Some rule interactions may require multiple passes (most files converge
+ * in 1, edge cases in 2). 3 iterations is sufficient for all known cases.
+ */
+export async function formatWithConvergence(
+  content: string,
+  settings: FormatterSettings,
+  maxIterations = 3,
+): Promise<string> {
+  let result = content;
+  for (let i = 0; i < maxIterations; i++) {
+    const formatter = new MdxFormatter(result, settings);
+    const formatted = await formatter.format();
+    if (formatted === result) break;
+    result = formatted;
+  }
+  return result;
+}
+
 /**
  * Deep clone a settings object to prevent global mutation
  */

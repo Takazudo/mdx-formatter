@@ -1,15 +1,9 @@
 use markdown::mdast::Node;
 use markdown::{Constructs, ParseOptions};
 
-/// Parse markdown/MDX content into an mdast AST using markdown-rs.
-///
-/// Enables MDX, GFM, and frontmatter constructs for full compatibility
-/// with the TypeScript formatter's remark-based parser.
-pub fn parse(content: &str) -> Node {
-    // In MDX mode, HTML constructs must be disabled because MDX JSX
-    // replaces HTML. If both are enabled, the HTML parser wins and JSX
-    // elements are parsed as HTML nodes instead of MdxJsxFlowElement.
-    let parse_options = ParseOptions {
+/// MDX parse options shared between parse and try_parse.
+fn mdx_parse_options() -> ParseOptions {
+    ParseOptions {
         constructs: Constructs {
             frontmatter: true,
             gfm_table: true,
@@ -27,7 +21,48 @@ pub fn parse(content: &str) -> Node {
             ..Constructs::default()
         },
         ..ParseOptions::default()
-    };
+    }
+}
+
+/// Parse markdown/MDX content, returning an error if all parse attempts fail.
+///
+/// Unlike `parse()`, this does NOT silently fall back to an empty root node.
+/// Used when `throwOnError` is enabled.
+pub fn try_parse(content: &str) -> Result<Node, String> {
+    let parse_options = mdx_parse_options();
+
+    match markdown::to_mdast(content, &parse_options) {
+        Ok(node) => Ok(node),
+        Err(e) => {
+            // Try basic markdown fallback before giving up
+            let fallback_options = ParseOptions {
+                constructs: Constructs {
+                    frontmatter: true,
+                    gfm_table: true,
+                    gfm_task_list_item: true,
+                    gfm_strikethrough: true,
+                    gfm_autolink_literal: true,
+                    ..Constructs::default()
+                },
+                ..ParseOptions::default()
+            };
+            match markdown::to_mdast(content, &fallback_options) {
+                Ok(node) => Ok(node),
+                Err(_) => match markdown::to_mdast(content, &ParseOptions::default()) {
+                    Ok(node) => Ok(node),
+                    Err(_) => Err(format!("Failed to parse content: {}", e)),
+                },
+            }
+        }
+    }
+}
+
+/// Parse markdown/MDX content into an mdast AST using markdown-rs.
+///
+/// Enables MDX, GFM, and frontmatter constructs for full compatibility
+/// with the TypeScript formatter's remark-based parser.
+pub fn parse(content: &str) -> Node {
+    let parse_options = mdx_parse_options();
 
     match markdown::to_mdast(content, &parse_options) {
         Ok(node) => node,
