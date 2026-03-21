@@ -123,7 +123,7 @@ All formatting rules from the TypeScript version are implemented in Rust:
 | Config file loading | Done | `.mdx-formatter.json`, `package.json` key, 3-layer merge |
 | CLI binary | Done | `mdx-formatter-cli` crate with `--write`, `--check`, `--config`, glob patterns |
 | Auto-detect bridge | Done | TS `format()` auto-prefers Rust napi when available |
-| napi-rs CI pipeline | Pending | Cross-platform binary generation (macOS/Linux/Windows) |
+| napi-rs CI pipeline | In Progress | Cross-platform binary generation (macOS/Linux/Windows) |
 | Browser/WASM | Pending | Compile to WASM for browser use |
 
 ## Test Coverage
@@ -153,5 +153,5 @@ When a user runs `npm install @takazudo/mdx-formatter`, npm's optional dependenc
 
 The formatting engine and core infrastructure are complete. Remaining tasks:
 
-- napi-rs CI build pipeline (GitHub Actions for cross-platform `.node` binary generation)
+- napi-rs CI build pipeline (GitHub Actions for cross-platform `.node` binary generation) — **in progress**
 - Browser/WASM support (compile Rust core to WASM for browser use)
