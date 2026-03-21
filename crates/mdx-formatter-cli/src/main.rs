@@ -1,7 +1,7 @@
 use clap::Parser;
 use colored::Colorize;
 use glob::glob;
-use mdx_formatter_core::{format, FormatterSettings};
+use mdx_formatter_core::{format, load_full_config, FullConfig};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
@@ -30,78 +30,6 @@ struct Cli {
     /// Comma-separated patterns to ignore
     #[arg(long, default_value = "node_modules/**,dist/**,build/**,.git/**,worktrees/**")]
     ignore: String,
-}
-
-/// Config file content (settings + optional exclude patterns)
-#[derive(Debug)]
-struct LoadedConfig {
-    settings: FormatterSettings,
-    exclude_patterns: Vec<String>,
-}
-
-/// Try to find and read a config file, returning the parsed JSON object.
-/// Returns Err when an explicit config path is given but fails to load.
-fn find_config_file(config_path: Option<&str>) -> Result<Option<serde_json::Value>, String> {
-    // If explicit path given, use it and surface errors
-    if let Some(path) = config_path {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Cannot read config file '{}': {}", path, e))?;
-        let value = serde_json::from_str(&content)
-            .map_err(|e| format!("Invalid JSON in config file '{}': {}", path, e))?;
-        return Ok(Some(value));
-    }
-
-    // Try .mdx-formatter.json in cwd
-    if let Ok(content) = fs::read_to_string(".mdx-formatter.json") {
-        if let Ok(value) = serde_json::from_str(&content) {
-            return Ok(Some(value));
-        }
-    }
-
-    // Try "mdx-formatter" key in package.json
-    if let Ok(content) = fs::read_to_string("package.json") {
-        if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(config) = pkg.get("mdx-formatter") {
-                if config.is_object() {
-                    return Ok(Some(config.clone()));
-                }
-            }
-        }
-    }
-
-    Ok(None)
-}
-
-/// Load config: merge file config with defaults and extract exclude patterns
-fn load_config(config_path: Option<&str>) -> Result<LoadedConfig, String> {
-    let file_config = find_config_file(config_path)?;
-
-    match file_config {
-        Some(ref value) => {
-            // Extract exclude patterns
-            let exclude_patterns = value
-                .get("exclude")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|item| item.as_str().map(|s| s.to_string()))
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            // serde ignores unknown fields ("exclude"), so no need to strip it
-            let settings = FormatterSettings::from_partial_json(value);
-
-            Ok(LoadedConfig {
-                settings,
-                exclude_patterns,
-            })
-        }
-        None => Ok(LoadedConfig {
-            settings: FormatterSettings::default(),
-            exclude_patterns: vec![],
-        }),
-    }
 }
 
 /// Normalize a path string: strip leading "./" so glob patterns match consistently
@@ -160,14 +88,8 @@ fn collect_files(patterns: &[String], ignore_patterns: &[String]) -> Vec<PathBuf
 fn main() {
     let cli = Cli::parse();
 
-    // Load config (explicit --config errors are fatal)
-    let loaded = match load_config(cli.config.as_deref()) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("{} {}", "Error:".red(), e);
-            process::exit(1);
-        }
-    };
+    // Load config using the core library's 3-layer merge
+    let loaded: FullConfig = load_full_config(cli.config.as_deref(), None);
 
     // Merge CLI ignore patterns with config exclude patterns
     let mut all_ignore: Vec<String> = cli

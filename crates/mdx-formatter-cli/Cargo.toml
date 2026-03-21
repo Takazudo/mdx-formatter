@@ -13,4 +13,3 @@ mdx-formatter-core = { path = "../mdx-formatter-core" }
 clap = { version = "4", features = ["derive"] }
 glob = "0.3"
 colored = "2"
-serde_json = "1"

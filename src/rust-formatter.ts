@@ -31,22 +31,26 @@ function getPackageName(): string {
   return platformMap[platformName]?.[archName] ?? '';
 }
 
-let nativeFormat: ((content: string, settingsJson: string) => string) | null = null;
+type NativeFormat = (content: string, settingsJson: string) => string;
 
-try {
-  // Try platform-specific npm package first
-  const packageName = getPackageName();
-  if (packageName) {
-    const native = require(packageName) as {
-      format: (content: string, settingsJson: string) => string;
-    };
+let nativeFormat: NativeFormat | null = null;
+
+// Try platform-specific npm package first
+const packageName = getPackageName();
+if (packageName) {
+  try {
+    const native = require(packageName) as { format: NativeFormat };
     nativeFormat = native.format;
+  } catch {
+    // Platform package not installed
   }
-} catch {
-  // Fall back to local build
+}
+
+// Fall back to local build
+if (!nativeFormat) {
   try {
     const native = require('../crates/mdx-formatter-napi/mdx-formatter-napi.node') as {
-      format: (content: string, settingsJson: string) => string;
+      format: NativeFormat;
     };
     nativeFormat = native.format;
   } catch {
