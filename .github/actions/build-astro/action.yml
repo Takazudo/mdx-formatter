@@ -29,8 +29,19 @@ runs:
         node-version: ${{ inputs.node-version }}
         cache: 'pnpm'
 
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      shell: bash
+
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
+      shell: bash
+
+    - name: Build WASM for playground
+      run: pnpm build:wasm:doc
       shell: bash
 
     - name: Build main package
