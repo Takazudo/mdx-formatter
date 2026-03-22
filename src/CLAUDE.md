@@ -1,22 +1,20 @@
-# src/ — Formatter Source Code
+# src/ — TypeScript Wrapper for Rust Engine
 
 ## Architecture
 
-The formatter parses markdown/MDX into an AST (via remark), analyzes it, then applies targeted line-based operations to the original text. This preserves formatting that AST round-tripping would destroy.
+The formatting engine is written in Rust (`crates/mdx-formatter-core`). The TypeScript code in `src/` is a thin wrapper that loads the Rust napi module and provides the npm package API.
 
 ### Key Files
 
 - `index.ts` — Public API (`format()`, `formatFile()`, `checkFile()`, `detectMdx()`)
 - `cli.ts` — CLI entry point (commander-based)
-- `mdx-formatter.ts` — Core formatter (`MdxFormatter`): parses AST, collects `FormatterOperation`s, applies them to source lines
-- `html-block-formatter.ts` — Formats HTML blocks within MDX using Prettier
-- `rust-formatter.ts` — Wrapper for Rust napi formatter (tries platform package, then local build)
-- `indent-detector.ts` — Auto-detects indentation style from file content
+- `rust-formatter.ts` — Loads the Rust napi module (platform package or local build)
 - `settings.ts` — Default `FormatterSettings` with all rules and their defaults
-- `types.ts` — All shared type definitions (AST node types, settings interfaces, operation types)
+- `types.ts` — Settings interfaces and `FormatOptions`
 - `load-config.ts` — Loads `.mdx-formatter.json` config and merges with defaults
 - `utils.ts` — Utility functions (deep clone, deep merge with prototype pollution guard)
-- `browser.ts` — Browser-safe export (no Node.js dependencies)
+- `detect-mdx.ts` — MDX content detection heuristic
+- `browser.ts` — Browser-safe export (re-exports from index.ts; for true browser use, see WASM)
 
 ## Settings
 
@@ -24,9 +22,7 @@ All formatter rules are defined in `settings.ts` as the `formatterSettings` obje
 
 ## Types
 
-All type definitions live in `types.ts`. Import types from there, not from external packages directly. Key types:
+Settings interfaces live in `types.ts`. Key types:
 
 - `FormatterSettings` / `FormatOptions` — Configuration
-- `FormatterOperation` — Line-based edit operations
-- `MdxJsxElement` / `MdxJsxAttribute` — MDX AST node types
 - `DeepPartial<T>` — Used for partial settings overrides

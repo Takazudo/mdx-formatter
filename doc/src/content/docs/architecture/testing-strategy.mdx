@@ -5,22 +5,24 @@ sidebar_position: 3
 
 # Testing Strategy
 
-mdx-formatter uses a multi-layered testing approach. The TypeScript test suite defines the formatting contract, the Rust tests validate the Rust implementation, and the passthrough tests verify that both implementations produce identical output.
+mdx-formatter uses a multi-layered testing approach. The TypeScript test suite in `test/` defines the formatting contract and runs all tests through the Rust napi engine. The Rust test suite in `crates/` validates the engine independently.
 
 ## TypeScript Test Suite
 
-The TypeScript tests in `test/` are the source of truth for what correctly formatted output looks like. They cover all formatting rules across various input scenarios.
+The tests in `test/` exercise the public `format()` API, which calls the Rust engine via napi-rs.
 
 ### Test Files
 
 | File | Focus | Description |
 | --- | --- | --- |
 | `formatter.test.ts` | Core formatting | Heading spacing, list indentation, JSX handling, Japanese text |
-| `mdx-formatter.test.ts` | MdxFormatter internals | AST analysis + line operations, conflict resolution |
+| `mdx-formatter.test.ts` | Advanced formatting | JSX, block components, indentation, edge cases |
 | `idempotency.test.ts` | Stability | `format(format(x)) === format(x)` for all inputs |
 | `html-blocks.test.ts` | HTML formatting | HTML block indentation in MDX |
 | `load-config.test.ts` | Configuration | `.mdx-formatter.json` loading and merging |
 | `url-autolink.test.ts` | URL handling | Autolink behavior and URL preservation |
+| `rust-formatter.test.ts` | Additional tests | Extra Rust engine coverage |
+| `rust-passthrough.test.ts` | Behavior validation | 85 formatting behavior tests |
 
 All tests use vitest and can be run with:
 
@@ -32,38 +34,21 @@ pnpm test:coverage  # Coverage report
 
 ## Rust Test Suite
 
-The Rust tests in `crates/mdx-formatter-core/` validate the Rust formatting engine independently. There are 342 tests across multiple test files.
+The Rust tests in `crates/mdx-formatter-core/` validate the formatting engine independently. There are 342 tests across multiple test files.
 
 ### Test Files
 
 | File | Count | Focus |
 | --- | --- | --- |
 | Inline unit tests (formatter, html_formatter, config, parser) | 124 | Unit tests for all formatting rules, YAML, settings, config, HTML |
-| `tests/cross_platform.rs` | 165 | Cross-platform validation ported from TS suite |
-| `tests/plugin_validation.rs` | 42 | Validates that 9/10 TS plugins are not needed in Rust |
+| `tests/cross_platform.rs` | 165 | Cross-platform validation |
+| `tests/plugin_validation.rs` | 42 | Validates that original TS plugins are not needed |
 | `tests/spacing_recursion.rs` | 11 | Spacing at all AST depths (blockquotes, JSX) |
 
 ```bash
 cargo test               # Run all 342 Rust tests
 cargo test --test cross_platform  # Just cross-platform tests
 ```
-
-## Passthrough Tests (Rust ↔ TypeScript Comparison)
-
-The passthrough test suite runs TypeScript test cases against the Rust formatter via the napi bridge, verifying identical output.
-
-| Suite | Count | Description |
-| --- | --- | --- |
-| `test:rust` | 29 | Rust-specific tests (basic formatting, lists, JSX, Japanese) |
-| `test:rust-passthrough` | 85 | Full TS behavior comparison (all formatting rules) |
-
-```bash
-pnpm build:rust              # Build the napi module
-pnpm test:rust               # 29 Rust-specific TS tests
-pnpm test:rust-passthrough   # 85 passthrough tests
-```
-
-The passthrough tests use `describe.skipIf(!isRustFormatterAvailable())` so they skip gracefully when the napi module is not built.
 
 ## How the Test Bridge Works
 
@@ -83,7 +68,7 @@ formatted output         ← returned to vitest for assertion
 
 ## Idempotency Testing
 
-A core property of the formatter is idempotency: formatting an already-formatted file must produce identical output. Both TS and Rust test suites verify this:
+A core property of the formatter is idempotency: formatting an already-formatted file must produce identical output. The convergence loop (max 3 iterations) in the Rust engine guarantees this:
 
 ```typescript
 const first = await format(input);
@@ -91,21 +76,13 @@ const second = await format(first);
 expect(first).toBe(second);
 ```
 
-The convergence loop (max 3 iterations) in both implementations guarantees this property.
-
-## Plugin Validation Tests
-
-The `tests/plugin_validation.rs` suite (42 tests) validates that the Rust formatter handles all cases that TypeScript plugins were created for — without needing those plugins. Each test creates input that would trigger a TS plugin and verifies the Rust formatter handles it correctly through its hybrid approach (original text preservation).
-
 ## Testing New Rules
 
 When adding a new formatting rule:
 
-1. Write TypeScript tests first in `test/` — these define the contract
-2. Implement the rule in `src/mdx-formatter.ts`
-3. Verify TypeScript tests pass: `pnpm test`
-4. Port test cases to Rust (`tests/cross_platform.rs` or a new test file)
-5. Implement the rule in Rust (`src/formatter.rs` or a new module)
+1. Write tests in `test/` — these define the contract
+2. Implement the rule in Rust (`crates/mdx-formatter-core/src/formatter.rs`)
+3. Build the napi module: `pnpm build:rust`
+4. Verify tests pass: `pnpm test`
+5. Add Rust-level tests in `crates/mdx-formatter-core/tests/`
 6. Verify Rust tests pass: `cargo test`
-7. Add passthrough tests in `test/rust-passthrough.test.ts`
-8. Verify passthrough: `pnpm build:rust && pnpm test:rust-passthrough`

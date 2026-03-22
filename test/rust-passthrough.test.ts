@@ -8,12 +8,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { format, isRustFormatterAvailable } from '../src/rust-formatter.js';
+import { format } from '../src/index.js';
 import { testSettings } from './test-helpers.js';
 
-const rustAvailable = isRustFormatterAvailable();
-
-describe.skipIf(!rustAvailable)('Rust Passthrough: Markdown Formatter', () => {
+describe('Rust Passthrough: Markdown Formatter', () => {
   describe('Basic Markdown Formatting', () => {
     it('should format headings with proper spacing', async () => {
       const input = '# Heading\nContent';

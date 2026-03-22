@@ -1,12 +1,13 @@
-# crates/ — Rust Rewrite
+# crates/ — Rust Formatting Engine
 
-Rust implementation of mdx-formatter using markdown-rs and napi-rs. All formatting rules are implemented and tested.
+The sole formatting engine for mdx-formatter. Built with markdown-rs and napi-rs.
 
 ## Workspace Structure
 
 - `mdx-formatter-core/` — Pure Rust library: parser, formatter, config, types
 - `mdx-formatter-cli/` — Standalone CLI binary (clap-based)
 - `mdx-formatter-napi/` — napi-rs bindings for Node.js
+- `mdx-formatter-wasm/` — WASM bindings for browser use
 
 ## Building and Testing
 
@@ -19,7 +20,7 @@ cargo build -p mdx-formatter-napi  # Build just the napi module
 
 ## Architecture
 
-Uses the same hybrid approach as the TypeScript implementation:
+Hybrid formatter approach:
 
 1. Parse markdown/MDX into mdast via `markdown::to_mdast()` (with MDX, GFM, frontmatter)
 2. Walk AST to collect line-based `FormatterOperation` values
@@ -34,24 +35,10 @@ Key modules in `mdx-formatter-core/src/`:
 - `parser.rs` — markdown-rs integration (mdast parsing)
 - `types.rs` — Settings, operations, type definitions
 
-## Current Status
+## Status
 
-All formatting rules implemented and tested:
-
-- Spacing rule (empty lines after headings/JSX) — working at all AST depths
-- JSX multi-line formatting — working (attribute indentation, self-closing fix, block JSX empty lines)
-- YAML frontmatter formatting — working (parse, reformat, unsafe value quoting)
-- List indentation normalization — working
-- HTML block formatting — working (minimal indentation formatter replacing Prettier)
-- Full settings deserialization — all 10 fields via serde with camelCase JSON
-- Config file loading — working (3-layer merge, `.mdx-formatter.json` + `package.json`, exclude patterns)
-- CLI binary — working (`mdx-formatter-cli` crate with `--write`, `--check`, `--config`, glob patterns)
-- Auto-detect bridge — working (TS `format()` auto-prefers Rust napi when available)
+- All formatting rules implemented and tested
 - 342 tests passing (124 unit + 165 cross-platform + 42 plugin validation + 11 spacing recursion)
-- napi-rs CI pipeline — in progress (cross-platform binary generation)
-- TS plugin validation complete — 9 of 10 plugins NOT needed in Rust (see formatter.rs header)
-
-## Known Limitations
-
+- CLI binary working (`--write`, `--check`, `--config`, glob patterns)
+- Browser/WASM support implemented (`mdx-formatter-wasm` crate, web + bundler targets)
 - napi-rs CI build pipeline — in progress (cross-platform binary generation)
-- Browser/WASM support — implemented (`mdx-formatter-wasm` crate, web + bundler targets)

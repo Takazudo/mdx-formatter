@@ -99,17 +99,18 @@ Rules are applied in order during the operation collection phase. After all oper
 
 The TypeScript formatter originally used 10 remark plugins to work around AST round-trip issues (`preserve-jsx.ts`, `preserve-image-alt.ts`, `fix-autolink-output.ts`, etc.). The hybrid approach — which uses the AST only for analysis, never for output — eliminates the need for these plugins. The Rust implementation validates that 9 of 10 plugins are unnecessary (see [Rust Rewrite: Plugin Validation](/docs/architecture/rust-rewrite#plugin-validation)).
 
-The formatting logic now lives entirely in `src/mdx-formatter.ts` as operation-based rules, not as remark plugins.
+The formatting logic lives in the Rust engine (`crates/mdx-formatter-core/src/formatter.rs`). The TypeScript code in `src/` is a thin wrapper that loads the native module.
 
 ## Key Source Files
 
 | File | Role |
 | --- | --- |
-| `src/mdx-formatter.ts` | Core formatter (`MdxFormatter`): parse AST, collect operations, apply |
+| `crates/mdx-formatter-core/src/formatter.rs` | Core Rust formatter: convergence loop, all formatting rules |
+| `crates/mdx-formatter-core/src/parser.rs` | markdown-rs AST parsing (MDX, GFM, frontmatter) |
+| `crates/mdx-formatter-core/src/html_formatter.rs` | HTML block indentation formatter |
+| `crates/mdx-formatter-core/src/config.rs` | Config file loading (3-layer merge) |
+| `src/index.ts` | Public npm API (`format()`, `formatFile()`, `checkFile()`) |
+| `src/rust-formatter.ts` | Loads the Rust napi module |
 | `src/settings.ts` | Default settings for all 10 rules |
-| `src/types.ts` | All shared type definitions |
-| `src/html-block-formatter.ts` | Formats HTML blocks using Prettier |
-| `src/indent-detector.ts` | Auto-detects indentation style |
-| `src/index.ts` | Public API (`format()`, `formatFile()`, `checkFile()`) |
 | `src/cli.ts` | CLI entry point |
 | `src/load-config.ts` | Loads `.mdx-formatter.json` and merges with defaults |

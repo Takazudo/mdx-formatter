@@ -1,15 +1,15 @@
 ---
-title: Rust Rewrite
+title: Rust Engine
 sidebar_position: 2
 ---
 
-# Rust Rewrite
+# Rust Engine
 
-mdx-formatter has a Rust implementation that reimplements the full formatting engine for better performance and distribution flexibility. The Rust version uses the same hybrid approach (AST analysis + line operations) as the TypeScript implementation and passes all TS formatting tests.
+mdx-formatter's formatting engine is written in Rust. It uses the hybrid approach (AST analysis + line operations) and is the sole engine — the TypeScript code in `src/` is a thin wrapper that loads the native module via napi-rs.
 
 ## Why Rust?
 
-Three main motivations drive the Rust rewrite:
+Three main motivations:
 
 ### Performance
 
@@ -126,7 +126,7 @@ All formatting rules from the TypeScript version are implemented in Rust:
 | --- | --- | --- |
 | Config file loading | Done | `.mdx-formatter.json`, `package.json` key, 3-layer merge |
 | CLI binary | Done | `mdx-formatter-cli` crate with `--write`, `--check`, `--config`, glob patterns |
-| Auto-detect bridge | Done | TS `format()` auto-prefers Rust napi when available |
+| napi-rs Node.js bindings | Done | Sole engine for the npm package |
 | napi-rs CI pipeline | In Progress | Cross-platform binary generation (macOS/Linux/Windows) |
 | Browser/WASM | Done | wasm-pack, web + bundler targets, used by doc site playground |
 
