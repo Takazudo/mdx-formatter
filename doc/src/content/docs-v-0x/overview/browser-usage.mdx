@@ -1,0 +1,52 @@
+---
+title: Browser Usage
+description: Using mdx-formatter in browser environments via WASM
+sidebar_position: 8
+---
+
+# Browser Usage
+
+## WASM (Recommended)
+
+For true browser usage, use the WASM build. The `mdx-formatter-wasm` crate compiles to WebAssembly and can run in any browser environment. See the doc site playground for a live example.
+
+Build targets:
+
+```bash
+pnpm build:wasm           # Web target (standalone)
+pnpm build:wasm:bundler   # Bundler-compatible target
+```
+
+## Node.js Browser Export
+
+The `./browser` subpath export re-exports the same `format()` function as the main entry point. Since the formatting engine is a Rust napi module, this export requires a Node.js runtime — it is suitable for Electron or similar Node-backed environments, but **not for pure browser use** (use WASM instead).
+
+```typescript
+import { format } from "@takazudo/mdx-formatter/browser";
+
+const formatted = await format(content);
+```
+
+## Detecting MDX
+
+Both exports provide `detectMdx` for checking if content is likely MDX:
+
+```typescript
+import { format, detectMdx } from "@takazudo/mdx-formatter/browser";
+
+if (detectMdx(content)) {
+  console.log("Content has MDX syntax");
+}
+```
+
+## Limitations
+
+Config file loading (`.mdx-formatter.json`) is not supported in browser mode because it requires Node.js file system access. Pass settings directly to the `format` function instead.
+
+## Package Exports
+
+| Import path | Entry point | Environment |
+| --- | --- | --- |
+| `@takazudo/mdx-formatter` | `./dist/index.js` | Node.js |
+| `@takazudo/mdx-formatter/browser` | `./dist/browser.js` | Node.js (Electron, etc.) |
+| WASM (`mdx-formatter-wasm`) | `wasm/pkg/` | Browser |

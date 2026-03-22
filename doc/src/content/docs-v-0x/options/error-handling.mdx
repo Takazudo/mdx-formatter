@@ -1,0 +1,65 @@
+---
+title: errorHandling
+description: Configure how the formatter handles parsing errors
+sidebar_position: 11
+---
+
+Configure how the formatter handles parsing errors.
+
+By default, the formatter returns the original content unchanged when a parsing error occurs. The main `format()` function wraps all processing in a try/catch block, so errors during formatting never propagate to callers.
+
+## Options
+
+| Property       | Type      | Default | Description                                                      |
+| -------------- | --------- | ------- | ---------------------------------------------------------------- |
+| `throwOnError` | `boolean` | `false` | Intended to throw on errors, but see note below |
+
+## Config
+
+```json
+{
+  "errorHandling": {
+    "throwOnError": false
+  }
+}
+```
+
+## Current Behavior
+
+### Default (throwOnError: false)
+
+When formatting encounters a parsing error, the original content is returned unchanged. This is the safe default for production use.
+
+Input:
+
+````markdown
+# Heading
+
+<InfoBox>
+Content without closing tag
+````
+
+Output: the original content is returned unchanged, no error thrown.
+
+### throwOnError: true
+
+The behavior of `throwOnError` differs between the TypeScript and Rust implementations:
+
+- **Rust (napi/WASM/CLI)**: When `throwOnError` is `true` and parsing fails, the Rust formatter returns an error (or throws via napi). The Rust CLI uses `try_format()` for graceful error reporting.
+- **TypeScript**: The main `format()` function in `src/index.ts` catches all errors unconditionally and returns the original content. This means that with the TS engine, `throwOnError: true` does not propagate errors to the caller.
+
+### CI Validation with checkFile()
+
+For CI pipelines where you need to detect formatting issues, use the `checkFile()` API instead of relying on `throwOnError`. The `checkFile()` function returns `true` if the file needs formatting (content differs after formatting), which you can use to fail a CI check:
+
+```javascript
+import { checkFile } from '@takazudo/mdx-formatter';
+
+const needsFormatting = await checkFile('path/to/file.mdx');
+if (needsFormatting) {
+  console.error('File needs formatting: path/to/file.mdx');
+  process.exit(1);
+}
+```
+
+This approach reliably detects files that haven't been formatted, which covers the most common CI use case.

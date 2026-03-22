@@ -1,0 +1,20 @@
+---
+title: Overview
+description: AST-based markdown and MDX formatter with Japanese text support
+sidebar_position: 1
+sidebar_label: Overview
+---
+
+AST-based markdown and MDX formatter with Japanese text support. Uses remark for AST parsing, then applies targeted line-based operations to the original source text.
+
+## Features
+
+- **Hybrid formatter** - Parses via remark AST, applies edits to original source lines (no lossy round-trip)
+- **MDX support** - Full support for MDX syntax including JSX components
+- **Japanese text formatting** - Special handling for Japanese punctuation and URLs
+- **Docusaurus support** - Preserves Docusaurus admonitions (:::note, :::tip, etc.)
+- **HTML block formatting** - Proper indentation for HTML blocks (dl, table, ul, div, etc.)
+- **GFM features** - Tables, strikethrough, task lists
+- **Frontmatter preservation** - YAML frontmatter support
+- **CLI and API** - Use as command-line tool or import as library
+- **Configurable** - Customize component lists and rules via config file or API

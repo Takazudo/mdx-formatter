@@ -1,0 +1,56 @@
+---
+title: Tables
+description: How the formatter handles GFM tables and HTML tables
+sidebar_position: 5
+---
+
+GFM (pipe-style) tables are preserved as-is. The formatter does not modify GFM table alignment or padding. HTML tables are handled by the [formatHtmlBlocksInMdx](/docs/options/format-html-blocks-in-mdx) option.
+
+## Rules
+
+- GFM (pipe-style) tables are preserved as-is
+- The formatter does not modify GFM table alignment or padding
+
+## Examples
+
+### HTML table indentation
+
+HTML tables in MDX are formatted by the `formatHtmlBlocksInMdx` rule:
+
+Before:
+
+````markdown
+<table>
+<thead>
+<tr>
+<th>Header 1</th>
+<th>Header 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Data 1</td>
+<td>Data 2</td>
+</tr>
+</tbody>
+</table>
+````
+
+After:
+
+````markdown
+<table>
+  <thead>
+    <tr>
+      <th>Header 1</th>
+      <th>Header 2</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Data 1</td>
+      <td>Data 2</td>
+    </tr>
+  </tbody>
+</table>
+````

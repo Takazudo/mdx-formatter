@@ -1,0 +1,14 @@
+---
+title: Formatting Rules
+description: How mdx-formatter formats each type of markdown/MDX content
+sidebar_position: 1
+sidebar_label: Formatting
+---
+
+mdx-formatter uses a hybrid approach: it parses your markdown/MDX into an AST to understand structure, then applies targeted line-based operations to the original source text. This preserves formatting that pure AST round-tripping would destroy.
+
+This section describes how each type of content is formatted.
+
+## How It Works
+
+The `format()` function runs up to 3 iterations until output stabilizes. Most files converge in a single pass. If parsing fails, the original content is returned unchanged.

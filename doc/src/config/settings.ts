@@ -42,7 +42,14 @@ export const settings = {
   docHistory: true,
   colorTweakPanel: false as boolean,
   htmlPreview: undefined as HtmlPreviewConfig | undefined,
-  versions: [] as VersionConfig[],
+  versions: [
+    {
+      slug: '0x',
+      label: '0.x (TypeScript engine)',
+      docsDir: 'src/content/docs-v-0x',
+      banner: 'unmaintained',
+    },
+  ] satisfies VersionConfig[],
   claudeResources: { claudeDir: '../.claude', projectRoot: '..' } as { claudeDir: string; projectRoot?: string } | false,
   footer: {
     links: [
@@ -73,11 +80,11 @@ export const settings = {
   } satisfies FooterConfig,
   headerNav: [
     { label: 'Overview', path: '/docs/overview', categoryMatch: 'overview' },
+    { label: 'Playground', path: '/docs/playground', categoryMatch: 'playground' },
     { label: 'Formatting', path: '/docs/formatting', categoryMatch: 'formatting' },
     { label: 'Options', path: '/docs/options', categoryMatch: 'options' },
     { label: 'Architecture', path: '/docs/architecture', categoryMatch: 'architecture' },
     { label: 'Changelog', path: '/docs/changelog', categoryMatch: 'changelog' },
     { label: 'Claude', path: '/docs/claude', categoryMatch: 'claude' },
-    { label: 'Playground', path: '/docs/playground', categoryMatch: 'playground' },
   ] satisfies HeaderNavItem[],
 };

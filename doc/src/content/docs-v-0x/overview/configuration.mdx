@@ -1,0 +1,66 @@
+---
+title: Configuration
+description: Configuration options and config file setup for mdx-formatter
+sidebar_position: 4
+---
+
+The formatter looks for configuration in three layers (later layers override earlier ones):
+
+1. **Built-in defaults** (from `settings.ts`)
+2. **Config file** (`.mdx-formatter.json` or `"mdx-formatter"` key in `package.json`)
+3. **Programmatic options** (passed to `format()`)
+
+## Config File
+
+Create `.mdx-formatter.json` in your project root:
+
+```json
+{
+  "addEmptyLinesInBlockJsx": {
+    "blockComponents": ["Outro", "InfoBox"]
+  },
+  "indentJsxContent": {
+    "containerComponents": ["Outro", "InfoBox", "LayoutDivide"]
+  },
+  "formatMultiLineJsx": {
+    "ignoreComponents": ["CodeBlock"]
+  }
+}
+```
+
+Or add an `"mdx-formatter"` key to your `package.json`:
+
+```json
+{
+  "mdx-formatter": {
+    "addEmptyLinesInBlockJsx": {
+      "blockComponents": ["Outro", "InfoBox"]
+    }
+  }
+}
+```
+
+## Excluding Files
+
+You can add an `exclude` array to your config file to skip files matching the given glob patterns. These patterns are merged with the CLI `--ignore` option.
+
+```json
+{
+  "exclude": ["doc/docs/claude/**", "generated/**/*.md"],
+  "formatMultiLineJsx": {
+    "ignoreComponents": ["CodeBlock"]
+  }
+}
+```
+
+This is useful for excluding auto-generated files that don't need formatting, without adding patterns to every CLI invocation.
+
+The `exclude` key also works in `package.json`:
+
+```json
+{
+  "mdx-formatter": {
+    "exclude": ["doc/docs/claude/**"]
+  }
+}
+```

@@ -1,0 +1,52 @@
+---
+sidebar_position: 1000
+title: "v1.0.0"
+---
+
+# v1.0.0
+
+Released: 2026-03-23
+
+## Breaking Changes
+
+- Switch to Rust-only formatting engine — the TypeScript formatter (MdxFormatter class, html-block-formatter, indent-detector) has been removed entirely (2fc80ab)
+- Rust napi native module is now required — no fallback to TypeScript if unavailable
+- Removed production dependencies: unified, remark-parse, remark-mdx, remark-frontmatter, unist-util-visit, prettier (moved to devDependency)
+- Removed exported types: FormatterOperation, MdxJsxElement, MdxJsxAttribute, IndentDetectorLike, PositionMapEntry, and AST re-exports (Node, Parent, Position, Root)
+- CI now requires Rust toolchain to build the napi module before running tests
+
+## Features
+
+- Rust engine with 3-7x performance improvement over TypeScript (bf95183)
+- Standalone Rust CLI binary (`mdx-formatter`) with `--write`, `--check`, `--config` (crates/mdx-formatter-cli)
+- WASM support for browser environments via `mdx-formatter-wasm` crate (041b4df)
+- Interactive playground on doc site using WASM engine (041b4df)
+- napi-rs cross-platform binaries: macOS (arm64, x64), Linux (x64), Windows (x64)
+- Config file loading in Rust: `.mdx-formatter.json`, `package.json` key, 3-layer merge
+- All 10 formatting settings fully implemented in Rust with serde deserialization
+- 342 Rust tests + 85 passthrough tests confirming feature parity
+
+## Bug Fixes
+
+- Add empty frontmatter guard to prevent reversed-range corruption in YAML formatting (bf95183)
+- Use `settings.indentJsxContent.indentSize` instead of hardcoded 2-space indent (bf95183)
+- Add JSON config shape validation — reject arrays/primitives (bf95183)
+- Fix all numeric fallbacks: `||` → `??` to prevent overriding explicit 0 values (14f48e8)
+- Rust CLI: use `try_format()` instead of `format()` to avoid panic on parse failure (bf95183)
+- Rust: deduplicate `parse()`/`try_parse()` — `parse()` now delegates to `try_parse()` (bf95183)
+- Rust: avoid String allocation in block_components/container_components lookup (bf95183)
+- Fix napi CI: replace deprecated macos-13 with macos-latest (e6f9d58)
+
+## Other Changes
+
+- Remove dead code: originalContent, positionMap, buildPositionMap(), getLineAtPosition(), getEnabledRules() (14f48e8)
+- Remove 6 unused type exports and unreachable estree block (14f48e8, 83ca23b)
+- Remove 4 unused production dependencies: remark, remark-directive, remark-gfm, remark-stringify (d9068bb)
+- Move HTML_ELEMENTS Set to module-level constant for performance (bf95183)
+- CI: add timeout-minutes and concurrency group (d9068bb)
+- CI: add Rust toolchain and wasm-pack build steps (d778ba2, 29dca44)
+- Fix CLAUDE.md: husky → lefthook (d9068bb)
+- Update all docs to reflect Rust-only engine (87bf605, 7a022df)
+- Doc site: playground with WASM engine, settings panel, JSX text inputs (6100b54, 8c25ed7)
+- Doc site versioning: snapshot v0.x docs for TypeScript engine era
+- Reorder header navigation

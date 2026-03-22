@@ -1,0 +1,105 @@
+---
+title: Rust Crate
+description: Using mdx-formatter-core as a Rust library
+sidebar_position: 3
+---
+
+# Rust Crate
+
+The core formatting engine is available as a standalone Rust crate (`mdx-formatter-core`) for direct integration in Rust applications. It has no Node.js dependency and can be embedded in CLI tools, desktop apps (Tauri), or any Rust project.
+
+## Cargo Dependency
+
+Since the crate is not yet published to crates.io, use one of these dependency forms:
+
+```toml
+[dependencies]
+# Option 1: git dependency (Cargo finds the workspace member by crate name)
+mdx-formatter-core = { git = "https://github.com/Takazudo/mdx-formatter" }
+
+# Option 2: local path (for development)
+mdx-formatter-core = { path = "../mdx-formatter/crates/mdx-formatter-core" }
+```
+
+## Basic Usage
+
+```rust
+use mdx_formatter_core::{format, FormatterSettings};
+
+let content = "# Hello\nSome text";
+let settings = FormatterSettings::default();
+let formatted = format(content, &settings);
+// formatted == "# Hello\n\nSome text"
+```
+
+The `format` function runs a convergence loop (up to 3 iterations) to ensure idempotent output. It returns the formatted string directly -- no `Result` wrapping, no async.
+
+## FormatterSettings
+
+`FormatterSettings` mirrors the TypeScript settings structure. Each formatting rule is a separate field:
+
+```rust
+use mdx_formatter_core::FormatterSettings;
+
+let mut settings = FormatterSettings::default();
+
+// Disable the spacing rule
+settings.add_empty_line_between_elements.enabled = false;
+
+let formatted = mdx_formatter_core::format(content, &settings);
+```
+
+### Available Settings Fields
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `add_empty_line_between_elements` | `AddEmptyLineBetweenElementsSetting` | enabled | Add empty lines between elements |
+| `format_multi_line_jsx` | `FormatMultiLineJsxSetting` | enabled | Format multi-line JSX |
+| `format_html_blocks_in_mdx` | `FormatHtmlBlocksInMdxSetting` | enabled | Format HTML blocks |
+| `expand_single_line_jsx` | `ExpandSingleLineJsxSetting` | disabled | Expand single-line JSX |
+| `indent_jsx_content` | `IndentJsxContentSetting` | disabled | Indent JSX content |
+| `add_empty_lines_in_block_jsx` | `AddEmptyLinesInBlockJsxSetting` | enabled | Empty lines in block JSX |
+| `format_yaml_frontmatter` | `FormatYamlFrontmatterSetting` | enabled | Format YAML frontmatter |
+| `preserve_admonitions` | `PreserveAdmonitionsSetting` | enabled | Preserve Docusaurus admonitions |
+| `error_handling` | `ErrorHandlingSetting` | off | Throw on parse errors |
+| `auto_detect_indent` | `AutoDetectIndentSetting` | disabled | Auto-detect indentation |
+
+### Loading from JSON
+
+Settings can be created from a partial JSON value, merging with defaults:
+
+```rust
+use mdx_formatter_core::FormatterSettings;
+
+let json: serde_json::Value = serde_json::json!({
+    "addEmptyLineBetweenElements": { "enabled": false },
+    "formatMultiLineJsx": { "indentSize": 4 }
+});
+let settings = FormatterSettings::from_partial_json(&json);
+```
+
+JSON field names use camelCase (matching the TypeScript/config file convention), while Rust struct fields use snake_case.
+
+All 10 settings fields are supported via serde deserialization with camelCase JSON keys.
+
+## Public Exports
+
+The crate re-exports through `lib.rs`:
+
+| Symbol | Module | Description |
+| --- | --- | --- |
+| `format` | `formatter` | The main formatting function (panics on error if `throw_on_error` is true) |
+| `try_format` | `formatter` | Returns `Result<String, String>` instead of panicking |
+| `FormatterSettings` | `types` | Settings struct |
+| `format_html_block` | `html_formatter` | HTML block indentation formatter |
+| `load_config` | `config` | Load and merge config from file |
+| `load_full_config` | `config` | Load config + exclude patterns |
+| `load_full_config_from` | `config` | Load config from a specific directory |
+| `load_exclude_patterns` | `config` | Load only exclude patterns |
+| `FullConfig` | `config` | Settings + exclude patterns struct |
+
+All symbols are re-exported at the crate root, so `use mdx_formatter_core::{format, FormatterSettings}` works directly. The `parser`, `types`, and `html_formatter` modules are also public for consumers who need lower-level access.
+
+## Status
+
+The Rust crate implements all formatting rules from the TypeScript version. See [Rust Rewrite](/docs/architecture/rust-rewrite) for the full status and remaining infrastructure work.
