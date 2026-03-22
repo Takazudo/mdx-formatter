@@ -28,6 +28,10 @@ const pathWithoutBase = stripBase(currentPath);
 const pathForMatch = isNonDefaultLocale
   ? pathWithoutBase.replace(new RegExp(`^/${lang}`), "")
   : pathWithoutBase;
+
+const activeNavPath = settings.headerNav
+  .filter((item) => pathForMatch.startsWith(item.path))
+  .sort((a, b) => b.path.length - a.path.length)[0]?.path;
 ---
 
 <header
@@ -62,40 +66,52 @@ const pathForMatch = isNonDefaultLocale
 
   <nav
     aria-label="Main"
-    class="ml-hsp-xl hidden items-center gap-x-hsp-2xs whitespace-nowrap lg:flex"
+    class="ml-hsp-xl hidden items-center gap-x-hsp-2xs whitespace-nowrap lg:flex overflow-hidden"
+    data-header-nav
   >
     {
-      (() => {
-        // Longest-prefix match: only highlight the most specific nav item
-        const activeNavPath = settings.headerNav
-          .filter((item) => pathForMatch.startsWith(item.path))
-          .sort((a, b) => b.path.length - a.path.length)[0]?.path;
-
-        return settings.headerNav.map((item) => {
-          const isActive = item.path === activeNavPath;
-          const href = withBase(
-            isNonDefaultLocale ? `/${lang}${item.path}` : item.path,
-          );
-          return (
-            <a
-              href={href}
-              aria-current={isActive ? "page" : undefined}
-              class:list={[
-                "px-hsp-md py-vsp-2xs text-small font-medium font-futura transition-colors",
-                isActive
-                  ? "bg-fg text-bg"
-                  : "text-muted hover:underline focus:underline",
-              ]}
-            >
-              {item.labelKey ? t(item.labelKey, lang) : item.label}
-            </a>
-          );
-        });
-      })()
+      settings.headerNav.map((item) => {
+        const isActive = item.path === activeNavPath;
+        const href = withBase(
+          isNonDefaultLocale ? `/${lang}${item.path}` : item.path,
+        );
+        return (
+          <a
+            href={href}
+            aria-current={isActive ? "page" : undefined}
+            data-nav-item
+            class:list={[
+              "px-hsp-md py-vsp-2xs text-small font-medium font-futura transition-colors shrink-0",
+              isActive
+                ? "bg-fg text-bg"
+                : "text-muted hover:underline focus:underline",
+            ]}
+          >
+            {item.labelKey ? t(item.labelKey, lang) : item.label}
+          </a>
+        );
+      })
     }
+
+    <!-- Overflow "more" button -->
+    <div class="relative shrink-0 hidden" data-nav-more>
+      <button
+        type="button"
+        class="px-hsp-md py-vsp-2xs text-small font-medium font-futura text-muted hover:underline cursor-pointer"
+        data-nav-more-toggle
+        aria-expanded="false"
+      >
+        &middot;&middot;&middot;
+      </button>
+      <ul
+        class="absolute right-0 top-full z-10 mt-vsp-3xs hidden min-w-[8rem] border border-muted rounded bg-surface shadow-lg whitespace-nowrap"
+        data-nav-more-menu
+      >
+      </ul>
+    </div>
   </nav>
 
-  <div class="ml-auto flex items-center gap-x-hsp-md">
+  <div class="ml-auto flex shrink-0 items-center gap-x-hsp-md">
     {
       settings.colorTweakPanel && (
         <button
@@ -176,3 +192,90 @@ const pathForMatch = isNonDefaultLocale
     </div>
   </div>
 </header>
+
+<script>
+  function initNavOverflow() {
+    const nav = document.querySelector<HTMLElement>("[data-header-nav]");
+    const moreBtn = document.querySelector<HTMLElement>("[data-nav-more]");
+    const moreMenu = document.querySelector<HTMLElement>("[data-nav-more-menu]");
+    const moreToggle = document.querySelector<HTMLButtonElement>("[data-nav-more-toggle]");
+    if (!nav || !moreBtn || !moreMenu || !moreToggle) return;
+
+    const items = Array.from(nav.querySelectorAll<HTMLAnchorElement>("[data-nav-item]"));
+    if (items.length === 0) return;
+
+    function update() {
+      // Reset: show all items, hide more button
+      items.forEach((el) => (el.style.display = ""));
+      moreBtn!.classList.add("hidden");
+      moreMenu!.innerHTML = "";
+
+      // Measure: does the nav overflow?
+      const navRight = nav!.getBoundingClientRect().right;
+      const overflowed: HTMLAnchorElement[] = [];
+
+      for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i];
+        const itemRight = item.getBoundingClientRect().right;
+        if (itemRight > navRight - 40) {
+          // 40px buffer for the "..." button
+          overflowed.unshift(item);
+        } else {
+          break;
+        }
+      }
+
+      if (overflowed.length === 0) return;
+
+      // Hide overflowed items and show "..." button
+      overflowed.forEach((el) => (el.style.display = "none"));
+      moreBtn!.classList.remove("hidden");
+
+      // Populate the dropdown
+      overflowed.forEach((el) => {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = el.href;
+        a.textContent = el.textContent?.trim() || "";
+        a.className =
+          "block px-hsp-md py-vsp-3xs text-small hover:bg-accent/10 text-fg";
+        if (el.getAttribute("aria-current") === "page") {
+          a.className += " font-bold text-accent";
+        }
+        li.appendChild(a);
+        moreMenu!.appendChild(li);
+      });
+    }
+
+    // Toggle dropdown
+    moreToggle.addEventListener("click", () => {
+      const isOpen = !moreMenu!.classList.contains("hidden");
+      moreMenu!.classList.toggle("hidden", isOpen);
+      moreToggle!.setAttribute("aria-expanded", String(!isOpen));
+    });
+
+    // Close on outside click
+    document.addEventListener("click", (e) => {
+      if (!moreBtn!.contains(e.target as Node)) {
+        moreMenu!.classList.add("hidden");
+        moreToggle!.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    // Close on Escape
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !moreMenu!.classList.contains("hidden")) {
+        moreMenu!.classList.add("hidden");
+        moreToggle!.setAttribute("aria-expanded", "false");
+        moreToggle!.focus();
+      }
+    });
+
+    // Run on load and resize
+    update();
+    window.addEventListener("resize", update);
+  }
+
+  initNavOverflow();
+  document.addEventListener("astro:after-swap", initNavOverflow);
+</script>
