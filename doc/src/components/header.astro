@@ -97,19 +97,6 @@ const pathForMatch = isNonDefaultLocale
 
   <div class="ml-auto flex items-center gap-x-hsp-md">
     {
-      settings.versions && currentSlug && (
-        <div class="hidden lg:block">
-          <VersionSwitcher
-            currentVersion={currentVersion}
-            currentSlug={currentSlug}
-            lang={lang}
-            availability={versionAvailability}
-            idSuffix="header"
-          />
-        </div>
-      )
-    }
-    {
       settings.colorTweakPanel && (
         <button
           id="color-tweak-trigger"
@@ -163,6 +150,19 @@ const pathForMatch = isNonDefaultLocale
       )
     }
     <Search />
+    {
+      settings.versions && (
+        <div class="hidden lg:block">
+          <VersionSwitcher
+            currentVersion={currentVersion}
+            currentSlug={currentSlug}
+            lang={lang}
+            availability={versionAvailability}
+            idSuffix="header"
+          />
+        </div>
+      )
+    }
     <div class="hidden lg:flex items-center gap-x-hsp-md">
       {
         settings.colorMode && (

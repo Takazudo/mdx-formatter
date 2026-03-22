@@ -6,7 +6,7 @@ import type { VersionAvailability } from "@/utils/version-availability";
 
 interface Props {
   currentVersion?: string;
-  currentSlug: string;
+  currentSlug?: string;
   lang?: Locale;
   availability?: VersionAvailability;
   idSuffix?: string;
@@ -31,7 +31,8 @@ const isNonDefaultLocale = lang !== defaultLocale;
 const versionsPageUrl = withBase(
   isNonDefaultLocale ? `/${lang}/docs/versions` : "/docs/versions",
 );
-const latestUrl = docsUrl(currentSlug, lang);
+const fallbackSlug = currentSlug || "overview";
+const latestUrl = docsUrl(fallbackSlug, lang);
 const isLatest = !currentVersion;
 ---
 
@@ -84,10 +85,10 @@ const isLatest = !currentVersion;
     </li>
     {
       versions.map((v) => {
-        const vUrl = versionedDocsUrl(currentSlug, v.slug, lang);
+        const vUrl = versionedDocsUrl(fallbackSlug, v.slug, lang);
         const isActive = currentVersion === v.slug;
         const isAvailable =
-          !availability || (availability[v.slug]?.has(currentSlug) ?? false);
+          !availability || !currentSlug || (availability[v.slug]?.has(currentSlug) ?? false);
         return (
           <li>
             {isAvailable ? (
