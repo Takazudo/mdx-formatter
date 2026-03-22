@@ -196,11 +196,12 @@ function LeafNode({
         <a
           href={node.href}
           className={isRoot
-            ? "block py-[calc(var(--spacing-vsp-xs)+0.15rem)] text-small font-semibold text-fg hover:text-accent hover:underline focus:underline"
+            ? "flex items-center gap-hsp-xs py-[calc(var(--spacing-vsp-xs)+0.15rem)] text-small font-semibold text-fg hover:text-accent hover:underline focus:underline"
             : `block py-vsp-2xs ${isLast ? "pb-vsp-xs" : ""} text-small text-fg hover:text-accent hover:underline focus:underline`
           }
           style={{ paddingLeft }}
         >
+          {isRoot && <CategoryLinkIcon className="w-[18px] 2xl:w-[24px]" />}
           {node.label}
         </a>
       </div>
