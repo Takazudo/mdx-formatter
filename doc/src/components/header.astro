@@ -36,6 +36,7 @@ const activeNavPath = settings.headerNav
 
 <header
   class="sticky top-0 z-50 flex h-[3.5rem] items-center border-b border-muted bg-surface px-hsp-lg"
+  data-header
 >
   <SidebarToggle client:media="(max-width: 1023px)">
     <slot name="sidebar" />
@@ -54,7 +55,8 @@ const activeNavPath = settings.headerNav
 
   <a
     href={withBase(isNonDefaultLocale ? `/${lang}/` : "/")}
-    class="flex items-center gap-2 whitespace-nowrap text-subheading font-normal font-futura text-fg hover:underline focus:underline"
+    class="flex items-center gap-2 whitespace-nowrap text-subheading font-normal font-futura text-fg hover:underline focus:underline shrink-0"
+    data-header-logo
   >
     <span
       class="inline-block h-7 w-7 shrink-0"
@@ -66,7 +68,7 @@ const activeNavPath = settings.headerNav
 
   <nav
     aria-label="Main"
-    class="ml-hsp-xl hidden items-center gap-x-hsp-2xs whitespace-nowrap lg:flex overflow-hidden"
+    class="ml-hsp-xl hidden items-center gap-x-hsp-2xs whitespace-nowrap lg:flex min-w-0"
     data-header-nav
   >
     {
@@ -93,8 +95,7 @@ const activeNavPath = settings.headerNav
       })
     }
 
-    <!-- Overflow "more" button -->
-    <div class="relative shrink-0 hidden" data-nav-more>
+    <div class="relative shrink-0" data-nav-more style="display:none">
       <button
         type="button"
         class="px-hsp-md py-vsp-2xs text-small font-medium font-futura text-muted hover:underline cursor-pointer"
@@ -111,7 +112,7 @@ const activeNavPath = settings.headerNav
     </div>
   </nav>
 
-  <div class="ml-auto flex shrink-0 items-center gap-x-hsp-md">
+  <div class="ml-auto flex shrink-0 items-center gap-x-hsp-md" data-header-right>
     {
       settings.colorTweakPanel && (
         <button
@@ -121,22 +122,8 @@ const activeNavPath = settings.headerNav
           aria-label="Toggle color tweak panel"
           onclick="window.dispatchEvent(new CustomEvent('toggle-color-tweak-panel'))"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <circle cx="13.5" cy="6.5" r="2.5" />
-            <circle cx="17.5" cy="10.5" r="2.5" />
-            <circle cx="8.5" cy="7.5" r="2.5" />
-            <circle cx="6.5" cy="12.5" r="2.5" />
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="13.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="10.5" r="2.5" /><circle cx="8.5" cy="7.5" r="2.5" /><circle cx="6.5" cy="12.5" r="2.5" />
             <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
           </svg>
         </button>
@@ -151,14 +138,7 @@ const activeNavPath = settings.headerNav
           aria-label="Open AI assistant"
           onclick="window.dispatchEvent(new CustomEvent('toggle-ai-chat'))"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            aria-hidden="true"
-          >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M9.5 2.5Q10.5 11.5 18 13Q10.5 14.5 9.5 23.5Q8.5 14.5 1 13Q8.5 11.5 9.5 2.5Z" />
             <path d="M19 0.5Q19.5 4 23.5 5Q19.5 6 19 9.5Q18.5 6 14.5 5Q18.5 4 19 0.5Z" />
           </svg>
@@ -194,86 +174,131 @@ const activeNavPath = settings.headerNav
 </header>
 
 <script>
+  let cleanupNavOverflow: (() => void) | null = null;
+
   function initNavOverflow() {
+    cleanupNavOverflow?.();
+
+    const header = document.querySelector<HTMLElement>("[data-header]");
+    const logo = document.querySelector<HTMLElement>("[data-header-logo]");
     const nav = document.querySelector<HTMLElement>("[data-header-nav]");
-    const moreBtn = document.querySelector<HTMLElement>("[data-nav-more]");
+    const rightGroup = document.querySelector<HTMLElement>("[data-header-right]");
+    const moreContainer = document.querySelector<HTMLElement>("[data-nav-more]");
     const moreMenu = document.querySelector<HTMLElement>("[data-nav-more-menu]");
     const moreToggle = document.querySelector<HTMLButtonElement>("[data-nav-more-toggle]");
-    if (!nav || !moreBtn || !moreMenu || !moreToggle) return;
+    if (!header || !logo || !nav || !rightGroup || !moreContainer || !moreMenu || !moreToggle) return;
 
-    const items = Array.from(nav.querySelectorAll<HTMLAnchorElement>("[data-nav-item]"));
+    const items = Array.from(nav.querySelectorAll<HTMLAnchorElement>(":scope > [data-nav-item]"));
     if (items.length === 0) return;
 
+    // Measure each item's natural width once (all visible, before any hiding)
+    const itemWidths: number[] = [];
+    items.forEach((el) => { el.style.display = ""; });
+    moreContainer.style.display = "none";
+    items.forEach((el) => { itemWidths.push(el.offsetWidth); });
+
+    // Measure the "..." button width
+    moreContainer.style.display = "";
+    const moreWidth = moreContainer.offsetWidth;
+    moreContainer.style.display = "none";
+
+    // Get the nav gap from computed style
+    const navGap = parseFloat(getComputedStyle(nav).columnGap) || 0;
+
+    // Get header horizontal padding
+    const headerStyle = getComputedStyle(header);
+    const headerPadX = parseFloat(headerStyle.paddingLeft) + parseFloat(headerStyle.paddingRight);
+
+    // Get nav left margin
+    const navMarginLeft = parseFloat(getComputedStyle(nav).marginLeft) || 0;
+
+    const controller = new AbortController();
+
     function update() {
-      // Reset: show all items, hide more button
-      items.forEach((el) => (el.style.display = ""));
-      moreBtn!.classList.add("hidden");
+      // Reset: show all items, hide "..."
+      items.forEach((el) => { el.style.display = ""; });
+      moreContainer!.style.display = "none";
       moreMenu!.innerHTML = "";
+      moreMenu!.classList.add("hidden");
+      moreToggle!.setAttribute("aria-expanded", "false");
 
-      // Measure: does the nav overflow?
-      const navRight = nav!.getBoundingClientRect().right;
-      const overflowed: HTMLAnchorElement[] = [];
+      // Calculate available width for nav items
+      const headerW = header!.clientWidth;
+      const logoW = logo!.offsetWidth;
+      const rightW = rightGroup!.offsetWidth;
+      const available = headerW - headerPadX - logoW - navMarginLeft - rightW;
 
-      for (let i = items.length - 1; i >= 0; i--) {
-        const item = items[i];
-        const itemRight = item.getBoundingClientRect().right;
-        if (itemRight > navRight - 40) {
-          // 40px buffer for the "..." button
-          overflowed.unshift(item);
-        } else {
+      if (available <= 0) return;
+
+      // Greedy fill: add items until budget exhausted
+      let used = 0;
+      let cutoffIndex = items.length; // all fit by default
+
+      for (let i = 0; i < items.length; i++) {
+        const w = itemWidths[i] + (i > 0 ? navGap : 0);
+        // Check if this item fits. If not all items will fit, reserve space for "..."
+        const remaining = items.length - i - 1;
+        const needMore = remaining > 0;
+        const budget = needMore ? available - moreWidth - navGap : available;
+
+        if (used + w > budget) {
+          cutoffIndex = i;
           break;
         }
+        used += w;
       }
 
-      if (overflowed.length === 0) return;
+      if (cutoffIndex >= items.length) return; // all fit
 
-      // Hide overflowed items and show "..." button
-      overflowed.forEach((el) => (el.style.display = "none"));
-      moreBtn!.classList.remove("hidden");
+      // Hide overflowed items
+      for (let i = cutoffIndex; i < items.length; i++) {
+        items[i].style.display = "none";
+      }
 
-      // Populate the dropdown
-      overflowed.forEach((el) => {
+      // Show "..." and populate dropdown
+      moreContainer!.style.display = "";
+      for (let i = cutoffIndex; i < items.length; i++) {
+        const el = items[i];
         const li = document.createElement("li");
         const a = document.createElement("a");
         a.href = el.href;
         a.textContent = el.textContent?.trim() || "";
-        a.className =
-          "block px-hsp-md py-vsp-3xs text-small hover:bg-accent/10 text-fg";
+        a.className = "block px-hsp-md py-vsp-3xs text-small hover:bg-accent/10 text-fg";
         if (el.getAttribute("aria-current") === "page") {
           a.className += " font-bold text-accent";
         }
         li.appendChild(a);
         moreMenu!.appendChild(li);
-      });
+      }
     }
 
     // Toggle dropdown
     moreToggle.addEventListener("click", () => {
-      const isOpen = !moreMenu!.classList.contains("hidden");
-      moreMenu!.classList.toggle("hidden", isOpen);
-      moreToggle!.setAttribute("aria-expanded", String(!isOpen));
-    });
+      const isOpen = !moreMenu.classList.contains("hidden");
+      moreMenu.classList.toggle("hidden", isOpen);
+      moreToggle.setAttribute("aria-expanded", String(!isOpen));
+    }, { signal: controller.signal });
 
-    // Close on outside click
     document.addEventListener("click", (e) => {
-      if (!moreBtn!.contains(e.target as Node)) {
-        moreMenu!.classList.add("hidden");
-        moreToggle!.setAttribute("aria-expanded", "false");
+      if (!moreContainer.contains(e.target as Node)) {
+        moreMenu.classList.add("hidden");
+        moreToggle.setAttribute("aria-expanded", "false");
       }
-    });
+    }, { signal: controller.signal });
 
-    // Close on Escape
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !moreMenu!.classList.contains("hidden")) {
-        moreMenu!.classList.add("hidden");
-        moreToggle!.setAttribute("aria-expanded", "false");
-        moreToggle!.focus();
+      if (e.key === "Escape" && !moreMenu.classList.contains("hidden")) {
+        moreMenu.classList.add("hidden");
+        moreToggle.setAttribute("aria-expanded", "false");
+        moreToggle.focus();
       }
-    });
+    }, { signal: controller.signal });
 
-    // Run on load and resize
+    window.addEventListener("resize", update, { signal: controller.signal });
+
     update();
-    window.addEventListener("resize", update);
+
+    cleanupNavOverflow = () => controller.abort();
   }
 
   initNavOverflow();
