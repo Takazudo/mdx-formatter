@@ -1,6 +1,6 @@
 {
   "name": "@takazudo/mdx-formatter",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AST-based markdown and MDX formatter with Japanese text support",
   "type": "module",
   "main": "dist/index.js",
@@ -87,6 +87,12 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.54.0",
     "vitest": "^4.0.17"
+  },
+  "optionalDependencies": {
+    "@takazudo/mdx-formatter-darwin-arm64": "1.0.0",
+    "@takazudo/mdx-formatter-darwin-x64": "1.0.0",
+    "@takazudo/mdx-formatter-linux-x64-gnu": "1.0.0",
+    "@takazudo/mdx-formatter-win32-x64-msvc": "1.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

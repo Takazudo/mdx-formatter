@@ -1,4 +1,4 @@
-name: Build napi binaries
+name: Build and publish napi binaries
 
 on:
   push:
@@ -33,6 +33,7 @@ jobs:
               cargo build -p mdx-formatter-napi --release --target x86_64-pc-windows-msvc
               mv target/x86_64-pc-windows-msvc/release/mdx_formatter_napi.dll mdx-formatter-napi.win32-x64-msvc.node
     runs-on: ${{ matrix.settings.host }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -47,23 +48,44 @@ jobs:
           path: mdx-formatter-napi.*.node
           if-no-files-found: error
 
-  prepare-publish:
+  publish:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
       - name: Copy binaries to platform packages
         run: |
           cp artifacts/bindings-aarch64-apple-darwin/mdx-formatter-napi.darwin-arm64.node npm/darwin-arm64/mdx-formatter-napi.node
           cp artifacts/bindings-x86_64-apple-darwin/mdx-formatter-napi.darwin-x64.node npm/darwin-x64/mdx-formatter-napi.node
           cp artifacts/bindings-x86_64-unknown-linux-gnu/mdx-formatter-napi.linux-x64-gnu.node npm/linux-x64-gnu/mdx-formatter-napi.node
           cp artifacts/bindings-x86_64-pc-windows-msvc/mdx-formatter-napi.win32-x64-msvc.node npm/win32-x64-msvc/mdx-formatter-napi.node
+
       - name: List artifacts
         run: |
-          echo "=== Downloaded artifacts ==="
-          ls -lR artifacts/
           echo "=== Platform packages ==="
           ls -lR npm/
+
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for dir in npm/darwin-arm64 npm/darwin-x64 npm/linux-x64-gnu npm/win32-x64-msvc; do
+            echo "Publishing $dir..."
+            cd "$dir"
+            npm publish --access public || echo "Already published or failed: $dir"
+            cd ../..
+          done
