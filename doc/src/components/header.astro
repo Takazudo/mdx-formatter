@@ -74,8 +74,9 @@ const activeNavPath = settings.headerNav
     {
       settings.headerNav.map((item) => {
         const isActive = item.path === activeNavPath;
+        const versionPrefix = currentVersion ? `/v/${currentVersion}` : "";
         const href = withBase(
-          isNonDefaultLocale ? `/${lang}${item.path}` : item.path,
+          isNonDefaultLocale ? `/${lang}${versionPrefix}${item.path}` : `${versionPrefix}${item.path}`,
         );
         return (
           <a
