@@ -28,7 +28,7 @@ jobs:
       - name: Build Astro site
         uses: ./.github/actions/build-astro
         with:
-          node-version: '20'
+          node-version: '22'
           pnpm-version: '10'
           working-directory: 'doc'
 
