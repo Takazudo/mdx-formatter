@@ -58,15 +58,20 @@ const formatted = await format('# Hello\nWorld');
 console.log(formatted); // '# Hello\n\nWorld'
 ```
 
-### Browser / WebView
+### Browser (WASM)
 
-```javascript
-import { format } from '@takazudo/mdx-formatter/browser';
-
-const formatted = await format('# Hello\nWorld');
+```bash
+npm install @takazudo/mdx-formatter-wasm
 ```
 
-The browser export avoids Node.js `fs`/`path` dependencies. See [Browser Usage](https://takazudomodular.com/pj/mdx-formatter/docs/overview/browser-usage) for details.
+```javascript
+import init, { format_with_defaults } from '@takazudo/mdx-formatter-wasm';
+
+await init();
+const formatted = format_with_defaults('# Hello\nWorld');
+```
+
+See [Browser Usage](https://takazudomodular.com/pj/mdx-formatter/docs/overview/browser-usage) for details.
 
 ## Documentation
 

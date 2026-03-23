@@ -6,15 +6,15 @@ sidebar_position: 8
 
 # Browser Usage
 
-## WASM Package (Recommended)
+For browser environments, use the dedicated WASM package. The main `@takazudo/mdx-formatter` package uses a native Rust module (napi-rs) that only works in Node.js.
 
-For browser environments, install the WASM package:
+## Installation
 
 ```bash
 npm install @takazudo/mdx-formatter-wasm
 ```
 
-### Usage
+## Usage
 
 ```javascript
 import init, { format, format_with_defaults } from "@takazudo/mdx-formatter-wasm";
@@ -33,21 +33,11 @@ const settings = JSON.stringify({
 const formatted2 = format("# Hello\nSome text", settings);
 ```
 
-The WASM module provides the same Rust formatting engine that powers the Node.js package, compiled to WebAssembly for browser use. See the [Playground](/docs/playground) for a live example.
-
-## Node.js Browser Export
-
-The `./browser` subpath export re-exports the same `format()` function as the main entry point. Since the formatting engine is a Rust napi module, this export requires a Node.js runtime — it is suitable for Electron or similar Node-backed environments, but **not for pure browser use** (use the WASM package instead).
-
-```typescript
-import { format } from "@takazudo/mdx-formatter/browser";
-
-const formatted = await format(content);
-```
+The WASM module provides the same Rust formatting engine that powers the Node.js package, compiled to WebAssembly. See the [Playground](/docs/playground) for a live example.
 
 ## Detecting MDX
 
-The `detectMdx` function is available from both the main and browser exports:
+The `detectMdx` utility is available from the main package's `/browser` subpath export (no Node.js `fs`/`path` dependencies):
 
 ```typescript
 import { detectMdx } from "@takazudo/mdx-formatter/browser";
@@ -57,14 +47,16 @@ if (detectMdx(content)) {
 }
 ```
 
+Note: The `/browser` export only provides `detectMdx`. For formatting, use the WASM package above.
+
 ## Limitations
 
 Config file loading (`.mdx-formatter.json`) is not supported in browser/WASM mode because it requires Node.js file system access. Pass settings directly to the format function instead.
 
-## Package Exports
+## Package Summary
 
-| Package | Environment | Install |
+| Package | Provides | Environment |
 | --- | --- | --- |
-| `@takazudo/mdx-formatter` | Node.js | `npm install @takazudo/mdx-formatter` |
-| `@takazudo/mdx-formatter/browser` | Node.js (Electron) | (included in main package) |
-| `@takazudo/mdx-formatter-wasm` | Browser | `npm install @takazudo/mdx-formatter-wasm` |
+| `@takazudo/mdx-formatter` | `format()`, `formatFile()`, `checkFile()`, CLI | Node.js |
+| `@takazudo/mdx-formatter/browser` | `detectMdx()` | Browser-safe (no Node.js deps) |
+| `@takazudo/mdx-formatter-wasm` | `format()`, `format_with_defaults()` | Browser (WASM) |
