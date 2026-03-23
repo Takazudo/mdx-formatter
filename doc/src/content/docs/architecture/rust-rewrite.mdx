@@ -127,7 +127,7 @@ All formatting rules from the TypeScript version are implemented in Rust:
 | Config file loading | Done | `.mdx-formatter.json`, `package.json` key, 3-layer merge |
 | CLI binary | Done | `mdx-formatter-cli` crate with `--write`, `--check`, `--config`, glob patterns |
 | napi-rs Node.js bindings | Done | Sole engine for the npm package |
-| napi-rs CI pipeline | In Progress | Cross-platform binary generation (macOS/Linux/Windows) |
+| napi-rs CI pipeline | Done | Cross-platform binary generation (macOS/Linux/Windows), published to npm |
 | Browser/WASM | Done | wasm-pack, web + bundler targets, used by doc site playground |
 
 ## Test Coverage
@@ -153,8 +153,10 @@ For production distribution, napi-rs publishes platform-specific binaries as opt
 
 When a user runs `npm install @takazudo/mdx-formatter`, npm's optional dependency resolution automatically downloads only the binary matching their platform. This is the same approach used by SWC, Biome, and Lightning CSS.
 
-## Remaining Work
+## Status
 
-The formatting engine, WASM support, and core infrastructure are complete. Remaining task:
+All infrastructure is complete. The formatting engine, WASM support, napi-rs CI pipeline, and platform binary publishing are all operational. Published packages:
 
-- napi-rs CI build pipeline (GitHub Actions for cross-platform `.node` binary generation) — **In Progress**
+- `@takazudo/mdx-formatter` — main package (v1.0.1)
+- `@takazudo/mdx-formatter-{darwin-arm64,darwin-x64,linux-x64-gnu,win32-x64-msvc}` — platform binaries (v1.0.0)
+- `@takazudo/mdx-formatter-wasm` — browser WASM (v1.0.0)

@@ -1,5 +1,5 @@
 /**
- * Markdown Formatter Settings - 7 Core Rules
+ * Markdown Formatter Settings - 10 Rules
  * Each option can be toggled on/off independently
  */
 

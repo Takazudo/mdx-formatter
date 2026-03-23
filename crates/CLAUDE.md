@@ -41,4 +41,4 @@ Key modules in `mdx-formatter-core/src/`:
 - 342 tests passing (124 unit + 165 cross-platform + 42 plugin validation + 11 spacing recursion)
 - CLI binary working (`--write`, `--check`, `--config`, glob patterns)
 - Browser/WASM support implemented (`mdx-formatter-wasm` crate, web + bundler targets)
-- napi-rs CI build pipeline — in progress (cross-platform binary generation)
+- napi-rs CI build pipeline — done (cross-platform binary generation, published to npm)

@@ -5,16 +5,18 @@ sidebar_position: 1
 sidebar_label: Overview
 ---
 
-AST-based markdown and MDX formatter with Japanese text support. Uses remark for AST parsing, then applies targeted line-based operations to the original source text.
+AST-based markdown and MDX formatter with Japanese text support. Powered by a Rust engine (via napi-rs) that parses markdown/MDX into an AST, then applies targeted line-based operations to the original source text.
 
 ## Features
 
-- **Hybrid formatter** - Parses via remark AST, applies edits to original source lines (no lossy round-trip)
+- **Rust-powered** - Native Rust engine via napi-rs, 3-7x faster than pure JS
+- **Hybrid formatter** - Parses AST for analysis, applies edits to original source lines (no lossy round-trip)
 - **MDX support** - Full support for MDX syntax including JSX components
 - **Japanese text formatting** - Special handling for Japanese punctuation and URLs
 - **Docusaurus support** - Preserves Docusaurus admonitions (:::note, :::tip, etc.)
 - **HTML block formatting** - Proper indentation for HTML blocks (dl, table, ul, div, etc.)
 - **GFM features** - Tables, strikethrough, task lists
 - **Frontmatter preservation** - YAML frontmatter support
+- **WASM support** - Browser-compatible via `@takazudo/mdx-formatter-wasm`
 - **CLI and API** - Use as command-line tool or import as library
-- **Configurable** - Customize component lists and rules via config file or API
+- **Configurable** - 10 independently toggleable rules via config file or API

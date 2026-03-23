@@ -27,7 +27,7 @@ Phase 1: Parse          Phase 2: Analyze         Phase 3: Apply
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │ Source text      │    │ Walk AST         │    │ Sort operations  │
 │       ↓         │    │       ↓          │    │ (reverse order)  │
-│ remark/mdx      │───>│ Collect line-    │───>│       ↓          │
+│ markdown-rs     │───>│ Collect line-    │───>│       ↓          │
 │ parser          │    │ based operations │    │ Apply to source  │
 │       ↓         │    │ (insert, replace,│    │ lines            │
 │ mdast AST       │    │  indent, fix)    │    │       ↓          │
@@ -62,7 +62,7 @@ Instead of mutating the AST or directly editing strings, the formatter collects 
 | `replaceLines` | Replace a range of lines with new content |
 | `indentLine` | Add indentation to a specific line |
 | `fixListIndent` | Correct list item indentation |
-| `replaceHtmlBlock` | Replace an HTML block with Prettier-formatted output |
+| `replaceHtmlBlock` | Replace an HTML block with properly indented output |
 
 Operation names use camelCase in TypeScript (`insertLine`, `replaceLines`) and PascalCase in the Rust port (`InsertLine`, `ReplaceLines`) — both implement identical semantics.
 
@@ -84,7 +84,7 @@ Each rule is independently toggleable via `.mdx-formatter.json` configuration:
 | --- | --- | --- | --- |
 | 1 | `addEmptyLineBetweenElements` | on | Add single empty line between markdown elements |
 | 2 | `formatMultiLineJsx` | on | Format multi-line JSX with proper indentation |
-| 3 | `formatHtmlBlocksInMdx` | on | Format HTML blocks using Prettier |
+| 3 | `formatHtmlBlocksInMdx` | on | Format HTML blocks with proper indentation |
 | 4 | `expandSingleLineJsx` | off | Expand single-line JSX with multiple props |
 | 5 | `indentJsxContent` | off | Indent content inside JSX container components |
 | 6 | `addEmptyLinesInBlockJsx` | on | Add empty lines after opening/before closing tags |
