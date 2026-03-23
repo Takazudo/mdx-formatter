@@ -42,6 +42,31 @@ Check if a file needs formatting without modifying it.
 - `options` - Same as `format()`
 - Returns `Promise<boolean>` - `true` if file needs formatting
 
+## `formatSync(content)`
+
+Synchronous format with default settings. API-compatible with `@takazudo/mdx-formatter-wasm`'s `format_with_defaults()`. Useful for mocking the WASM module in Node.js test environments.
+
+- `content` (`string`) - Content to format
+- Returns `string` - Formatted content
+
+```typescript
+import { formatSync } from "@takazudo/mdx-formatter";
+
+const formatted = formatSync("# Hello\nSome text");
+```
+
+### Test mock example
+
+```typescript
+vi.mock("@takazudo/mdx-formatter-wasm", async () => {
+  const { formatSync } = await import("@takazudo/mdx-formatter");
+  return {
+    default: async () => {},
+    format_with_defaults: formatSync,
+  };
+});
+```
+
 ## `detectMdx(content)`
 
 Check if content is likely MDX (has imports, exports, JSX components, or frontmatter).

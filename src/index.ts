@@ -7,6 +7,7 @@ import { promises as fs } from 'fs';
 import { loadConfig } from './load-config.js';
 import { detectMdx } from './detect-mdx.js';
 import { nativeFormat } from './rust-formatter.js';
+import { formatterSettings } from './settings.js';
 import type { FormatOptions } from './types.js';
 
 export { detectMdx };
@@ -18,6 +19,15 @@ export async function format(content: string, options: FormatOptions = {}): Prom
   const settings = loadConfig(options);
   const settingsJson = JSON.stringify(settings);
   return nativeFormat(content, settingsJson);
+}
+
+/**
+ * Synchronous format with default settings.
+ * API-compatible with @takazudo/mdx-formatter-wasm's format_with_defaults().
+ * Useful for mocking the WASM module in Node.js test environments.
+ */
+export function formatSync(content: string): string {
+  return nativeFormat(content, JSON.stringify(formatterSettings));
 }
 
 /**
@@ -46,6 +56,7 @@ export async function checkFile(filePath: string, options: FormatOptions = {}): 
 
 export default {
   format,
+  formatSync,
   formatFile,
   checkFile,
   detectMdx,
