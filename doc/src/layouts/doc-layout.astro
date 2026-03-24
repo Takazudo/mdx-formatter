@@ -20,6 +20,7 @@ import VersionSwitcher from "@/components/version-switcher.astro";
 import VersionBanner from "@/components/version-banner.astro";
 import { getVersionAvailability } from "@/utils/version-availability";
 import Footer from "@/components/footer.astro";
+import { DocHistory } from "@/components/doc-history";
 
 interface Props {
   title: string;
@@ -142,6 +143,9 @@ const contentTransition = {
             <article class="zd-content max-w-none">
               <slot />
             </article>
+            {settings.docHistory && currentSlug && (
+              <DocHistory slug={currentSlug} locale={lang !== defaultLocale ? lang : undefined} basePath={withBase("/")} client:idle />
+            )}
 </main>
 
           {/* Table of contents */}

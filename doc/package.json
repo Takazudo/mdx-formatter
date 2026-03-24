@@ -16,6 +16,7 @@
     "@shikijs/transformers": "^4.0.0",
     "astro": "^6.0.8",
     "clsx": "^2.1.0",
+    "diff": "^8.0.4",
     "github-slugger": "^2.0.0",
     "gray-matter": "^4.0.0",
     "mermaid": "^11.13.0",

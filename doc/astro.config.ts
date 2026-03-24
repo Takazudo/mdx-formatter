@@ -15,6 +15,8 @@ import { rehypeHeadingLinks } from './src/plugins/rehype-heading-links';
 import { rehypeMermaid } from './src/plugins/rehype-mermaid';
 import { rehypeStripMdExtension } from './src/plugins/rehype-strip-md-extension';
 import { claudeResourcesIntegration } from './src/integrations/claude-resources';
+import { llmsTxtIntegration } from './src/integrations/llms-txt';
+import { docHistoryIntegration } from './src/integrations/doc-history';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -47,6 +49,8 @@ export default defineConfig({
     ...(settings.claudeResources
       ? [claudeResourcesIntegration(settings.claudeResources)]
       : []),
+    ...(settings.llmsTxt ? [llmsTxtIntegration()] : []),
+    ...(settings.docHistory ? [docHistoryIntegration()] : []),
   ],
   vite: {
     plugins: [tailwindcss()],
