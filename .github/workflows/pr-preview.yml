@@ -66,12 +66,18 @@ jobs:
       - name: Deploy to Cloudflare Pages
         id: deploy
         run: |
-          DEPLOY_OUTPUT=$(wrangler pages deploy deploy-dir \
+          set +e
+          wrangler pages deploy deploy-dir \
             --project-name=mdx-formatter \
             --branch="pr-${{ github.event.pull_request.number }}" \
             --commit-hash="${GITHUB_SHA}" \
-            --commit-message="PR #${{ github.event.pull_request.number }} preview" 2>&1)
-          echo "$DEPLOY_OUTPUT"
+            --commit-message="PR #${{ github.event.pull_request.number }} preview"
+          WRANGLER_EXIT=$?
+          set -e
+          if [ $WRANGLER_EXIT -ne 0 ]; then
+            echo "::error::Wrangler deploy failed with exit code $WRANGLER_EXIT"
+            exit $WRANGLER_EXIT
+          fi
           DEPLOY_URL="https://pr-${{ github.event.pull_request.number }}.mdx-formatter.pages.dev"
           echo "deploy-url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
         env:
