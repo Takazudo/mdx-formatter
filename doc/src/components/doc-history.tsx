@@ -30,6 +30,7 @@ function HistoryIcon() {
       strokeLinecap="round"
       strokeLinejoin="round"
       className="h-[1.25rem] w-[1.25rem]"
+      aria-hidden="true"
     >
       <circle cx="12" cy="12" r="10" />
       <polyline points="12 6 12 12 16 14" />
@@ -48,6 +49,7 @@ function CloseIcon() {
       strokeLinecap="round"
       strokeLinejoin="round"
       className="h-[1.25rem] w-[1.25rem]"
+      aria-hidden="true"
     >
       <path d="M18 6L6 18M6 6l12 12" />
     </svg>
@@ -65,6 +67,7 @@ function ArrowLeftIcon() {
       strokeLinecap="round"
       strokeLinejoin="round"
       className="h-[1rem] w-[1rem]"
+      aria-hidden="true"
     >
       <path d="M19 12H5M12 19l-7-7 7-7" />
     </svg>
@@ -77,7 +80,7 @@ function ArrowLeftIcon() {
 
 function Spinner() {
   return (
-    <div className="flex items-center justify-center py-vsp-xl">
+    <div className="flex items-center justify-center py-vsp-xl" role="status" aria-label="Loading history">
       <span
         className="inline-block box-border rounded-full animate-spin"
         style={{
@@ -445,6 +448,7 @@ export function DocHistory({ slug, locale, basePath = "/" }: DocHistoryProps) {
   const handleClose = useCallback(() => {
     setView("closed");
     setDiffSelection(null);
+    setData(null);
   }, []);
 
   function handleSelectDiff(selection: DiffSelection) {
@@ -469,17 +473,7 @@ export function DocHistory({ slug, locale, basePath = "/" }: DocHistoryProps) {
     };
   }, [view]);
 
-  // Close on Escape key
-  useEffect(() => {
-    if (view === "closed") return;
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") handleClose();
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [view, handleClose]);
-
-  // Close on View Transition navigation
+  // Close on View Transition navigation (also resets cached data for new page)
   useEffect(() => {
     document.addEventListener("astro:after-swap", handleClose);
     return () => document.removeEventListener("astro:after-swap", handleClose);

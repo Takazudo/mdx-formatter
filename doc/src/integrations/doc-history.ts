@@ -83,6 +83,7 @@ export function docHistoryIntegration(): AstroIntegration {
                     if (!file) {
                       res.statusCode = 404;
                       res.setHeader("Content-Type", "application/json");
+                      res.setHeader("Access-Control-Allow-Origin", "*");
                       res.end(JSON.stringify({ error: "Not found" }));
                       return;
                     }
@@ -97,6 +98,7 @@ export function docHistoryIntegration(): AstroIntegration {
                       logger.warn(`Doc history generation failed for ${slug}: ${msg}`);
                       res.statusCode = 500;
                       res.setHeader("Content-Type", "application/json");
+                      res.setHeader("Access-Control-Allow-Origin", "*");
                       res.end(JSON.stringify({ error: msg }));
                     }
                   });
