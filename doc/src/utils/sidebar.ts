@@ -78,6 +78,7 @@ function resolveItem(item: SidebarItem, tree: NavNode[], lang: Locale): NavNode[
           href: undefined,
           children,
           sortOrder: item.sortOrder,
+          collapsed: item.collapsed,
         },
       ];
     }
