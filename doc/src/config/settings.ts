@@ -41,6 +41,7 @@ export const settings = {
   aiAssistant: false as boolean,
   docHistory: true,
   colorTweakPanel: false as boolean,
+  sidebarResizer: true as boolean,
   htmlPreview: undefined as HtmlPreviewConfig | undefined,
   versions: [
     {
