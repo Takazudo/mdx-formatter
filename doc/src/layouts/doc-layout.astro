@@ -96,8 +96,10 @@ const contentTransition = {
       <script is:inline>
         (function () {
           function applySidebarWidth() {
-            var w = localStorage.getItem("zudo-doc-sidebar-width");
-            if (w) document.documentElement.style.setProperty("--zd-sidebar-w", w + "px");
+            try {
+              var w = localStorage.getItem("zudo-doc-sidebar-width");
+              if (w && !isNaN(Number(w))) document.documentElement.style.setProperty("--zd-sidebar-w", w + "px");
+            } catch (e) {}
           }
           applySidebarWidth();
           document.addEventListener("astro:after-swap", applySidebarWidth);
