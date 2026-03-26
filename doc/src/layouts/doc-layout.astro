@@ -252,12 +252,12 @@ const contentTransition = {
               document.documentElement.style.cursor = "";
               document.documentElement.style.userSelect = "";
               ghost.remove();
-              if (targetWidth > 0) {
-                document.documentElement.style.setProperty("--zd-sidebar-w", targetWidth + "px");
-                localStorage.setItem("zudo-doc-sidebar-width", String(Math.round(targetWidth)));
-              }
               handle.removeEventListener("pointermove", onMove);
               handle.removeEventListener("pointerup", onUp);
+              if (targetWidth > 0) {
+                document.documentElement.style.setProperty("--zd-sidebar-w", targetWidth + "px");
+                try { localStorage.setItem("zudo-doc-sidebar-width", String(Math.round(targetWidth))); } catch (e) {}
+              }
             };
 
             handle.addEventListener("pointermove", onMove);
