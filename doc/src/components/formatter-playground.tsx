@@ -67,11 +67,10 @@ let wasmPromise: Promise<WasmModule> | null = null;
 function loadWasm(): Promise<WasmModule> {
   if (wasmPromise) return wasmPromise;
   wasmPromise = (async () => {
-    // Dynamic import with variable path to prevent Rollup from resolving
-    // at build time — the wasm-pkg dir is a build artifact from wasm-pack
-    // that may not exist in CI environments without Rust toolchain.
-    const wasmPath = '../wasm-pkg/mdx_formatter_wasm';
-    const mod = await import(/* @vite-ignore */ wasmPath);
+    // Import from public/wasm/ which is populated by build:wasm:doc.
+    // Uses BASE_URL for correct path resolution on the deployed site.
+    const wasmJsUrl = `${import.meta.env.BASE_URL}wasm/mdx_formatter_wasm.js`;
+    const mod = await import(/* @vite-ignore */ wasmJsUrl);
     await mod.default(
       `${import.meta.env.BASE_URL}wasm/mdx_formatter_wasm_bg.wasm`,
     );
