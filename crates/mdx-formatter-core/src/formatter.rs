@@ -1009,9 +1009,9 @@ fn collect_list_indentation_operations(
     lines: &[&str],
     operations: &mut Vec<FormatterOperation>,
 ) {
-    // Collect nesting levels for all list items
+    // Collect expected indentation for all list items.
     let mut nesting_levels: Vec<(usize, usize)> = Vec::new(); // (line_0indexed, expected_indent)
-    collect_list_nesting(node, 0, &mut nesting_levels);
+    collect_list_nesting(node, lines, 0, &mut nesting_levels);
 
     // Emit fix operations
     for (line_idx, expected_indent) in nesting_levels {
@@ -1042,13 +1042,14 @@ fn collect_list_indentation_operations(
 /// Recursively walk lists, tracking nesting level, collecting (line, indent) pairs.
 fn collect_list_nesting(
     node: &Node,
-    nesting_level: usize,
+    lines: &[&str],
+    current_indent: usize,
     result: &mut Vec<(usize, usize)>,
 ) {
     match node {
         Node::Root(root) => {
             for child in &root.children {
-                collect_list_nesting(child, 0, result);
+                collect_list_nesting(child, lines, 0, result);
             }
         }
         Node::List(list) => {
@@ -1056,16 +1057,16 @@ fn collect_list_nesting(
                 if let Node::ListItem(item) = child {
                     if let Some(pos) = &item.position {
                         let line_idx = pos.start.line - 1; // 0-indexed
-                        let expected_indent = nesting_level * 2;
-                        result.push((line_idx, expected_indent));
-                    }
-                    // Recurse into list item children looking for nested lists
-                    for sub_child in &item.children {
-                        if matches!(sub_child, Node::List(_)) {
-                            collect_list_nesting(sub_child, nesting_level + 1, result);
-                        } else {
-                            // Look deeper (e.g. paragraph inside list item may contain a list)
-                            collect_list_nesting(sub_child, nesting_level, result);
+                        result.push((line_idx, current_indent));
+
+                        let marker_width = lines
+                            .get(line_idx)
+                            .map(|line| list_marker_width(line.trim_start()))
+                            .unwrap_or(2);
+                        let child_indent = current_indent + marker_width;
+
+                        for sub_child in &item.children {
+                            collect_list_nesting(sub_child, lines, child_indent, result);
                         }
                     }
                 }
@@ -1073,12 +1074,12 @@ fn collect_list_nesting(
         }
         Node::Blockquote(bq) => {
             for child in &bq.children {
-                collect_list_nesting(child, nesting_level, result);
+                collect_list_nesting(child, lines, current_indent, result);
             }
         }
         Node::ListItem(item) => {
             for child in &item.children {
-                collect_list_nesting(child, nesting_level, result);
+                collect_list_nesting(child, lines, current_indent, result);
             }
         }
         _ => {}
@@ -1103,6 +1104,28 @@ fn is_ordered_list_marker(trimmed: &str) -> bool {
     }
     // Must be followed by space
     matches!(chars.next(), Some(' '))
+}
+
+fn list_marker_width(trimmed: &str) -> usize {
+    if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("+ ") {
+        return 2;
+    }
+
+    let mut width = 0;
+    for ch in trimmed.chars() {
+        width += ch.len_utf8();
+        if ch == '.' {
+            if trimmed[width..].starts_with(' ') {
+                return width + 1;
+            }
+            break;
+        }
+        if !ch.is_ascii_digit() {
+            break;
+        }
+    }
+
+    2
 }
 
 fn is_numbered_list_line(line: &str) -> bool {
@@ -1707,21 +1730,33 @@ fn ensure_block_element_spacing(lines: &mut Vec<String>) {
         if !trimmed.is_empty() && i + 1 < lines.len() {
             let next_trimmed = lines[i + 1].trim();
             if !next_trimmed.is_empty() {
+                let current_indent = leading_space_count(&lines[i]);
+                let next_indent = leading_space_count(&lines[i + 1]);
+                let top_level_transition = current_indent == 0 && next_indent == 0;
                 let needs_spacing =
                     // Paragraph → Heading
                     (is_paragraph_line(trimmed) && is_heading_line(next_trimmed))
                     // Paragraph → List
-                    || (is_paragraph_line(trimmed) && is_list_line(next_trimmed))
+                    || (top_level_transition
+                        && is_paragraph_line(trimmed)
+                        && is_list_line(next_trimmed))
                     // List → Paragraph
-                    || (is_list_line(trimmed) && is_paragraph_line(next_trimmed))
+                    || (top_level_transition
+                        && is_list_line(trimmed)
+                        && is_paragraph_line(next_trimmed))
                     // Paragraph → Code fence (opening)
                     || (is_paragraph_line(trimmed) && is_code_fence_line(next_trimmed))
                     // Code fence (closing) → Paragraph
                     || (is_code_fence_line(trimmed) && !inside_code_fence && is_paragraph_line(next_trimmed))
                     // Code fence (closing) → List
-                    || (is_code_fence_line(trimmed) && !inside_code_fence && is_list_line(next_trimmed))
+                    || (top_level_transition
+                        && is_code_fence_line(trimmed)
+                        && !inside_code_fence
+                        && is_list_line(next_trimmed))
                     // List → Code fence
-                    || (is_list_line(trimmed) && is_code_fence_line(next_trimmed));
+                    || (top_level_transition
+                        && is_list_line(trimmed)
+                        && is_code_fence_line(next_trimmed));
 
                 if needs_spacing {
                     insertions.push(i + 1);
@@ -1736,6 +1771,10 @@ fn ensure_block_element_spacing(lines: &mut Vec<String>) {
     for &pos in insertions.iter().rev() {
         lines.insert(pos, String::new());
     }
+}
+
+fn leading_space_count(line: &str) -> usize {
+    line.len() - line.trim_start_matches(' ').len()
 }
 
 /// Normalize consecutive empty lines to at most one empty line.
@@ -1821,6 +1860,20 @@ mod tests {
         let expected = "- item 1\n  - nested item";
         let result = format(input, &FormatterSettings::default());
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_ordered_list_continuation_stays_tight() {
+        let input = "1. A numbered item that wraps to\n   a continuation line\n2. Another item";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_nested_list_under_ordered_item_keeps_parent_indent() {
+        let input = "5. Parent item:\n   - Nested item that wraps to\n     a continuation line";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input);
     }
 
     #[test]
