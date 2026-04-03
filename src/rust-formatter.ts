@@ -32,26 +32,28 @@ function getPackageName(): string {
 }
 
 function loadNativeModule(): NativeFormat {
-  // Try platform-specific npm package first
-  const packageName = getPackageName();
-  if (packageName) {
-    try {
-      const native = require(packageName) as { format: NativeFormat };
-      return native.format;
-    } catch {
-      // Platform package not installed, try local build
-    }
-  }
-
-  // Try local build
+  // In the repo, prefer a freshly built local native module so tests exercise
+  // the code from the current checkout instead of the last published binary.
   try {
     const native = require('../crates/mdx-formatter-napi/mdx-formatter-napi.node') as {
       format: NativeFormat;
     };
     return native.format;
   } catch {
-    throw new Error('Rust native module not available. Build it with: pnpm build:rust');
+    // Local build not present, fall back to platform-specific npm package.
   }
+
+  const packageName = getPackageName();
+  if (packageName) {
+    try {
+      const native = require(packageName) as { format: NativeFormat };
+      return native.format;
+    } catch {
+      // Platform package not installed, surface a build hint below.
+    }
+  }
+
+  throw new Error('Rust native module not available. Build it with: pnpm build:rust');
 }
 
 /**

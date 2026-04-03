@@ -107,6 +107,20 @@ describe('Rust Formatter - Lists', () => {
     const result = await format(input, { settings: testSettings });
     expect(result).toBe(expected);
   });
+
+  it('should preserve ordered list continuation lines without injecting blank paragraphs', async () => {
+    const input =
+      '1. **Confirm with the user**: Before doing anything, use `AskUserQuestion` to\n   confirm what the user wants to document.\n2. **Understand the new info**: Ask the user what they learned or want to\n   document.';
+    const result = await format(input, { settings: testSettings });
+    expect(result).toBe(input);
+  });
+
+  it('should preserve nested bullets under ordered items with the parent content indent', async () => {
+    const input =
+      '5. **Write the content**: Follow the project conventions:\n   - Required frontmatter: `title` (string). Optional: `description`,\n     `sidebar_position` (number).\n   - Use available MDX components where appropriate.';
+    const result = await format(input, { settings: testSettings });
+    expect(result).toBe(input);
+  });
 });
 
 describe('Rust Formatter - MDX/JSX', () => {
