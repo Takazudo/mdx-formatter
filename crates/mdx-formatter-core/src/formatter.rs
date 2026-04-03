@@ -1002,19 +1002,20 @@ fn collect_block_jsx_empty_line_operations(
 
 /// Walk the AST and collect list indentation fix operations.
 ///
-/// For each list item, compares actual indentation against expected
-/// (nesting_level * 2 spaces) and emits FixListIndent if different.
+/// For each list item, computes the expected indentation from the actual
+/// marker width (e.g. `- ` = 2, `10. ` = 4) and emits FixListIndent
+/// if the current indentation differs.
 fn collect_list_indentation_operations(
     node: &Node,
     lines: &[&str],
     operations: &mut Vec<FormatterOperation>,
 ) {
     // Collect expected indentation for all list items.
-    let mut nesting_levels: Vec<(usize, usize)> = Vec::new(); // (line_0indexed, expected_indent)
-    collect_list_nesting(node, lines, 0, &mut nesting_levels);
+    let mut indent_targets: Vec<(usize, usize)> = Vec::new(); // (line_0indexed, expected_indent)
+    collect_list_nesting(node, lines, 0, &mut indent_targets);
 
     // Emit fix operations
-    for (line_idx, expected_indent) in nesting_levels {
+    for (line_idx, expected_indent) in indent_targets {
         if line_idx >= lines.len() {
             continue;
         }
@@ -1039,7 +1040,7 @@ fn collect_list_indentation_operations(
     }
 }
 
-/// Recursively walk lists, tracking nesting level, collecting (line, indent) pairs.
+/// Recursively walk lists, computing expected indent from marker widths, collecting (line, indent) pairs.
 fn collect_list_nesting(
     node: &Node,
     lines: &[&str],
@@ -1732,16 +1733,40 @@ fn ensure_block_element_spacing(lines: &mut Vec<String>) {
             if !next_trimmed.is_empty() {
                 let current_indent = leading_space_count(&lines[i]);
                 let next_indent = leading_space_count(&lines[i + 1]);
-                let top_level_transition = current_indent == 0 && next_indent == 0;
+                let same_level = current_indent == next_indent;
+
+                // Detect whether both lines are inside a list-item continuation.
+                // If so, suppress paragraph/list spacing to avoid breaking tight
+                // list structures (e.g. "5. Parent\n   cont\n   - child").
+                let in_list_continuation = same_level && current_indent > 0 && {
+                    let mut found = false;
+                    for j in (0..i).rev() {
+                        let prev = lines[j].as_str();
+                        let pt = prev.trim();
+                        if pt.is_empty() {
+                            break;
+                        }
+                        let pi = leading_space_count(prev);
+                        if pi < current_indent {
+                            if is_list_line(pt) {
+                                found = pi + list_marker_width(pt) == current_indent;
+                            }
+                            break;
+                        }
+                    }
+                    found
+                };
+
+                let sibling_level = same_level && !in_list_continuation;
                 let needs_spacing =
                     // Paragraph → Heading
                     (is_paragraph_line(trimmed) && is_heading_line(next_trimmed))
                     // Paragraph → List
-                    || (top_level_transition
+                    || (sibling_level
                         && is_paragraph_line(trimmed)
                         && is_list_line(next_trimmed))
                     // List → Paragraph
-                    || (top_level_transition
+                    || (sibling_level
                         && is_list_line(trimmed)
                         && is_paragraph_line(next_trimmed))
                     // Paragraph → Code fence (opening)
@@ -1749,12 +1774,12 @@ fn ensure_block_element_spacing(lines: &mut Vec<String>) {
                     // Code fence (closing) → Paragraph
                     || (is_code_fence_line(trimmed) && !inside_code_fence && is_paragraph_line(next_trimmed))
                     // Code fence (closing) → List
-                    || (top_level_transition
+                    || (sibling_level
                         && is_code_fence_line(trimmed)
                         && !inside_code_fence
                         && is_list_line(next_trimmed))
                     // List → Code fence
-                    || (top_level_transition
+                    || (sibling_level
                         && is_list_line(trimmed)
                         && is_code_fence_line(next_trimmed));
 
@@ -1872,6 +1897,14 @@ mod tests {
     #[test]
     fn test_nested_list_under_ordered_item_keeps_parent_indent() {
         let input = "5. Parent item:\n   - Nested item that wraps to\n     a continuation line";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_continuation_paragraph_then_nested_sublist() {
+        // Adversarial case: continuation paragraph followed by nested sublist at same indent
+        let input = "5. Parent item\n   continuation paragraph\n   - child item";
         let result = format(input, &FormatterSettings::default());
         assert_eq!(result, input);
     }
