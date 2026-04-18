@@ -5,6 +5,7 @@ use markdown::mdast::{
     AttributeContent, AttributeValue, Node,
 };
 use regex::Regex;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
@@ -34,9 +35,17 @@ use std::sync::LazyLock;
 static YAML_MAPPING_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(\s*)([\w][\w.-]*):\s+(.+)$").unwrap());
 
-// Regex for block scalar indicators (>, |, >-, |-, >+, |+)
+// Regex for block scalar indicators (>, |, >-, |-, >+, |+, |2-, >1+, etc.)
+// Allows optional indent indicator (digit) before the optional chomping indicator.
 static BLOCK_SCALAR_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[|>][-+]?$").unwrap());
+    LazyLock::new(|| Regex::new(r"^[|>]\d*[-+]?$").unwrap());
+
+// Regex matching a top-level key line whose value is a block scalar indicator.
+// Captures: (key, indicator) from lines like `description: >-`, `body: |2-`, `text: >+ # note`
+// Order: optional indent digit THEN optional chomping char, per the YAML spec.
+// Allows an optional trailing comment after whitespace.
+static YAML_BLOCK_SCALAR_KEY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([\w][\w.-]*):\s+([|>]\d*[-+]?)(\s+#.*)?$").unwrap());
 
 // Regex for values that start with special YAML chars
 static SPECIAL_START_RE: LazyLock<Regex> =
@@ -1275,6 +1284,61 @@ fn preprocess_yaml_for_parsing(yaml_text: &str) -> String {
     result.join("\n")
 }
 
+/// Scan raw YAML frontmatter text for top-level keys whose values are block
+/// scalars (`>`, `>-`, `>+`, `|`, `|-`, `|+`).
+///
+/// Returns a map from key name to the original verbatim block representation,
+/// i.e. the indicator (`>-`) plus all indented content lines joined with `\n`.
+/// Only top-level (non-indented) keys are handled because nested block scalars
+/// are rare in frontmatter and the formatter only walks one level deep anyway.
+fn extract_block_scalars(yaml_text: &str) -> HashMap<String, String> {
+    let mut result: HashMap<String, String> = HashMap::new();
+    let lines: Vec<&str> = yaml_text.split('\n').collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i];
+        // Only match top-level keys (no leading whitespace)
+        if let Some(caps) = YAML_BLOCK_SCALAR_KEY_RE.captures(line) {
+            let key = caps.get(1).map_or("", |m| m.as_str()).to_string();
+            let indicator = caps.get(2).map_or("", |m| m.as_str()).to_string();
+            i += 1;
+
+            // Collect all indented content lines that follow
+            let mut content_lines: Vec<&str> = Vec::new();
+            while i < lines.len() {
+                let content_line = lines[i];
+                // A non-empty line that doesn't start with whitespace signals end of block
+                if !content_line.is_empty() && !content_line.starts_with(' ') && !content_line.starts_with('\t') {
+                    break;
+                }
+                content_lines.push(content_line);
+                i += 1;
+            }
+
+            // Trim trailing blank lines: an empty line at the end of the
+            // collected range belongs to the separator between keys, not
+            // to the block scalar's content, so drop it to avoid emitting
+            // a stray blank line inside the reformatted frontmatter.
+            while content_lines.last().map_or(false, |l| l.is_empty()) {
+                content_lines.pop();
+            }
+
+            // Preserve: indicator + content lines joined
+            let block_text = if content_lines.is_empty() {
+                indicator
+            } else {
+                format!("{}\n{}", indicator, content_lines.join("\n"))
+            };
+            result.insert(key, block_text);
+        } else {
+            i += 1;
+        }
+    }
+
+    result
+}
+
 /// Walk AST and collect YAML frontmatter formatting operations.
 ///
 /// For each `Node::Yaml` node, parses the YAML content, reformats it using
@@ -1292,6 +1356,10 @@ fn collect_yaml_format_operations(
                 if let Some(pos) = &yaml_node.position {
                     let mut yaml_to_parse = yaml_node.value.clone();
 
+                    // Capture any block scalars from the original text before
+                    // serde_yaml flattens them to plain strings.
+                    let block_scalars = extract_block_scalars(&yaml_node.value);
+
                     // Pre-process to fix unsafe values
                     if settings.fix_unsafe_values {
                         yaml_to_parse = preprocess_yaml_for_parsing(&yaml_to_parse);
@@ -1304,7 +1372,7 @@ fn collect_yaml_format_operations(
                     };
 
                     // Format using custom emitter that respects settings
-                    let clean = emit_yaml(&parsed, settings, 0);
+                    let clean = emit_yaml(&parsed, settings, 0, &block_scalars);
 
                     // Only replace if different from original
                     if clean != yaml_node.value {
@@ -1334,10 +1402,12 @@ fn collect_yaml_format_operations(
 ///
 /// Matches js-yaml's output behavior: uses JSON_SCHEMA-compatible formatting,
 /// quotes strings when needed, and respects the configured quoting style.
-fn emit_yaml(value: &serde_yaml::Value, settings: &FormatYamlFrontmatterSetting, indent_level: usize) -> String {
+/// `block_scalars` maps key names to their original verbatim block representation
+/// so that folded/literal scalars are not collapsed to plain strings.
+fn emit_yaml(value: &serde_yaml::Value, settings: &FormatYamlFrontmatterSetting, indent_level: usize, block_scalars: &HashMap<String, String>) -> String {
     match value {
         serde_yaml::Value::Mapping(map) => {
-            emit_yaml_mapping(map, settings, indent_level)
+            emit_yaml_mapping(map, settings, indent_level, block_scalars)
         }
         _ => emit_yaml_scalar(value, settings),
     }
@@ -1348,6 +1418,7 @@ fn emit_yaml_mapping(
     map: &serde_yaml::Mapping,
     settings: &FormatYamlFrontmatterSetting,
     indent_level: usize,
+    block_scalars: &HashMap<String, String>,
 ) -> String {
     let indent_str = " ".repeat(indent_level * settings.indent);
     let mut lines: Vec<String> = Vec::new();
@@ -1358,10 +1429,19 @@ fn emit_yaml_mapping(
             other => emit_yaml_scalar(other, settings),
         };
 
+        // If this key's value was a block scalar in the original YAML, preserve
+        // it verbatim instead of collapsing it to a plain scalar.
+        if indent_level == 0 {
+            if let Some(block_text) = block_scalars.get(&key_str) {
+                lines.push(format!("{}{}: {}", indent_str, key_str, block_text));
+                continue;
+            }
+        }
+
         match value {
             serde_yaml::Value::Mapping(nested_map) => {
                 lines.push(format!("{}{}:", indent_str, key_str));
-                let nested = emit_yaml_mapping(nested_map, settings, indent_level + 1);
+                let nested = emit_yaml_mapping(nested_map, settings, indent_level + 1, block_scalars);
                 lines.push(nested);
             }
             serde_yaml::Value::Sequence(seq) => {
@@ -1371,7 +1451,7 @@ fn emit_yaml_mapping(
                     match item {
                         serde_yaml::Value::Mapping(item_map) => {
                             // Sequence of mappings: first key on same line as `-`
-                            let nested = emit_yaml_mapping(item_map, settings, indent_level + 2);
+                            let nested = emit_yaml_mapping(item_map, settings, indent_level + 2, block_scalars);
                             let nested_lines: Vec<&str> = nested.split('\n').collect();
                             if let Some(first) = nested_lines.first() {
                                 lines.push(format!("{}- {}", child_indent, first.trim()));
@@ -1651,7 +1731,22 @@ fn is_list_line(trimmed: &str) -> bool {
 
 /// Check if a line is a code fence (opening or closing).
 fn is_code_fence_line(trimmed: &str) -> bool {
-    trimmed.starts_with("```") || trimmed.starts_with("~~~")
+    fence_delimiter(trimmed).is_some()
+}
+
+/// Extract the fence delimiter character and length from a fence line.
+/// Returns `Some((char, count))` where char is `` ` `` or `~` and count >= 3.
+/// Returns `None` if the line is not a fence line.
+fn fence_delimiter(trimmed: &str) -> Option<(char, usize)> {
+    let c = if trimmed.starts_with("```") {
+        '`'
+    } else if trimmed.starts_with("~~~") {
+        '~'
+    } else {
+        return None;
+    };
+    let count = trimmed.chars().take_while(|&ch| ch == c).count();
+    Some((c, count))
 }
 
 /// Check if a line is a heading (# through ######).
@@ -1685,6 +1780,10 @@ fn is_paragraph_line(trimmed: &str) -> bool {
 /// (which handle headings and JSX).
 fn ensure_block_element_spacing(lines: &mut Vec<String>) {
     let mut inside_code_fence = false;
+    // Track the opening fence delimiter so inner fences don't prematurely close it.
+    // A fence opened with N backticks can only be closed by N+ backticks of the same char.
+    let mut fence_char: char = '`';
+    let mut fence_len: usize = 0;
     let mut inside_frontmatter = false;
     let mut at_start = true;
     let mut insertions: Vec<usize> = Vec::new();
@@ -1712,13 +1811,33 @@ fn ensure_block_element_spacing(lines: &mut Vec<String>) {
             continue;
         }
 
-        // Track code fence boundaries
-        if is_code_fence_line(trimmed) {
-            inside_code_fence = !inside_code_fence;
-        }
+        // Track code fence boundaries, respecting the opening delimiter length.
+        // A fence opened with N backticks/tildes can only be closed by a line that
+        // uses the same fence character and has >= N of them.  Inner fences (e.g. a
+        // 3-backtick block inside a 4-backtick fence) must not prematurely close the
+        // outer fence, and their lines must be skipped like regular content lines.
+        let is_outer_fence_line = if let Some((c, len)) = fence_delimiter(trimmed) {
+            if !inside_code_fence {
+                // Opening a new fence
+                inside_code_fence = true;
+                fence_char = c;
+                fence_len = len;
+                true // this is the opening fence line — don't skip
+            } else if c == fence_char && len >= fence_len {
+                // Closing the outer fence
+                inside_code_fence = false;
+                true // this is the closing fence line — don't skip
+            } else {
+                // Inner fence line — treat as content, skip below
+                false
+            }
+        } else {
+            false
+        };
 
-        // Skip lines inside code blocks (but not the fence lines themselves)
-        if inside_code_fence && !is_code_fence_line(trimmed) {
+        // Skip lines inside code blocks (content lines and inner fence lines),
+        // but not the opening/closing fence lines of the outermost fence.
+        if inside_code_fence && !is_outer_fence_line {
             i += 1;
             continue;
         }
@@ -2518,5 +2637,102 @@ mod tests {
         let first = format(input, &settings);
         let second = format(&first, &settings);
         assert_eq!(first, second, "JSX indent should be idempotent");
+    }
+
+    // ================================================================
+    // Block scalar regex and extraction tests (items 1 & 2 from #77)
+    // ================================================================
+
+    #[test]
+    fn test_block_scalar_re_variants() {
+        // All valid YAML block scalar indicators must match
+        for indicator in &[">", "|", ">-", "|-", ">+", "|+", "|2-", ">1+", "|2", ">3"] {
+            assert!(
+                BLOCK_SCALAR_RE.is_match(indicator),
+                "BLOCK_SCALAR_RE should match {:?}",
+                indicator
+            );
+        }
+        // Non-indicators must NOT match
+        for not_indicator in &["text", "42", ">text", "| extra"] {
+            assert!(
+                !BLOCK_SCALAR_RE.is_match(not_indicator),
+                "BLOCK_SCALAR_RE should NOT match {:?}",
+                not_indicator
+            );
+        }
+    }
+
+    #[test]
+    fn test_yaml_block_scalar_key_re_indent_indicators() {
+        // |2- and >1+ have the indent digit before the chomping char
+        for key_line in &[
+            "description: |2-",
+            "description: >1+",
+            "body: |+",
+            "body: >+",
+        ] {
+            assert!(
+                YAML_BLOCK_SCALAR_KEY_RE.is_match(key_line),
+                "YAML_BLOCK_SCALAR_KEY_RE should match {:?}",
+                key_line
+            );
+        }
+    }
+
+    #[test]
+    fn test_yaml_block_scalar_key_re_trailing_comment() {
+        // A trailing comment must not prevent the match
+        let line = "description: >- # this is a note";
+        assert!(
+            YAML_BLOCK_SCALAR_KEY_RE.is_match(line),
+            "Trailing comment should not prevent block scalar detection"
+        );
+    }
+
+    #[test]
+    fn test_block_scalar_with_indent_indicator_preserved() {
+        // |2- indicator: formatter must keep the block verbatim
+        let input = "---\ntitle: Test\nbody: |2-\n  Line one\n  Line two\nsidebar: 1\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input, "|2- block scalar should be preserved");
+    }
+
+    #[test]
+    fn test_block_scalar_keep_plus_chomping() {
+        // >+ and |+ must be preserved
+        let input = "---\ntitle: Test\ndescription: >+\n  Long text here.\nsidebar: 1\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input, ">+ block scalar should be preserved");
+    }
+
+    #[test]
+    fn test_block_scalar_as_last_key() {
+        // When the block scalar is the last key (no trailing separator blank line)
+        let input = "---\ntitle: Test\ndescription: >-\n  Long text here.\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input, "Block scalar as last key should be preserved");
+    }
+
+    #[test]
+    fn test_block_scalar_middle_key_no_trailing_blank() {
+        // Block scalar followed by a blank separator + another key must NOT
+        // bake the blank line into the preserved block text.
+        let input = "---\ntitle: Test\ndescription: >-\n  Long text here.\nsidebar: 1\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input, "Block scalar in middle should not absorb trailing blank");
+    }
+
+    #[test]
+    fn test_nested_block_scalar_current_behavior() {
+        // Nested block scalars (e.g. meta.description: >-) are currently NOT
+        // preserved by the formatter — the value is flattened to a plain string.
+        // This test documents the current behavior so regressions are visible.
+        // See GitHub issue https://github.com/Takazudo/mdx-formatter/issues/78 for the planned full-path-tracking fix.
+        let input = "---\ntitle: Test\nmeta:\n  description: >-\n    Long nested text.\nsidebar: 1\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        // The formatter should at least be idempotent (not crash or diverge)
+        let second = format(&result, &FormatterSettings::default());
+        assert_eq!(result, second, "Nested block scalar output must be idempotent");
     }
 }
