@@ -110,7 +110,7 @@ jobs:
             STATUS="mdx-formatter deploy cancelled"
           fi
 
-          COMMIT_MSG=$(echo "$RAW_COMMIT_MSG" | head -1 | sed 's/"/\\"/g')
+          COMMIT_MSG=$(echo "$RAW_COMMIT_MSG" | head -1 | sed 's/\\/\\\\/g; s/"/\\"/g')
           SHORT_SHA=$(echo "$GITHUB_SHA_VAL" | cut -c1-7)
           RUN_URL="${SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
 
