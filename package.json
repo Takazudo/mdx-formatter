@@ -1,6 +1,6 @@
 {
   "name": "@takazudo/mdx-formatter",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "description": "AST-based markdown and MDX formatter with Japanese text support",
   "type": "module",
   "main": "dist/index.js",
