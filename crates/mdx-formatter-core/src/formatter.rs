@@ -5,6 +5,7 @@ use markdown::mdast::{
     AttributeContent, AttributeValue, Node,
 };
 use regex::Regex;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
@@ -37,6 +38,11 @@ static YAML_MAPPING_RE: LazyLock<Regex> =
 // Regex for block scalar indicators (>, |, >-, |-, >+, |+)
 static BLOCK_SCALAR_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[|>][-+]?$").unwrap());
+
+// Regex matching a top-level key line whose value is a block scalar indicator.
+// Captures: (key, indicator) from lines like `description: >-`
+static YAML_BLOCK_SCALAR_KEY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([\w][\w.-]*):\s+([|>][-+]?\d*)$").unwrap());
 
 // Regex for values that start with special YAML chars
 static SPECIAL_START_RE: LazyLock<Regex> =
@@ -1275,6 +1281,53 @@ fn preprocess_yaml_for_parsing(yaml_text: &str) -> String {
     result.join("\n")
 }
 
+/// Scan raw YAML frontmatter text for top-level keys whose values are block
+/// scalars (`>`, `>-`, `>+`, `|`, `|-`, `|+`).
+///
+/// Returns a map from key name to the original verbatim block representation,
+/// i.e. the indicator (`>-`) plus all indented content lines joined with `\n`.
+/// Only top-level (non-indented) keys are handled because nested block scalars
+/// are rare in frontmatter and the formatter only walks one level deep anyway.
+fn extract_block_scalars(yaml_text: &str) -> HashMap<String, String> {
+    let mut result: HashMap<String, String> = HashMap::new();
+    let lines: Vec<&str> = yaml_text.split('\n').collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i];
+        // Only match top-level keys (no leading whitespace)
+        if let Some(caps) = YAML_BLOCK_SCALAR_KEY_RE.captures(line) {
+            let key = caps.get(1).map_or("", |m| m.as_str()).to_string();
+            let indicator = caps.get(2).map_or("", |m| m.as_str()).to_string();
+            i += 1;
+
+            // Collect all indented content lines that follow
+            let mut content_lines: Vec<&str> = Vec::new();
+            while i < lines.len() {
+                let content_line = lines[i];
+                // A non-empty line that doesn't start with whitespace signals end of block
+                if !content_line.is_empty() && !content_line.starts_with(' ') && !content_line.starts_with('\t') {
+                    break;
+                }
+                content_lines.push(content_line);
+                i += 1;
+            }
+
+            // Preserve: indicator + content lines joined
+            let block_text = if content_lines.is_empty() {
+                indicator
+            } else {
+                format!("{}\n{}", indicator, content_lines.join("\n"))
+            };
+            result.insert(key, block_text);
+        } else {
+            i += 1;
+        }
+    }
+
+    result
+}
+
 /// Walk AST and collect YAML frontmatter formatting operations.
 ///
 /// For each `Node::Yaml` node, parses the YAML content, reformats it using
@@ -1292,6 +1345,10 @@ fn collect_yaml_format_operations(
                 if let Some(pos) = &yaml_node.position {
                     let mut yaml_to_parse = yaml_node.value.clone();
 
+                    // Capture any block scalars from the original text before
+                    // serde_yaml flattens them to plain strings.
+                    let block_scalars = extract_block_scalars(&yaml_node.value);
+
                     // Pre-process to fix unsafe values
                     if settings.fix_unsafe_values {
                         yaml_to_parse = preprocess_yaml_for_parsing(&yaml_to_parse);
@@ -1304,7 +1361,7 @@ fn collect_yaml_format_operations(
                     };
 
                     // Format using custom emitter that respects settings
-                    let clean = emit_yaml(&parsed, settings, 0);
+                    let clean = emit_yaml(&parsed, settings, 0, &block_scalars);
 
                     // Only replace if different from original
                     if clean != yaml_node.value {
@@ -1334,10 +1391,12 @@ fn collect_yaml_format_operations(
 ///
 /// Matches js-yaml's output behavior: uses JSON_SCHEMA-compatible formatting,
 /// quotes strings when needed, and respects the configured quoting style.
-fn emit_yaml(value: &serde_yaml::Value, settings: &FormatYamlFrontmatterSetting, indent_level: usize) -> String {
+/// `block_scalars` maps key names to their original verbatim block representation
+/// so that folded/literal scalars are not collapsed to plain strings.
+fn emit_yaml(value: &serde_yaml::Value, settings: &FormatYamlFrontmatterSetting, indent_level: usize, block_scalars: &HashMap<String, String>) -> String {
     match value {
         serde_yaml::Value::Mapping(map) => {
-            emit_yaml_mapping(map, settings, indent_level)
+            emit_yaml_mapping(map, settings, indent_level, block_scalars)
         }
         _ => emit_yaml_scalar(value, settings),
     }
@@ -1348,6 +1407,7 @@ fn emit_yaml_mapping(
     map: &serde_yaml::Mapping,
     settings: &FormatYamlFrontmatterSetting,
     indent_level: usize,
+    block_scalars: &HashMap<String, String>,
 ) -> String {
     let indent_str = " ".repeat(indent_level * settings.indent);
     let mut lines: Vec<String> = Vec::new();
@@ -1358,10 +1418,19 @@ fn emit_yaml_mapping(
             other => emit_yaml_scalar(other, settings),
         };
 
+        // If this key's value was a block scalar in the original YAML, preserve
+        // it verbatim instead of collapsing it to a plain scalar.
+        if indent_level == 0 {
+            if let Some(block_text) = block_scalars.get(&key_str) {
+                lines.push(format!("{}{}: {}", indent_str, key_str, block_text));
+                continue;
+            }
+        }
+
         match value {
             serde_yaml::Value::Mapping(nested_map) => {
                 lines.push(format!("{}{}:", indent_str, key_str));
-                let nested = emit_yaml_mapping(nested_map, settings, indent_level + 1);
+                let nested = emit_yaml_mapping(nested_map, settings, indent_level + 1, block_scalars);
                 lines.push(nested);
             }
             serde_yaml::Value::Sequence(seq) => {
@@ -1371,7 +1440,7 @@ fn emit_yaml_mapping(
                     match item {
                         serde_yaml::Value::Mapping(item_map) => {
                             // Sequence of mappings: first key on same line as `-`
-                            let nested = emit_yaml_mapping(item_map, settings, indent_level + 2);
+                            let nested = emit_yaml_mapping(item_map, settings, indent_level + 2, block_scalars);
                             let nested_lines: Vec<&str> = nested.split('\n').collect();
                             if let Some(first) = nested_lines.first() {
                                 lines.push(format!("{}- {}", child_indent, first.trim()));
