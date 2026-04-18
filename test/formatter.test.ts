@@ -27,6 +27,45 @@ describe('Markdown Formatter', () => {
       expect(result).toBe(expected);
     });
 
+    // Regression: issue #68 — a 3-backtick fence INSIDE a 4-backtick outer fence
+    // must be treated as verbatim content.  The post-processing pass previously
+    // mis-tracked the outer fence boundary and inserted blank lines inside the
+    // inner fence (after its opening line and before its closing line).
+    it('should not insert blank lines inside a 3-backtick fence that is inside a 4-backtick fence', async () => {
+      const input = [
+        '````mdx',
+        '```ts',
+        'export default {',
+        '  site: "https://example.com",',
+        '};',
+        '```',
+        '````',
+      ].join('\n');
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should not insert blank lines inside an inner fence when outer fence wraps JSX', async () => {
+      const input = [
+        '````mdx',
+        '<Details title="Example">',
+        '',
+        '```ts',
+        'export default {',
+        '  site: "https://example.com",',
+        '  output: "static",',
+        '};',
+        '```',
+        '',
+        '</Details>',
+        '````',
+      ].join('\n');
+      const result = await format(input, { settings: testSettings });
+      // The inner ```ts fence must be verbatim — no blank lines added inside it
+      expect(result).not.toMatch(/```ts\n\n/);
+      expect(result).not.toMatch(/\n\n```\n/);
+    });
+
     it('should handle frontmatter', async () => {
       const input = '---\ntitle: Test\n---\n\n# Content';
       const expected = '---\ntitle: Test\n---\n\n# Content';

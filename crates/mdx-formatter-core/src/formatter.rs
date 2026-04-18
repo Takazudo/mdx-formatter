@@ -1654,6 +1654,21 @@ fn is_code_fence_line(trimmed: &str) -> bool {
     trimmed.starts_with("```") || trimmed.starts_with("~~~")
 }
 
+/// Extract the fence delimiter character and length from a fence line.
+/// Returns `Some((char, count))` where char is `` ` `` or `~` and count >= 3.
+/// Returns `None` if the line is not a fence line.
+fn fence_delimiter(trimmed: &str) -> Option<(char, usize)> {
+    let c = if trimmed.starts_with("```") {
+        '`'
+    } else if trimmed.starts_with("~~~") {
+        '~'
+    } else {
+        return None;
+    };
+    let count = trimmed.chars().take_while(|&ch| ch == c).count();
+    Some((c, count))
+}
+
 /// Check if a line is a heading (# through ######).
 fn is_heading_line(trimmed: &str) -> bool {
     trimmed.starts_with("# ")
@@ -1685,6 +1700,10 @@ fn is_paragraph_line(trimmed: &str) -> bool {
 /// (which handle headings and JSX).
 fn ensure_block_element_spacing(lines: &mut Vec<String>) {
     let mut inside_code_fence = false;
+    // Track the opening fence delimiter so inner fences don't prematurely close it.
+    // A fence opened with N backticks can only be closed by N+ backticks of the same char.
+    let mut fence_char: char = '`';
+    let mut fence_len: usize = 0;
     let mut inside_frontmatter = false;
     let mut at_start = true;
     let mut insertions: Vec<usize> = Vec::new();
@@ -1712,13 +1731,33 @@ fn ensure_block_element_spacing(lines: &mut Vec<String>) {
             continue;
         }
 
-        // Track code fence boundaries
-        if is_code_fence_line(trimmed) {
-            inside_code_fence = !inside_code_fence;
-        }
+        // Track code fence boundaries, respecting the opening delimiter length.
+        // A fence opened with N backticks/tildes can only be closed by a line that
+        // uses the same fence character and has >= N of them.  Inner fences (e.g. a
+        // 3-backtick block inside a 4-backtick fence) must not prematurely close the
+        // outer fence, and their lines must be skipped like regular content lines.
+        let is_outer_fence_line = if let Some((c, len)) = fence_delimiter(trimmed) {
+            if !inside_code_fence {
+                // Opening a new fence
+                inside_code_fence = true;
+                fence_char = c;
+                fence_len = len;
+                true // this is the opening fence line — don't skip
+            } else if c == fence_char && len >= fence_len {
+                // Closing the outer fence
+                inside_code_fence = false;
+                true // this is the closing fence line — don't skip
+            } else {
+                // Inner fence line — treat as content, skip below
+                false
+            }
+        } else {
+            false
+        };
 
-        // Skip lines inside code blocks (but not the fence lines themselves)
-        if inside_code_fence && !is_code_fence_line(trimmed) {
+        // Skip lines inside code blocks (content lines and inner fence lines),
+        // but not the opening/closing fence lines of the outermost fence.
+        if inside_code_fence && !is_outer_fence_line {
             i += 1;
             continue;
         }
