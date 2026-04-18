@@ -1284,56 +1284,115 @@ fn preprocess_yaml_for_parsing(yaml_text: &str) -> String {
     result.join("\n")
 }
 
-/// Scan raw YAML frontmatter text for top-level keys whose values are block
-/// scalars (`>`, `>-`, `>+`, `|`, `|-`, `|+`).
+/// Scan raw YAML frontmatter text for keys whose values are block scalars
+/// (`>`, `>-`, `>+`, `|`, `|-`, `|+`), at any nesting depth.
 ///
-/// Returns a map from key name to the original verbatim block representation,
-/// i.e. the indicator (`>-`) plus all indented content lines joined with `\n`.
-/// Only top-level (non-indented) keys are handled because nested block scalars
-/// are rare in frontmatter and the formatter only walks one level deep anyway.
-fn extract_block_scalars(yaml_text: &str) -> HashMap<String, String> {
-    let mut result: HashMap<String, String> = HashMap::new();
+/// Returns a map from **full path as a vector of segments** (e.g.
+/// `["meta", "description"]`) to the original verbatim block representation:
+/// the indicator (`>-`) plus all content lines joined with `\n`. Using a
+/// vector (rather than a dotted string) is intentional — a top-level key
+/// literally named `"a.b"` and a nested `a.b` path must not collide.
+///
+/// Sequence items are **not** tracked: mappings inside a sequence never
+/// produce a recorded path because the emitter cannot thread sequence
+/// position through the preserved-map lookup. Nested block scalars inside
+/// sequence-of-mappings are vanishingly rare in frontmatter.
+///
+/// Parent keys that require YAML quoting (spaces, special chars) are not
+/// tracked either — the simple identifier-only heuristic used for pushing
+/// onto the path stack is a deliberate scope limit. Such frontmatter is
+/// extremely rare and would need a full YAML-aware scanner to handle.
+fn extract_block_scalars(yaml_text: &str) -> HashMap<Vec<String>, String> {
+    let mut result: HashMap<Vec<String>, String> = HashMap::new();
     let lines: Vec<&str> = yaml_text.split('\n').collect();
+    // Stack of (indent, key) entries representing the current mapping path.
+    let mut path_stack: Vec<(usize, String)> = Vec::new();
     let mut i = 0;
 
     while i < lines.len() {
         let line = lines[i];
-        // Only match top-level keys (no leading whitespace)
-        if let Some(caps) = YAML_BLOCK_SCALAR_KEY_RE.captures(line) {
+        // Skip blank and comment-only lines without touching the path stack.
+        if line.trim().is_empty() || line.trim_start().starts_with('#') {
+            i += 1;
+            continue;
+        }
+
+        let indent = line.len() - line.trim_start().len();
+        let trimmed = &line[indent..];
+
+        // A non-blank line at indent `n` means any path-stack entries at
+        // indent >= n are no longer ancestors of this line.
+        while path_stack.last().is_some_and(|(d, _)| *d >= indent) {
+            path_stack.pop();
+        }
+
+        // Sequence items (`- ...` / `-`) interrupt mapping nesting — don't
+        // try to track paths through them.
+        if trimmed == "-" || trimmed.starts_with("- ") {
+            i += 1;
+            continue;
+        }
+
+        if let Some(caps) = YAML_BLOCK_SCALAR_KEY_RE.captures(trimmed) {
             let key = caps.get(1).map_or("", |m| m.as_str()).to_string();
             let indicator = caps.get(2).map_or("", |m| m.as_str()).to_string();
+
+            let mut full_path: Vec<String> =
+                path_stack.iter().map(|(_, k)| k.clone()).collect();
+            full_path.push(key);
+
             i += 1;
 
-            // Collect all indented content lines that follow
+            // Collect content lines: anything indented strictly deeper than
+            // the key line, plus blank lines interleaved among them.
             let mut content_lines: Vec<&str> = Vec::new();
             while i < lines.len() {
                 let content_line = lines[i];
-                // A non-empty line that doesn't start with whitespace signals end of block
-                if !content_line.is_empty() && !content_line.starts_with(' ') && !content_line.starts_with('\t') {
+                if content_line.is_empty() {
+                    content_lines.push(content_line);
+                    i += 1;
+                    continue;
+                }
+                let content_indent =
+                    content_line.len() - content_line.trim_start().len();
+                if content_indent <= indent {
                     break;
                 }
                 content_lines.push(content_line);
                 i += 1;
             }
 
-            // Trim trailing blank lines: an empty line at the end of the
-            // collected range belongs to the separator between keys, not
-            // to the block scalar's content, so drop it to avoid emitting
-            // a stray blank line inside the reformatted frontmatter.
-            while content_lines.last().map_or(false, |l| l.is_empty()) {
+            // Trim trailing blank lines so separator blanks between sibling
+            // keys don't get baked into the preserved block text.
+            while content_lines.last().is_some_and(|l| l.is_empty()) {
                 content_lines.pop();
             }
 
-            // Preserve: indicator + content lines joined
             let block_text = if content_lines.is_empty() {
                 indicator
             } else {
                 format!("{}\n{}", indicator, content_lines.join("\n"))
             };
-            result.insert(key, block_text);
-        } else {
-            i += 1;
+            result.insert(full_path, block_text);
+            continue;
         }
+
+        // A plain mapping key (`foo:` or `foo: value`) may introduce a new
+        // path level. Push it onto the stack so deeper lines can resolve
+        // their full path. Restricted to identifier-like characters — same
+        // set the emitter sees for unquoted keys.
+        if let Some(colon_pos) = trimmed.find(':') {
+            let key_candidate = &trimmed[..colon_pos];
+            if !key_candidate.is_empty()
+                && key_candidate
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+            {
+                path_stack.push((indent, key_candidate.to_string()));
+            }
+        }
+
+        i += 1;
     }
 
     result
@@ -1402,23 +1461,33 @@ fn collect_yaml_format_operations(
 ///
 /// Matches js-yaml's output behavior: uses JSON_SCHEMA-compatible formatting,
 /// quotes strings when needed, and respects the configured quoting style.
-/// `block_scalars` maps key names to their original verbatim block representation
-/// so that folded/literal scalars are not collapsed to plain strings.
-fn emit_yaml(value: &serde_yaml::Value, settings: &FormatYamlFrontmatterSetting, indent_level: usize, block_scalars: &HashMap<String, String>) -> String {
+/// `block_scalars` maps **full path segment vectors** to the original
+/// verbatim block representation so that folded/literal scalars at any
+/// nesting level are not collapsed to plain strings.
+fn emit_yaml(value: &serde_yaml::Value, settings: &FormatYamlFrontmatterSetting, indent_level: usize, block_scalars: &HashMap<Vec<String>, String>) -> String {
     match value {
         serde_yaml::Value::Mapping(map) => {
-            emit_yaml_mapping(map, settings, indent_level, block_scalars)
+            emit_yaml_mapping(map, settings, indent_level, Some(Vec::new()), block_scalars)
         }
         _ => emit_yaml_scalar(value, settings),
     }
 }
 
 /// Emit a YAML mapping (key-value pairs) with proper indentation.
+///
+/// `path_prefix` is `Some(segments)` when this mapping sits on a path
+/// `extract_block_scalars` can resolve (the frontmatter root or any mapping
+/// reached without crossing a sequence). It is `None` inside sequence items
+/// and their descendants, which disables block-scalar lookup entirely —
+/// the extractor never records paths through sequences, so attempting a
+/// lookup there would only produce false positives against same-named keys
+/// elsewhere in the document.
 fn emit_yaml_mapping(
     map: &serde_yaml::Mapping,
     settings: &FormatYamlFrontmatterSetting,
     indent_level: usize,
-    block_scalars: &HashMap<String, String>,
+    path_prefix: Option<Vec<String>>,
+    block_scalars: &HashMap<Vec<String>, String>,
 ) -> String {
     let indent_str = " ".repeat(indent_level * settings.indent);
     let mut lines: Vec<String> = Vec::new();
@@ -1429,10 +1498,13 @@ fn emit_yaml_mapping(
             other => emit_yaml_scalar(other, settings),
         };
 
-        // If this key's value was a block scalar in the original YAML, preserve
-        // it verbatim instead of collapsing it to a plain scalar.
-        if indent_level == 0 {
-            if let Some(block_text) = block_scalars.get(&key_str) {
+        // Build the full path only when tracking is enabled. Inside a
+        // sequence (`path_prefix == None`), skip preservation entirely —
+        // the extractor does not record sequence paths.
+        if let Some(prefix) = path_prefix.as_ref() {
+            let mut full_path = prefix.clone();
+            full_path.push(key_str.clone());
+            if let Some(block_text) = block_scalars.get(&full_path) {
                 lines.push(format!("{}{}: {}", indent_str, key_str, block_text));
                 continue;
             }
@@ -1441,7 +1513,12 @@ fn emit_yaml_mapping(
         match value {
             serde_yaml::Value::Mapping(nested_map) => {
                 lines.push(format!("{}{}:", indent_str, key_str));
-                let nested = emit_yaml_mapping(nested_map, settings, indent_level + 1, block_scalars);
+                let next_prefix = path_prefix.as_ref().map(|p| {
+                    let mut v = p.clone();
+                    v.push(key_str.clone());
+                    v
+                });
+                let nested = emit_yaml_mapping(nested_map, settings, indent_level + 1, next_prefix, block_scalars);
                 lines.push(nested);
             }
             serde_yaml::Value::Sequence(seq) => {
@@ -1450,8 +1527,10 @@ fn emit_yaml_mapping(
                 for item in seq {
                     match item {
                         serde_yaml::Value::Mapping(item_map) => {
-                            // Sequence of mappings: first key on same line as `-`
-                            let nested = emit_yaml_mapping(item_map, settings, indent_level + 2, block_scalars);
+                            // Sequence of mappings: first key on same line as `-`.
+                            // `None` disables path lookup for the whole
+                            // sequence-item subtree — see function doc.
+                            let nested = emit_yaml_mapping(item_map, settings, indent_level + 2, None, block_scalars);
                             let nested_lines: Vec<&str> = nested.split('\n').collect();
                             if let Some(first) = nested_lines.first() {
                                 lines.push(format!("{}- {}", child_indent, first.trim()));
@@ -2724,15 +2803,86 @@ mod tests {
     }
 
     #[test]
-    fn test_nested_block_scalar_current_behavior() {
-        // Nested block scalars (e.g. meta.description: >-) are currently NOT
-        // preserved by the formatter — the value is flattened to a plain string.
-        // This test documents the current behavior so regressions are visible.
-        // See GitHub issue https://github.com/Takazudo/mdx-formatter/issues/78 for the planned full-path-tracking fix.
+    fn test_nested_block_scalar_preserved() {
+        // Nested block scalars (e.g. meta.description: >-) must be preserved
+        // verbatim by the formatter. Regression fix for GitHub issue #78
+        // (full-path tracking in extract_block_scalars / emit_yaml_mapping).
         let input = "---\ntitle: Test\nmeta:\n  description: >-\n    Long nested text.\nsidebar: 1\n---\n\n# Content";
         let result = format(input, &FormatterSettings::default());
-        // The formatter should at least be idempotent (not crash or diverge)
+        assert_eq!(result, input, "Nested block scalar should be preserved verbatim");
+        // And the output must still be idempotent.
         let second = format(&result, &FormatterSettings::default());
         assert_eq!(result, second, "Nested block scalar output must be idempotent");
+    }
+
+    #[test]
+    fn test_deeply_nested_block_scalar_preserved() {
+        // A three-level deep block scalar (a.b.c) must be preserved too.
+        let input = "---\na:\n  b:\n    c: >-\n      deep text\nkeep: 1\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input, "Deeply nested block scalar should be preserved");
+    }
+
+    #[test]
+    fn test_nested_block_scalar_with_literal_indicator() {
+        // The `|` (literal) indicator at a nested path must also be preserved.
+        let input = "---\nmeta:\n  body: |\n    line one\n    line two\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(result, input, "Nested literal block scalar should be preserved");
+    }
+
+    #[test]
+    fn test_top_level_and_nested_block_scalars_coexist() {
+        // Top-level and nested block scalars in the same frontmatter must
+        // both be preserved.
+        let input = "---\ntop: >-\n  top text\nmeta:\n  description: >-\n    nested text\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(
+            result, input,
+            "Both top-level and nested block scalars should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_block_scalar_does_not_leak_into_sequence_item_with_same_key() {
+        // Regression guard: a top-level block scalar must NOT be re-emitted
+        // inside a same-named key of a mapping that lives in a sequence.
+        // Previously the emitter reset its path to `""` inside sequences
+        // but still looked up `description` in the preserved map, which
+        // would overwrite the sequence item's plain scalar with the
+        // top-level block text.
+        let input =
+            "---\ndescription: >-\n  top text\nitems:\n  - description: plain\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        // The sequence item's plain `description: plain` must survive.
+        assert!(
+            result.contains("- description: plain"),
+            "sequence-item description should remain plain; got:\n{}",
+            result
+        );
+        // And the top-level block scalar must still be preserved verbatim.
+        assert!(
+            result.contains("description: >-\n  top text"),
+            "top-level block scalar should be preserved; got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_dotted_key_does_not_collide_with_nested_path() {
+        // Regression guard: storing the preserved map keyed by a dotted
+        // string collapsed two distinct YAML locations — a top-level key
+        // literally named `a.b` and a nested `a.b` path — into the same
+        // HashMap entry, so the later insert overwrote the earlier one and
+        // one block scalar got re-emitted in the wrong place. The fix keys
+        // the map by `Vec<String>` so `["a.b"]` and `["a", "b"]` are
+        // distinct.
+        let input =
+            "---\na.b: >-\n  dotted key text\na:\n  b: >-\n    nested path text\n---\n\n# Content";
+        let result = format(input, &FormatterSettings::default());
+        assert_eq!(
+            result, input,
+            "dotted top-level key and nested a/b path must be preserved independently"
+        );
     }
 }
