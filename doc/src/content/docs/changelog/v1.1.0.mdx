@@ -1,0 +1,28 @@
+---
+title: 'v1.1.0'
+sidebar_position: 1100
+---
+
+# v1.1.0
+
+Released: 2026-04-19
+
+## Features
+
+- [formatter] Preserve YAML block scalars (>-, >, |-, |) in frontmatter (2649f07)
+- [formatter] Track YAML block scalars by full path (5b82dcd)
+- [formatter] Key preserved block scalars by path-segment vector (2e290e3)
+
+## Bug Fixes
+
+- [formatter] Fix blank lines inserted inside fenced code block (issue #68) (74f5cc7)
+- [formatter] Fix block-scalar regex, trim trailing blanks, fence dedup (1e7cb73)
+- [formatter] Harden #68 test assertion and add block-scalar coverage (9f0cbef)
+
+## Other Changes
+
+- [misc] Use taiki-e/install-action for wasm-pack (56edd7b)
+- [misc] Promote cf-main-deploy to main-deploy.yml with retry + IFTTT notify (47fcd2a)
+- [misc] Drop Netlify deploy workflow and composite action (8faea73)
+- [misc] Escape backslashes in IFTTT notify commit message (e36c372)
+- [doc] Fix root redirect from 302 to 301 (permanent) (8ac5497)
