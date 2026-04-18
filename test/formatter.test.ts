@@ -72,6 +72,42 @@ describe('Markdown Formatter', () => {
       const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
     });
+
+    it('should preserve folded chomped scalar (>-) in frontmatter', async () => {
+      const input =
+        '---\ntitle: Tabs\ndescription: >-\n  Tabbed content panels for showing alternatives like package managers or platform-specific\n  instructions.\nsidebar_position: 3\n---\n\n# Content';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should preserve folded scalar (>) in frontmatter', async () => {
+      const input =
+        '---\ntitle: Test\ndescription: >\n  This is a long description that spans\n  multiple lines for readability.\nsidebar_position: 1\n---\n\n# Content';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should preserve literal chomped scalar (|-) in frontmatter', async () => {
+      const input =
+        '---\ntitle: Test\nbody: |-\n  Line one\n  Line two\n  Line three\nsidebar_position: 2\n---\n\n# Content';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should preserve literal scalar (|) in frontmatter', async () => {
+      const input =
+        '---\ntitle: Test\nbody: |\n  Line one\n  Line two\n  Line three\nsidebar_position: 2\n---\n\n# Content';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should be idempotent with folded scalar in frontmatter', async () => {
+      const input =
+        '---\ntitle: Tabs\ndescription: >-\n  Tabbed content panels for showing alternatives like package managers or platform-specific\n  instructions.\nsidebar_position: 3\n---\n\n# Content';
+      const first = await format(input, { settings: testSettings });
+      const second = await format(first, { settings: testSettings });
+      expect(first).toBe(second);
+    });
   });
 
   describe('HTML Definition List Formatting', () => {

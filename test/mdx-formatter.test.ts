@@ -1098,7 +1098,7 @@ Content`;
       expect(result).toBe(expected);
     });
 
-    test('should handle block scalar indicators in frontmatter without errors', async () => {
+    test('should preserve block scalar indicators in frontmatter verbatim', async () => {
       const input = `---
 title: Test
 description: >
@@ -1108,12 +1108,9 @@ description: >
 
 Content`;
 
-      // yaml.load/dump round-trip normalizes folded (>) to literal (|)
-      // and folds the content into a single line. The key point is no crash.
+      // Block scalars (>, >-, |, |-) should be preserved verbatim — not collapsed.
       const result = await format(input, { settings: testSettings });
-      expect(result).toContain('description:');
-      expect(result).toContain('This is a folded value');
-      expect(result).not.toContain('">"');
+      expect(result).toBe(input);
     });
 
     test('should properly escape values with both colons and embedded quotes', async () => {
