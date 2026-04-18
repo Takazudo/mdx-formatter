@@ -62,8 +62,7 @@ describe('Markdown Formatter', () => {
       ].join('\n');
       const result = await format(input, { settings: testSettings });
       // The inner ```ts fence must be verbatim — no blank lines added inside it
-      expect(result).not.toMatch(/```ts\n\n/);
-      expect(result).not.toMatch(/\n\n```\n/);
+      expect(result).toBe(input);
     });
 
     it('should handle frontmatter', async () => {
@@ -97,6 +96,53 @@ describe('Markdown Formatter', () => {
     it('should preserve literal scalar (|) in frontmatter', async () => {
       const input =
         '---\ntitle: Test\nbody: |\n  Line one\n  Line two\n  Line three\nsidebar_position: 2\n---\n\n# Content';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should preserve keep-chomped folded scalar (>+) in frontmatter', async () => {
+      const input =
+        '---\ntitle: Test\ndescription: >+\n  Long text here.\nsidebar_position: 1\n---\n\n# Content';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should preserve keep-chomped literal scalar (|+) in frontmatter', async () => {
+      const input =
+        '---\ntitle: Test\nbody: |+\n  Line one\n  Line two\nsidebar_position: 2\n---\n\n# Content';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should preserve block scalar with indent indicator (|2-) in frontmatter', async () => {
+      const input =
+        '---\ntitle: Test\nbody: |2-\n  Indented line one\n  Indented line two\nsidebar_position: 2\n---\n\n# Content';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should preserve block scalar as last key in frontmatter', async () => {
+      const input =
+        '---\ntitle: Test\ndescription: >-\n  This is a long description.\n---\n\n# Content';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should not absorb blank separator into middle block scalar', async () => {
+      const input =
+        '---\ntitle: Test\ndescription: >-\n  Long description text.\nsidebar_position: 1\n---\n\n# Content';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should preserve code block with tilde fences', async () => {
+      const input = '~~~js\nconst x = 1;\n~~~';
+      const result = await format(input, { settings: testSettings });
+      expect(result).toBe(input);
+    });
+
+    it('should not insert blank lines inside a 3-tilde fence inside a 4-tilde outer fence', async () => {
+      const input = ['~~~~mdx', '~~~ts', 'export default {};', '~~~', '~~~~'].join('\n');
       const result = await format(input, { settings: testSettings });
       expect(result).toBe(input);
     });
