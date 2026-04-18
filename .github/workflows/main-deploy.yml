@@ -1,0 +1,123 @@
+name: Production Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Documentation Site
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build Astro site
+        uses: ./.github/actions/build-astro
+        with:
+          node-version: '22'
+          pnpm-version: '10'
+          working-directory: 'doc'
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: astro-build-production
+          path: doc/dist/
+          include-hidden-files: true
+          retention-days: 1
+
+  deploy:
+    name: Deploy to Cloudflare Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: astro-build-production
+          path: dist-raw
+
+      - name: Restructure build for base path
+        run: |
+          mkdir -p deploy-dir/pj/mdx-formatter
+          cp -r dist-raw/* deploy-dir/pj/mdx-formatter/
+          if [ -f deploy-dir/pj/mdx-formatter/_redirects ]; then
+            mv deploy-dir/pj/mdx-formatter/_redirects deploy-dir/_redirects
+          fi
+
+      - name: Deploy to Cloudflare Pages
+        run: |
+          for attempt in 1 2 3; do
+            echo "Deploy attempt $attempt/3..."
+            if npx wrangler@4 pages deploy deploy-dir \
+              --project-name=mdx-formatter \
+              --branch=main \
+              --commit-hash="${GITHUB_SHA}" \
+              --commit-message="Production deploy: ${GITHUB_SHA}"; then
+              echo "Deploy succeeded on attempt $attempt"
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Deploy failed, retrying in 150 seconds..."
+              sleep 150
+            fi
+          done
+          echo "Deploy failed after 3 attempts"
+          exit 1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  notify:
+    name: Deploy Notification
+    needs: [build, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Notify via IFTTT
+        if: env.IFTTT_PROD_NOTIFY != ''
+        env:
+          IFTTT_PROD_NOTIFY: ${{ secrets.IFTTT_PROD_NOTIFY }}
+          RAW_COMMIT_MSG: ${{ github.event.head_commit.message }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          GITHUB_SHA_VAL: ${{ github.sha }}
+          SERVER_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ "$DEPLOY_RESULT" = "success" ]; then
+            STATUS="mdx-formatter deploy succeeded!"
+          elif [ "$BUILD_RESULT" = "failure" ]; then
+            STATUS="mdx-formatter deploy failed (build)"
+          elif [ "$DEPLOY_RESULT" = "failure" ]; then
+            STATUS="mdx-formatter deploy failed (deploy)"
+          else
+            STATUS="mdx-formatter deploy cancelled"
+          fi
+
+          COMMIT_MSG=$(echo "$RAW_COMMIT_MSG" | head -1 | sed 's/"/\\"/g')
+          SHORT_SHA=$(echo "$GITHUB_SHA_VAL" | cut -c1-7)
+          RUN_URL="${SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
+
+          curl -sSf --max-time 10 -X POST "$IFTTT_PROD_NOTIFY" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"value1\": \"${STATUS}\",
+              \"value2\": \"${SHORT_SHA} ${COMMIT_MSG}\",
+              \"value3\": \"${RUN_URL}\"
+            }" || echo "::warning::IFTTT notification failed"
