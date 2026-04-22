@@ -1,0 +1,72 @@
+---
+title: recover-escaped-code-in-lists
+description: Re-indent fenced code blocks that escaped to column 0 between two list items
+sidebar_position: 21
+---
+
+When an AI author writes a fenced code block between two numbered list items without indenting the fence, CommonMark parses it as a root-level fence and restarts the list numbering below it. This rule detects that shape and re-indents the fence to the preceding item's continuation column so the fence parses as a nested child.
+
+## Modes
+
+| Value          | Default | Behavior                                                                                                                                                       |
+| -------------- | :-----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"off"`        |         | Never touch. Output is byte-identical for this rule.                                                                                                           |
+| `"safe"`       |    ✓    | Fire only when the numbering run is unambiguous (e.g. `1. … | fence | 2. …`) — strong evidence the fence was meant to nest inside item 1. Bullet-list escapes are left alone. |
+| `"aggressive"` |         | Additionally fire on bullet-list pairs (`- … | fence | - …`).                                                                                                  |
+
+## Config
+
+```json
+{
+  "recover-escaped-code-in-lists": "safe"
+}
+```
+
+## Example
+
+Before:
+
+````markdown
+1. first
+
+```js
+const x = 1;
+```
+
+2. second
+````
+
+After (`"safe"` — default):
+
+````markdown
+1. first
+
+   ```js
+   const x = 1;
+   ```
+
+2. second
+````
+
+The fence is re-indented by 3 spaces (the continuation column for `1. `) so CommonMark parses it as a child of item 1 instead of breaking the list. Internal fence content is preserved byte-for-byte.
+
+### Bullet-list escape — `"safe"` leaves it alone
+
+Before (ambiguous — bullets don't give a numbering-restart signal):
+
+````markdown
+- first
+
+```js
+const x = 1;
+```
+
+- second
+````
+
+In `"safe"` mode this is unchanged. In `"aggressive"` mode the fence is re-indented the same way.
+
+## Notes
+
+- Legitimate top-level fences (no enclosing list) are never touched in any mode.
+- The rule is idempotent and runs **before** [`tighten-list-continuations`](./tighten-list-continuations) in the formatter pipeline.

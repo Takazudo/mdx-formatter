@@ -62,6 +62,26 @@ Every option can be set via [config file](/docs/overview/configuration) or progr
   },
   "errorHandling": {
     "throwOnError": false
-  }
+  },
+
+  "tighten-list-continuations": "heuristic",
+  "recover-escaped-code-in-lists": "safe",
+  "recover-escaped-tables-in-lists": "safe",
+  "recover-escaped-paragraphs-in-lists": "off"
 }
 ```
+
+The last four keys above are the [List Normalize](#list-normalize) rules. Unlike the nested object options above, they are exposed as flat top-level kebab-case string enums.
+
+## List Normalize
+
+Four rules that clean up AI-authored list-item content. Each accepts `"off"` to disable. The middle value (`"heuristic"` / `"safe"`) is the conservative trigger; `"aggressive"` drops structural preconditions.
+
+| Key                                                                            | Default       | Purpose                                                                                                        |
+| ------------------------------------------------------------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------- |
+| [`tighten-list-continuations`](./tighten-list-continuations)                   | `"heuristic"` | Collapse blank lines inside a list item whose children are continuation paragraphs.                            |
+| [`recover-escaped-code-in-lists`](./recover-escaped-code-in-lists)             | `"safe"`      | Re-indent a fenced code block that escaped to column 0 between two list items.                                 |
+| [`recover-escaped-tables-in-lists`](./recover-escaped-tables-in-lists)         | `"safe"`      | Re-indent a GFM table that escaped to column 0 between two list items.                                         |
+| [`recover-escaped-paragraphs-in-lists`](./recover-escaped-paragraphs-in-lists) | `"off"`       | Re-indent a paragraph that escaped to column 0 between two list items (opt-in — highest false-positive risk).  |
+
+Use [`--dry-run`](/docs/overview/usage#preview-changes-with---dry-run) to preview what each rule would change before committing.

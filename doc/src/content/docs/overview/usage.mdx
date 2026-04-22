@@ -16,12 +16,55 @@ mdx-formatter --write "**/*.{md,mdx}"
 # Preview what would be changed (default)
 mdx-formatter "**/*.{md,mdx}"
 
+# Preview every rule-level change on stderr without touching files
+mdx-formatter --dry-run "**/*.{md,mdx}"
+
 # Ignore specific patterns
 mdx-formatter --write "**/*.md" --ignore "node_modules/**,dist/**"
 
 # Use a custom config file
 mdx-formatter --write "**/*.md" --config ./my-config.json
 ```
+
+### Preview changes with `--dry-run`
+
+`--dry-run` writes a per-rule change report to **stderr** and leaves files
+byte-identical on disk. It always exits 0 regardless of whether there was
+anything to report, and it conflicts with `--write` / `--check`.
+
+Each entry is printed as:
+
+```
+<path>:<start>-<end> [<rule>]
+  - <before-line-1>
+  - <before-line-2>
+  + <after-line-1>
+  + <after-line-2>
+```
+
+Before/after snippets are capped at 3 lines each and truncated with `…`
+beyond that. Line numbers are 1-based. The report format matches the
+standalone Rust CLI's output byte-for-byte so tooling can consume either.
+
+Use this to preview what the four [list-normalize](/docs/options/#list-normalize)
+rules (and any other rule) would change before committing to `--write`.
+
+#### Programmatic dry-run
+
+```javascript
+import { dryRunReport } from '@takazudo/mdx-formatter';
+
+const entries = dryRunReport(content);
+// [
+//   { rule: 'tighten-list-continuations',
+//     startLine: 0, endLine: 2,
+//     before: ['- foo, or', '', '  bar'],
+//     after:  ['- foo, or', '  bar'] },
+//   …
+// ]
+```
+
+`startLine` / `endLine` are 0-indexed.
 
 ## API
 

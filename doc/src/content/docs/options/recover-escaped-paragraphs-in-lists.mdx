@@ -1,0 +1,70 @@
+---
+title: recover-escaped-paragraphs-in-lists
+description: Re-indent continuation paragraphs that escaped to column 0 between two list items
+sidebar_position: 23
+---
+
+When an AI author writes a paragraph between two numbered list items at column 0, CommonMark breaks the list at that paragraph. This rule detects the shape and re-indents the paragraph to the preceding item's continuation column so it nests inside the item.
+
+**This rule defaults to `"off"`.** The heuristic for "was this paragraph meant to be a continuation?" carries the highest false-positive risk of the four list-normalize rules, so it ships opt-in.
+
+## Modes
+
+| Value          | Default | Behavior                                                                                                                                                                                                                                                     |
+| -------------- | :-----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `"off"`        |    ✓    | Never touch. Output is byte-identical for this rule.                                                                                                                                                                                                         |
+| `"heuristic"`  |         | Structural preconditions (same list ordering, matching marker column, resumed numbering, paragraph dedented below the continuation indent) **and** the paragraph's first inline token is a continuation signal: lowercase letter, inline code, or `,` `;` `:` `(` `—` `–` `-` `"` `'` `)`. |
+| `"aggressive"` |         | Structural preconditions only — re-indent regardless of the first-token content.                                                                                                                                                                             |
+
+## Config
+
+```json
+{
+  "recover-escaped-paragraphs-in-lists": "heuristic"
+}
+```
+
+## Example — heuristic recovers
+
+Before:
+
+````markdown
+1. first item
+
+also continues the first
+
+2. second item
+````
+
+After (`"heuristic"`):
+
+````markdown
+1. first item
+   also continues the first
+
+2. second item
+````
+
+The paragraph is re-indented by 3 spaces; the preceding item's numbering flow is preserved.
+
+### Capital-initial new topic is left alone
+
+Before:
+
+````markdown
+1. first item
+
+New unrelated topic that the author meant to stay at column 0.
+
+2. second item
+````
+
+Output in `"heuristic"` mode is byte-identical — the capital start reads like a deliberate mid-list topic.
+
+`"aggressive"` fires on structural signal alone and would re-indent the new topic. Only opt in if that matches your content's conventions.
+
+## Notes
+
+- Non-resuming numbering (e.g. `1. … / 1. …`) disqualifies the paragraph from recovery in every mode.
+- The rule is idempotent and runs **before** [`tighten-list-continuations`](./tighten-list-continuations) in the formatter pipeline.
+- If you're unsure whether this rule is safe for your content, use [`--dry-run`](/docs/overview/usage#preview-changes-with---dry-run) to preview every change.
