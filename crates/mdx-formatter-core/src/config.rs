@@ -37,7 +37,7 @@ const LIST_NORMALIZE_TOP_KEYS: &[&str] = &[
 /// Extract the 4 list-normalize top-level keys from a merged JSON object into
 /// a `ListNormalizeSettings`, falling back to per-field defaults. Missing keys
 /// keep defaults; unknown variants also fall back to defaults (permissive parse).
-fn extract_list_normalize(merged: &Value) -> ListNormalizeSettings {
+pub(crate) fn extract_list_normalize(merged: &Value) -> ListNormalizeSettings {
     let mut settings = ListNormalizeSettings::default();
     let obj = match merged.as_object() {
         Some(o) => o,
@@ -205,6 +205,36 @@ pub fn load_full_config_from(
 /// Load and merge all configuration layers, returning just the settings.
 pub fn load_config(config_path: Option<&str>, programmatic: Option<&Value>) -> FormatterSettings {
     load_full_config(config_path, programmatic).settings
+}
+
+/// Build a `FormatterSettings` from a single already-merged JSON value that
+/// may include the four public `list-normalize` top-level kebab-case keys.
+///
+/// Call this from front-ends (napi, wasm, …) that accept a single blob of
+/// public settings JSON already produced by their own loader (e.g. the TS
+/// `loadConfig`). It:
+///   1. extracts the four list-normalize kebab-case keys into
+///      `ListNormalizeSettings` via `extract_list_normalize`, then
+///   2. strips those keys from a clone of the JSON before handing the rest
+///      to `FormatterSettings::from_partial_json` (camelCase serde path), and
+///   3. sets `settings.list_normalize` to the extracted bundle.
+///
+/// This is the glue `load_full_config_from` does for the on-disk config
+/// path. Without this (or that), the kebab-case keys are silently dropped
+/// because `FormatterSettings::list_normalize` is `#[serde(skip)]`.
+pub fn from_public_json(value: &Value) -> FormatterSettings {
+    let list_normalize = extract_list_normalize(value);
+
+    let mut settings_json = value.clone();
+    if let Value::Object(ref mut map) = settings_json {
+        for key in LIST_NORMALIZE_TOP_KEYS {
+            map.remove(*key);
+        }
+    }
+
+    let mut settings = FormatterSettings::from_partial_json(&settings_json);
+    settings.list_normalize = list_normalize;
+    settings
 }
 
 /// Load exclude patterns from config file.
@@ -699,6 +729,75 @@ mod tests {
         assert_eq!(
             settings.list_normalize.tighten_list_continuations,
             TightenListContinuationsMode::Heuristic
+        );
+    }
+
+    // ── from_public_json tests (issue #88) ──
+    //
+    // `from_public_json` is the one-shot settings builder the napi and wasm
+    // shims call. Regression guard against the #88 bug where the four
+    // list-normalize kebab-case keys were silently dropped (because
+    // `FormatterSettings::list_normalize` is `#[serde(skip)]`), which caused
+    // the TS "formatter is innocent" baseline test to fail even with all
+    // rules set to `"off"`.
+
+    #[test]
+    fn from_public_json_lifts_list_normalize_kebab_keys() {
+        let json: Value = serde_json::json!({
+            "tighten-list-continuations": "off",
+            "recover-escaped-code-in-lists": "off",
+            "recover-escaped-tables-in-lists": "aggressive",
+            "recover-escaped-paragraphs-in-lists": "heuristic",
+        });
+        let settings = from_public_json(&json);
+        assert_eq!(
+            settings.list_normalize.tighten_list_continuations,
+            TightenListContinuationsMode::Off
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_code_in_lists,
+            crate::types::RecoverEscapedCodeMode::Off
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_tables_in_lists,
+            crate::types::RecoverEscapedTablesMode::Aggressive
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_paragraphs_in_lists,
+            crate::types::RecoverEscapedParagraphsMode::Heuristic
+        );
+    }
+
+    #[test]
+    fn from_public_json_preserves_camelcase_settings() {
+        let json: Value = serde_json::json!({
+            "addEmptyLineBetweenElements": { "enabled": false },
+            "tighten-list-continuations": "off",
+        });
+        let settings = from_public_json(&json);
+        assert!(
+            !settings.add_empty_line_between_elements.enabled,
+            "camelCase key must still apply"
+        );
+        assert_eq!(
+            settings.list_normalize.tighten_list_continuations,
+            TightenListContinuationsMode::Off
+        );
+    }
+
+    #[test]
+    fn from_public_json_empty_is_all_defaults() {
+        let json: Value = serde_json::json!({});
+        let settings = from_public_json(&json);
+        assert_eq!(
+            settings.list_normalize.tighten_list_continuations,
+            TightenListContinuationsMode::Heuristic,
+            "default must be heuristic"
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_paragraphs_in_lists,
+            crate::types::RecoverEscapedParagraphsMode::Off,
+            "default must be off (opt-in)"
         );
     }
 
