@@ -230,6 +230,99 @@ impl Default for AutoDetectIndentSetting {
     }
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// List Normalize — config schema (owned by sub-issue #81, filled by #82-#85)
+//
+// Four cross-cutting list-normalize rules share one parent struct so the
+// schema surface is scannable in one place and downstream rules add behavior
+// (not schema).
+//
+// Default values (locked here):
+//
+//   | Key                                    | Values                             | Default       |
+//   |----------------------------------------|------------------------------------|---------------|
+//   | tighten-list-continuations             | "off" | "heuristic" | "aggressive" | "heuristic"   |
+//   | recover-escaped-code-in-lists          | "off" | "safe"      | "aggressive" | "safe"        |
+//   | recover-escaped-tables-in-lists        | "off" | "safe"      | "aggressive" | "safe"        |
+//   | recover-escaped-paragraphs-in-lists    | "off" | "heuristic" | "aggressive" | "off"         |
+//
+// Middle-variant divergence: tighten's middle value is `heuristic` (a structural
+// best-effort pass), while the three recover-* rules reserve their middle value
+// as `safe` — a "strong-evidence only" mode that refuses to recover blocks unless
+// fence / pipe / prose signals are unambiguous. The name difference is intentional
+// and documents intent at the config site.
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Tighten-list-continuations mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TightenListContinuationsMode {
+    Off,
+    #[default]
+    Heuristic,
+    Aggressive,
+}
+
+/// Recover-escaped-code-in-lists mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecoverEscapedCodeMode {
+    Off,
+    #[default]
+    Safe,
+    Aggressive,
+}
+
+/// Recover-escaped-tables-in-lists mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecoverEscapedTablesMode {
+    Off,
+    #[default]
+    Safe,
+    Aggressive,
+}
+
+/// Recover-escaped-paragraphs-in-lists mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecoverEscapedParagraphsMode {
+    #[default]
+    Off,
+    Heuristic,
+    Aggressive,
+}
+
+/// Shape of a list item's content, derived by the detection pass in
+/// `formatter::collect_list_item_shapes`. Downstream list-normalize rules
+/// (#82-#85) dispatch on this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ListItemShape {
+    /// Only paragraph children (or empty).
+    ParagraphsOnly,
+    /// At least one fenced code block child (and no table/sublist).
+    HasCodeFence,
+    /// At least one GFM table child (and no sublist).
+    HasTable,
+    /// At least one nested List child (and nothing else interesting).
+    HasSublist,
+    /// Any combination of the above.
+    Mixed,
+}
+
+/// Parent struct holding all four list-normalize rule settings. Downstream
+/// rules (#82-#85) read their own field here; they do not add keys directly to
+/// `FormatterSettings`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct ListNormalizeSettings {
+    pub tighten_list_continuations: TightenListContinuationsMode,
+    pub recover_escaped_code_in_lists: RecoverEscapedCodeMode,
+    pub recover_escaped_tables_in_lists: RecoverEscapedTablesMode,
+    pub recover_escaped_paragraphs_in_lists: RecoverEscapedParagraphsMode,
+}
+
 /// Complete formatter settings — mirrors the TypeScript FormatterSettings
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
@@ -244,6 +337,13 @@ pub struct FormatterSettings {
     pub preserve_admonitions: PreserveAdmonitionsSetting,
     pub error_handling: ErrorHandlingSetting,
     pub auto_detect_indent: AutoDetectIndentSetting,
+
+    /// List normalize rule bundle. All four rules share a flat top-level key
+    /// surface in the public config (see `config.rs` for the lift-in/out glue):
+    /// `tighten-list-continuations`, `recover-escaped-code-in-lists`,
+    /// `recover-escaped-tables-in-lists`, `recover-escaped-paragraphs-in-lists`.
+    #[serde(skip)]
+    pub list_normalize: ListNormalizeSettings,
 }
 
 impl FormatterSettings {
