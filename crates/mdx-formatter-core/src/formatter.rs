@@ -6052,6 +6052,207 @@ Capital continuation line.
         );
     }
 
+    // ── Regression: issue #98 — blank injection inside fenced code blocks ──
+    //
+    // The formatter must preserve the interior of fenced code blocks
+    // byte-for-byte. A prior bug caused `ensure_block_element_spacing` (via
+    // an under-strict fence-length track — fence_delimiter() returning
+    // `Some` for any ``` or ~~~ line without comparing delimiter length)
+    // to treat an inner fence as the closing fence of its outer fence. The
+    // 4-backtick / 3-backtick / 3-backtick nested case made this visible in
+    // a path-dependent way: after mishandling the first html inner fence,
+    // fence state was flipped and the second (js) inner block got blank
+    // lines injected after its opening fence and before its closing fence.
+    //
+    // All three inputs must round-trip byte-identically under default
+    // settings AND under a baseline that disables every rule ("all rules
+    // off"). The post-processing pass must also be a strict no-op when
+    // invoked directly on the already-byte-identical input.
+
+    /// Every known rule explicitly disabled — top-level enabled flags plus
+    /// the five list-normalize rules. A passing round-trip under these
+    /// settings proves the fix lives in the base parse/emit/post-process
+    /// pipeline, not in any single rule body.
+    fn settings_with_all_rules_off() -> FormatterSettings {
+        use crate::types::{
+            RecoverEscapedCodeMode, RecoverEscapedParagraphsMode, RecoverEscapedTablesMode,
+            TightenListContinuationsMode, TightenListItemSpacingMode,
+        };
+        let mut s = FormatterSettings::default();
+        s.add_empty_line_between_elements.enabled = false;
+        s.format_multi_line_jsx.enabled = false;
+        s.format_html_blocks_in_mdx.enabled = false;
+        s.expand_single_line_jsx.enabled = false;
+        s.indent_jsx_content.enabled = false;
+        s.add_empty_lines_in_block_jsx.enabled = false;
+        s.format_yaml_frontmatter.enabled = false;
+        s.list_normalize.tighten_list_continuations = TightenListContinuationsMode::Off;
+        s.list_normalize.tighten_list_item_spacing = TightenListItemSpacingMode::Off;
+        s.list_normalize.recover_escaped_code_in_lists = RecoverEscapedCodeMode::Off;
+        s.list_normalize.recover_escaped_tables_in_lists = RecoverEscapedTablesMode::Off;
+        s.list_normalize.recover_escaped_paragraphs_in_lists = RecoverEscapedParagraphsMode::Off;
+        s
+    }
+
+    // ─ Top-level 3-backtick block (upstream #68 minimal repro) ─
+    //
+    // Note: concat!() over explicit "\n"-terminated lines, instead of the
+    // `\` line-continuation form — a trailing `\` in a Rust string literal
+    // eats the leading whitespace of the next physical line, which would
+    // silently strip the indent inside the code block and make the round-
+    // trip assertion match a *wrong* shape.
+    const FENCED_TOP_LEVEL_INPUT: &str = concat!(
+        "## Heading\n",
+        "\n",
+        "Here is a sample:\n",
+        "\n",
+        "```ts\n",
+        "export default {\n",
+        "  site: \"https://example.com\",\n",
+        "};\n",
+        "```\n",
+    );
+
+    #[test]
+    fn regression_fenced_top_level_round_trips_under_defaults() {
+        let out = format(FENCED_TOP_LEVEL_INPUT, &FormatterSettings::default());
+        assert_eq!(
+            out, FENCED_TOP_LEVEL_INPUT,
+            "top-level fenced block round-trip broke under defaults; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn regression_fenced_top_level_round_trips_with_all_rules_off() {
+        let out = format(FENCED_TOP_LEVEL_INPUT, &settings_with_all_rules_off());
+        assert_eq!(
+            out, FENCED_TOP_LEVEL_INPUT,
+            "top-level fenced block round-trip broke with all rules off; output:\n{out}"
+        );
+    }
+
+    // ─ Nested 3-backtick blocks inside a 4-backtick outer fence ─
+    //
+    // Both `html` then `js` inners appear in that order — the previously
+    // observed path-dependence mangled only the js inner. Must round-trip
+    // byte-identically: both inner blocks are untouched.
+    const FENCED_NESTED_4BACKTICK_INPUT: &str = concat!(
+        "## 複雑な内容（コードブロック、複数段落を含む） → 見出し構造\n",
+        "\n",
+        "````markdown\n",
+        "## 使用方法\n",
+        "\n",
+        "### 1. HTMLマークアップ\n",
+        "\n",
+        "```html\n",
+        "<div id=\"app\"></div>\n",
+        "```\n",
+        "\n",
+        "### 2. 初期化\n",
+        "\n",
+        "```js\n",
+        "myLibrary.init({\n",
+        "  /* ... */\n",
+        "});\n",
+        "```\n",
+        "````\n",
+    );
+
+    #[test]
+    fn regression_fenced_nested_4backtick_round_trips_under_defaults() {
+        let out = format(FENCED_NESTED_4BACKTICK_INPUT, &FormatterSettings::default());
+        assert_eq!(
+            out, FENCED_NESTED_4BACKTICK_INPUT,
+            "nested 4-backtick fenced block round-trip broke under defaults; output:\n{out}"
+        );
+        // Explicit path-independence assertions: both inner blocks stay
+        // byte-identical to their input shape.
+        assert!(
+            out.contains("```html\n<div id=\"app\"></div>\n```"),
+            "html inner block was mangled; output:\n{out}"
+        );
+        assert!(
+            out.contains("```js\nmyLibrary.init({\n  /* ... */\n});\n```"),
+            "js inner block was mangled (path-dependence regression); output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn regression_fenced_nested_4backtick_round_trips_with_all_rules_off() {
+        let out = format(FENCED_NESTED_4BACKTICK_INPUT, &settings_with_all_rules_off());
+        assert_eq!(
+            out, FENCED_NESTED_4BACKTICK_INPUT,
+            "nested 4-backtick fenced block round-trip broke with all rules off; output:\n{out}"
+        );
+    }
+
+    // ─ Tilde-fenced block ─
+    const FENCED_TILDE_INPUT: &str = "~~~ts\nconst x = 1;\n~~~\n";
+
+    #[test]
+    fn regression_fenced_tilde_round_trips_under_defaults() {
+        let out = format(FENCED_TILDE_INPUT, &FormatterSettings::default());
+        assert_eq!(
+            out, FENCED_TILDE_INPUT,
+            "tilde fenced block round-trip broke under defaults; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn regression_fenced_tilde_round_trips_with_all_rules_off() {
+        let out = format(FENCED_TILDE_INPUT, &settings_with_all_rules_off());
+        assert_eq!(
+            out, FENCED_TILDE_INPUT,
+            "tilde fenced block round-trip broke with all rules off; output:\n{out}"
+        );
+    }
+
+    // ─ Direct post-processing assertions ─
+    //
+    // `ensure_block_element_spacing` is the specific pass that historically
+    // injected the blanks. Driving it directly on the already-correct input
+    // must produce zero mutation for all three shapes — this pins the code
+    // path independently of the surrounding AST/rule pipeline.
+
+    #[test]
+    fn regression_fenced_top_level_post_processing_is_noop() {
+        let mut lines: Vec<String> =
+            FENCED_TOP_LEVEL_INPUT.split('\n').map(|s| s.to_string()).collect();
+        let before = lines.clone();
+        ensure_block_element_spacing(&mut lines);
+        assert_eq!(
+            lines, before,
+            "ensure_block_element_spacing must be a no-op inside a top-level fenced block"
+        );
+    }
+
+    #[test]
+    fn regression_fenced_nested_4backtick_post_processing_is_noop() {
+        let mut lines: Vec<String> = FENCED_NESTED_4BACKTICK_INPUT
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect();
+        let before = lines.clone();
+        ensure_block_element_spacing(&mut lines);
+        assert_eq!(
+            lines, before,
+            "ensure_block_element_spacing must be a no-op for nested 4-backtick / html+js case; \
+             fence-nesting state must not leak between the two inner blocks"
+        );
+    }
+
+    #[test]
+    fn regression_fenced_tilde_post_processing_is_noop() {
+        let mut lines: Vec<String> =
+            FENCED_TILDE_INPUT.split('\n').map(|s| s.to_string()).collect();
+        let before = lines.clone();
+        ensure_block_element_spacing(&mut lines);
+        assert_eq!(
+            lines, before,
+            "ensure_block_element_spacing must be a no-op inside a tilde-fenced block"
+        );
+    }
+
     #[test]
     fn test_dotted_key_does_not_collide_with_nested_path() {
         // Regression guard: storing the preserved map keyed by a dotted
