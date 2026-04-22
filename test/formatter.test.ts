@@ -13,7 +13,7 @@ async function readFixture(name: string): Promise<string> {
   return fs.readFile(path.join(fixturesDir, name), 'utf-8');
 }
 
-// The four list-normalize rules are exposed as flat top-level kebab-case
+// The five list-normalize rules are exposed as flat top-level kebab-case
 // keys (see `crates/mdx-formatter-core/src/config.rs`). They are not part of
 // the TS `FormatterSettings` shape, so cast at the boundary.
 type ListNormalizeOverride = Record<string, unknown> & DeepPartial<FormatterSettings>;
@@ -985,6 +985,13 @@ This paragraph follows an image.
       expect(result).toBe(expected);
     });
 
+    it('tighten-list-item-spacing: collapses blank gaps between sibling ParagraphsOnly items', async () => {
+      const input = await readFixture('tighten-item-spacing.md');
+      const expected = await readFixture('tighten-item-spacing.expected.md');
+      const result = await format(input);
+      expect(result).toBe(expected);
+    });
+
     it('recover-escaped-code-in-lists: re-indents a col-0 fence between numbered items', async () => {
       const input = await readFixture('recover-escaped-code.md');
       const expected = await readFixture('recover-escaped-code.expected.md');
@@ -1019,7 +1026,7 @@ This paragraph follows an image.
     });
 
     // ── "Formatter is innocent" baseline (epic #80) ─────────────────────────
-    // With all four list-normalize rules set to "off", the loose-shape
+    // With all five list-normalize rules set to "off", the loose-shape
     // continuation-paragraph snippet round-trips byte-identically. This is
     // the repo-local assertion that the formatter does not introduce the
     // blank lines observed in AI-authored content — they must be present in
@@ -1029,6 +1036,7 @@ This paragraph follows an image.
       const result = await format(input, {
         settings: lnSettings({
           'tighten-list-continuations': 'off',
+          'tighten-list-item-spacing': 'off',
           'recover-escaped-code-in-lists': 'off',
           'recover-escaped-tables-in-lists': 'off',
           'recover-escaped-paragraphs-in-lists': 'off',

@@ -231,9 +231,10 @@ impl Default for AutoDetectIndentSetting {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// List Normalize — config schema (owned by sub-issue #81, filled by #82-#85)
+// List Normalize — config schema (owned by sub-issue #81, filled by #82-#85
+// and issue #90)
 //
-// Four cross-cutting list-normalize rules share one parent struct so the
+// Five cross-cutting list-normalize rules share one parent struct so the
 // schema surface is scannable in one place and downstream rules add behavior
 // (not schema).
 //
@@ -242,6 +243,7 @@ impl Default for AutoDetectIndentSetting {
 //   | Key                                    | Values                             | Default       |
 //   |----------------------------------------|------------------------------------|---------------|
 //   | tighten-list-continuations             | "off" | "heuristic" | "aggressive" | "heuristic"   |
+//   | tighten-list-item-spacing              | "off" | "heuristic" | "aggressive" | "heuristic"   |
 //   | recover-escaped-code-in-lists          | "off" | "safe"      | "aggressive" | "safe"        |
 //   | recover-escaped-tables-in-lists        | "off" | "safe"      | "aggressive" | "safe"        |
 //   | recover-escaped-paragraphs-in-lists    | "off" | "heuristic" | "aggressive" | "off"         |
@@ -257,6 +259,16 @@ impl Default for AutoDetectIndentSetting {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TightenListContinuationsMode {
+    Off,
+    #[default]
+    Heuristic,
+    Aggressive,
+}
+
+/// Tighten-list-item-spacing mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TightenListItemSpacingMode {
     Off,
     #[default]
     Heuristic,
@@ -311,13 +323,14 @@ pub enum ListItemShape {
     Mixed,
 }
 
-/// Parent struct holding all four list-normalize rule settings. Downstream
-/// rules (#82-#85) read their own field here; they do not add keys directly to
+/// Parent struct holding all five list-normalize rule settings. Downstream
+/// rules read their own field here; they do not add keys directly to
 /// `FormatterSettings`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct ListNormalizeSettings {
     pub tighten_list_continuations: TightenListContinuationsMode,
+    pub tighten_list_item_spacing: TightenListItemSpacingMode,
     pub recover_escaped_code_in_lists: RecoverEscapedCodeMode,
     pub recover_escaped_tables_in_lists: RecoverEscapedTablesMode,
     pub recover_escaped_paragraphs_in_lists: RecoverEscapedParagraphsMode,
@@ -338,10 +351,11 @@ pub struct FormatterSettings {
     pub error_handling: ErrorHandlingSetting,
     pub auto_detect_indent: AutoDetectIndentSetting,
 
-    /// List normalize rule bundle. All four rules share a flat top-level key
+    /// List normalize rule bundle. All five rules share a flat top-level key
     /// surface in the public config (see `config.rs` for the lift-in/out glue):
-    /// `tighten-list-continuations`, `recover-escaped-code-in-lists`,
-    /// `recover-escaped-tables-in-lists`, `recover-escaped-paragraphs-in-lists`.
+    /// `tighten-list-continuations`, `tighten-list-item-spacing`,
+    /// `recover-escaped-code-in-lists`, `recover-escaped-tables-in-lists`,
+    /// `recover-escaped-paragraphs-in-lists`.
     #[serde(skip)]
     pub list_normalize: ListNormalizeSettings,
 }

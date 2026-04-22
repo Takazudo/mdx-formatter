@@ -1,0 +1,53 @@
+---
+title: tighten-list-item-spacing
+description: Collapse unwanted blank lines between adjacent sibling list items when the list is safe to tighten
+sidebar_position: 21
+---
+
+Collapse the blank line between adjacent sibling `ListItem`s of the same list when the list is safe to tighten. This covers the AI-authored loose-list pattern where each bullet is already a complete paragraph, but extra blank source lines were inserted between items.
+
+## Modes
+
+| Value          | Default | Behavior                                                                                                                                     |
+| -------------- | :-----: | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"off"`        |         | Never collapse inter-item blank lines.                                                                                                       |
+| `"heuristic"`  |    ✓    | Collapse exactly one blank line between adjacent items only when **every item in the list has shape `ParagraphsOnly`**. Mixed-shape lists stay loose. |
+| `"aggressive"` |         | Drop the all-items shape gate; collapse exactly one blank line between adjacent sibling items regardless of item shape.                      |
+
+Double-blank separators are preserved in both non-off modes.
+
+## Config
+
+```json
+{
+  "tighten-list-item-spacing": "heuristic"
+}
+```
+
+This key sits at the **top level** of the config — not nested under an object. See the [Options overview](./) for the full list-normalize section.
+
+## Example
+
+Before:
+
+````markdown
+- First bullet.
+
+- Second bullet.
+
+- Third bullet.
+````
+
+After (`"heuristic"` — default):
+
+````markdown
+- First bullet.
+- Second bullet.
+- Third bullet.
+````
+
+## Notes
+
+- The rule runs immediately after [`tighten-list-continuations`](./tighten-list-continuations) in the formatter pipeline.
+- The rule is recursive: nested sublists are tightened too when they satisfy the same conditions.
+- The rule is idempotent, including the preserved double-blank case.
