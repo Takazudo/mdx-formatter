@@ -153,6 +153,8 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
         settings,
         &list_item_shapes,
         &escaped_block_candidates,
+        &ast,
+        &lines,
         &mut operations,
     );
     apply_recover_escaped_tables_in_lists(
@@ -1575,17 +1577,211 @@ fn classify_gap(
 // formatter output is unchanged. Keeping the stubs here (not a later commit)
 // lets the order-of-operations contract live entirely in `format_once`.
 
+/// A fenced code block that sits at (or below) the continuation indent of the
+/// preceding list item's children — i.e. the parser has spilled it out of the
+/// list. Carries enough info for #83 to re-indent the fence and know whether
+/// the surrounding context supplies "safe" evidence of intended nesting.
+#[derive(Debug, Clone)]
+struct EscapedCodePattern {
+    /// 0-indexed line of the opening fence.
+    fence_start_line: usize,
+    /// 0-indexed line of the closing fence (inclusive).
+    fence_end_line: usize,
+    /// 0-indexed column of the opening fence's first backtick/tilde.
+    fence_col: usize,
+    /// Target indent the fence needs to reach to become a child of the
+    /// preceding list item.
+    continuation_indent: usize,
+    /// `true` iff both the preceding and the following sibling are ordered
+    /// lists. Safe mode requires this.
+    is_safe_evidence: bool,
+}
+
+/// Walk the AST and locate fenced code blocks sandwiched between list siblings.
+///
+/// The detection operates at every container level (root, blockquote, list
+/// item, etc.) because `markdown-rs` splits a list whenever a col-0 fence
+/// intrudes — producing `[List, Code, List, …]` sibling runs under the
+/// container. `ancestor_indent` tracks the cumulative continuation indent
+/// contributed by enclosing list items so nested cases work too.
+fn collect_escaped_code_patterns(
+    root: &Node,
+    lines: &[&str],
+) -> Vec<EscapedCodePattern> {
+    let mut out = Vec::new();
+    walk_escaped_code_patterns(root, 0, lines, &mut out);
+    out
+}
+
+fn walk_escaped_code_patterns(
+    node: &Node,
+    ancestor_indent: usize,
+    lines: &[&str],
+    out: &mut Vec<EscapedCodePattern>,
+) {
+    let children = get_children(node);
+    for i in 1..children.len() {
+        // Looking for the `[..., List, Code, ...]` pattern. The trailing list
+        // sibling is checked via `children.get(i + 1)` further down.
+        let code = match &children[i] {
+            Node::Code(c) => c,
+            _ => continue,
+        };
+        let prev_list = match &children[i - 1] {
+            Node::List(l) => l,
+            _ => continue,
+        };
+        let code_pos = match &code.position {
+            Some(p) => p,
+            None => continue,
+        };
+        let fence_start_line = code_pos.start.line.saturating_sub(1);
+        let fence_end_line = code_pos.end.line.saturating_sub(1);
+
+        // Must be a real fenced block, not an indented code block. `Node::Code`
+        // covers both; only fences take the `` ``` `` / `~~~` marker form.
+        let src_line = match lines.get(fence_start_line) {
+            Some(s) => *s,
+            None => continue,
+        };
+        let fence_col = src_line.len() - src_line.trim_start_matches(' ').len();
+        if !is_code_fence_line(&src_line[fence_col..]) {
+            continue;
+        }
+
+        // The preceding list must have at least one item with a usable
+        // position — we need that item's continuation indent.
+        let last_item = match prev_list.children.last() {
+            Some(Node::ListItem(li)) => li,
+            _ => continue,
+        };
+        let item_pos = match &last_item.position {
+            Some(p) => p,
+            None => continue,
+        };
+        let item_start_line = item_pos.start.line.saturating_sub(1);
+        let item_col = item_pos.start.column.saturating_sub(1);
+        let item_marker_width = lines
+            .get(item_start_line)
+            .map(|ln| list_marker_width(ln.trim_start()))
+            .unwrap_or(2);
+        let continuation_indent = ancestor_indent + item_col + item_marker_width;
+
+        // If the fence is already indented to the item's continuation column
+        // (or deeper), it's not escaped — the parser kept it inside the item.
+        if fence_col >= continuation_indent {
+            continue;
+        }
+
+        // Safe-mode evidence: both neighbours are ordered lists. A numbered-
+        // list restart at `2.` lands here because markdown-rs sets the second
+        // list's `ordered=true` and `start>1`.
+        let next = children.get(i + 1);
+        let next_is_list = matches!(next, Some(Node::List(_)));
+        if !next_is_list {
+            // Spec: "sits at col 0 between two list items". Without a trailing
+            // list we have no "between two items" story; skip.
+            continue;
+        }
+        let is_safe_evidence = prev_list.ordered
+            && matches!(next, Some(Node::List(l)) if l.ordered);
+
+        out.push(EscapedCodePattern {
+            fence_start_line,
+            fence_end_line,
+            fence_col,
+            continuation_indent,
+            is_safe_evidence,
+        });
+    }
+
+    // Recurse. For `Node::List` children we bump `ancestor_indent` by the
+    // current item's continuation column so nested lists see the correct base.
+    for child in children {
+        match child {
+            Node::List(list) => {
+                for item in &list.children {
+                    let li = match item {
+                        Node::ListItem(li) => li,
+                        _ => continue,
+                    };
+                    let p = match &li.position {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    let col = p.start.column.saturating_sub(1);
+                    let s = p.start.line.saturating_sub(1);
+                    let w = lines
+                        .get(s)
+                        .map(|ln| list_marker_width(ln.trim_start()))
+                        .unwrap_or(2);
+                    let new_indent = ancestor_indent + col + w;
+                    for sub in &li.children {
+                        walk_escaped_code_patterns(sub, new_indent, lines, out);
+                    }
+                }
+            }
+            _ => walk_escaped_code_patterns(child, ancestor_indent, lines, out),
+        }
+    }
+}
+
 fn apply_recover_escaped_code_in_lists(
     settings: &FormatterSettings,
     _shapes: &[ListItemDetection],
     _candidates: &[EscapedBlockCandidate],
-    _operations: &mut Vec<FormatterOperation>,
+    ast: &Node,
+    lines: &[&str],
+    operations: &mut Vec<FormatterOperation>,
 ) {
     use crate::types::RecoverEscapedCodeMode;
-    match settings.list_normalize.recover_escaped_code_in_lists {
-        RecoverEscapedCodeMode::Off => {}
-        // #83 fills the Safe / Aggressive arms.
-        RecoverEscapedCodeMode::Safe | RecoverEscapedCodeMode::Aggressive => {}
+    let mode = settings.list_normalize.recover_escaped_code_in_lists;
+    if matches!(mode, RecoverEscapedCodeMode::Off) {
+        return;
+    }
+
+    let patterns = collect_escaped_code_patterns(ast, lines);
+    for p in patterns {
+        let allow = match mode {
+            RecoverEscapedCodeMode::Off => false,
+            RecoverEscapedCodeMode::Safe => p.is_safe_evidence,
+            RecoverEscapedCodeMode::Aggressive => true,
+        };
+        if !allow {
+            continue;
+        }
+        if p.continuation_indent <= p.fence_col {
+            continue;
+        }
+
+        let extra = p.continuation_indent - p.fence_col;
+        let prefix: String = " ".repeat(extra);
+
+        // Rebuild the fence block line-by-line. Every line (opening, body,
+        // closing) gets the same leading-space prefix so internal indentation
+        // is preserved byte-exactly. Empty lines stay empty — prepending
+        // spaces to a bare blank would invent trailing whitespace we don't
+        // want and isn't needed for CommonMark lazy continuation (the fence
+        // is already nested once its opener is indented).
+        let mut new_lines: Vec<String> =
+            Vec::with_capacity(p.fence_end_line.saturating_sub(p.fence_start_line) + 1);
+        for idx in p.fence_start_line..=p.fence_end_line {
+            let orig = match lines.get(idx) {
+                Some(s) => *s,
+                None => continue,
+            };
+            if orig.is_empty() {
+                new_lines.push(String::new());
+            } else {
+                new_lines.push(format!("{}{}", prefix, orig));
+            }
+        }
+
+        operations.push(FormatterOperation::ReplaceLines {
+            start_line: p.fence_start_line,
+            end_line: p.fence_end_line,
+            lines: new_lines,
+        });
     }
 }
 
@@ -2729,6 +2925,228 @@ escaped();
         let settings = FormatterSettings::default();
         let result = format(input, &settings);
         assert_eq!(result, input);
+    }
+
+    // ── recover-escaped-code-in-lists (issue #83) ──
+
+    fn settings_recover_code(mode: crate::types::RecoverEscapedCodeMode) -> FormatterSettings {
+        let mut s = FormatterSettings::default();
+        s.list_normalize.recover_escaped_code_in_lists = mode;
+        // Keep sibling rules quiet so tests observe #83 in isolation.
+        s.list_normalize.tighten_list_continuations =
+            crate::types::TightenListContinuationsMode::Off;
+        s.list_normalize.recover_escaped_tables_in_lists =
+            crate::types::RecoverEscapedTablesMode::Off;
+        s.list_normalize.recover_escaped_paragraphs_in_lists =
+            crate::types::RecoverEscapedParagraphsMode::Off;
+        // Disable orthogonal rules that would otherwise reshape the fence text.
+        s.add_empty_line_between_elements.enabled = false;
+        s
+    }
+
+    #[test]
+    fn recover_code_numbered_list_fence_recovered_in_safe() {
+        // Numbered list with a col-0 fence that markdown-rs promotes to root
+        // level, causing the list to restart numbering. Safe mode should
+        // re-indent the fence so it becomes a child of item 1.
+        let input = "\
+1. first
+
+```js
+const x = 1;
+```
+
+2. second
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Safe);
+        let got = format(input, &settings);
+        let want = "\
+1. first
+
+   ```js
+   const x = 1;
+   ```
+
+2. second
+";
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn recover_code_bullet_list_fence_left_alone_in_safe() {
+        // Bullet-list evidence is weaker (no "restart at N" signal). Safe mode
+        // must leave it untouched.
+        let input = "\
+- first
+
+```js
+const x = 1;
+```
+
+- second
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Safe);
+        let got = format(input, &settings);
+        assert_eq!(got, input);
+    }
+
+    #[test]
+    fn recover_code_bullet_list_fence_recovered_in_aggressive() {
+        let input = "\
+- first
+
+```js
+const x = 1;
+```
+
+- second
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Aggressive);
+        let got = format(input, &settings);
+        let want = "\
+- first
+
+  ```js
+  const x = 1;
+  ```
+
+- second
+";
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn recover_code_multiline_content_preserved_byte_exact() {
+        // The fence body includes deliberate internal indentation and blank
+        // lines. Every non-fence byte must be preserved; only leading spaces
+        // are added to each non-empty line.
+        let input = "\
+1. alpha
+
+```ts
+function f() {
+    const nested = {
+        a: 1,
+    };
+
+    return nested;
+}
+```
+
+2. beta
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Safe);
+        let got = format(input, &settings);
+        let want = "\
+1. alpha
+
+   ```ts
+   function f() {
+       const nested = {
+           a: 1,
+       };
+
+       return nested;
+   }
+   ```
+
+2. beta
+";
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn recover_code_legitimate_top_level_fence_untouched() {
+        // No enclosing list at all — fence is legitimately a root block.
+        let input = "\
+# Heading
+
+```js
+let x = 1;
+```
+
+Some prose follows.
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Aggressive);
+        let got = format(input, &settings);
+        assert_eq!(got, input);
+    }
+
+    #[test]
+    fn recover_code_unrelated_context_fence_untouched() {
+        // Fence sits between a list and a non-list block — not "between two
+        // list items". Must stay at root level regardless of mode.
+        let input = "\
+1. only item
+
+```js
+const x = 1;
+```
+
+Paragraph not in any list.
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Aggressive);
+        let got = format(input, &settings);
+        assert_eq!(got, input);
+    }
+
+    #[test]
+    fn recover_code_off_mode_is_a_no_op() {
+        let input = "\
+1. first
+
+```js
+const x = 1;
+```
+
+2. second
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Off);
+        let got = format(input, &settings);
+        assert_eq!(got, input);
+    }
+
+    #[test]
+    fn recover_code_idempotent_safe() {
+        let input = "\
+1. first
+
+```js
+const x = 1;
+```
+
+2. second
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Safe);
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        assert_eq!(once, twice, "safe-mode recover must be idempotent");
+    }
+
+    #[test]
+    fn recover_code_idempotent_aggressive() {
+        let input = "\
+- first
+
+```js
+const x = 1;
+```
+
+- second
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Aggressive);
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        assert_eq!(once, twice, "aggressive-mode recover must be idempotent");
     }
 
     #[test]
