@@ -165,6 +165,8 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
         settings,
         &list_item_shapes,
         &escaped_block_candidates,
+        &ast,
+        &lines,
         &mut operations,
     );
     apply_tighten_list_continuations(settings, &list_item_shapes, &mut operations);
@@ -1607,15 +1609,220 @@ fn apply_recover_escaped_paragraphs_in_lists(
     settings: &FormatterSettings,
     _shapes: &[ListItemDetection],
     _candidates: &[EscapedBlockCandidate],
-    _operations: &mut Vec<FormatterOperation>,
+    ast: &Node,
+    lines: &[&str],
+    operations: &mut Vec<FormatterOperation>,
 ) {
     use crate::types::RecoverEscapedParagraphsMode;
-    match settings.list_normalize.recover_escaped_paragraphs_in_lists {
-        RecoverEscapedParagraphsMode::Off => {}
-        // #85 fills the Heuristic / Aggressive arms.
-        RecoverEscapedParagraphsMode::Heuristic
-        | RecoverEscapedParagraphsMode::Aggressive => {}
+    let mode = settings.list_normalize.recover_escaped_paragraphs_in_lists;
+    if matches!(mode, RecoverEscapedParagraphsMode::Off) {
+        return;
     }
+    // Root-of-tree scan. When an escaped continuation paragraph sits at column 0
+    // between two numbered (or same-bullet) list items, markdown-rs splits the
+    // run into `List → Paragraph(s) → List`. `collect_escaped_block_candidates`
+    // (issue #81) only sees gaps *inside* a single AST list, so it cannot find
+    // this split-root case. We walk every container (Root, ListItem, Blockquote)
+    // for the `List → Paragraph(s) → List` pattern and re-indent the paragraph
+    // lines to the preceding list's `continuation_indent` when the heuristic
+    // signals continuation.
+    collect_recover_paragraph_ops(ast, lines, mode, operations);
+}
+
+/// Walk the AST recursively looking for `List → Paragraph(s) → List` runs in
+/// any container's children and emit recovery ops for each match.
+fn collect_recover_paragraph_ops(
+    node: &Node,
+    lines: &[&str],
+    mode: crate::types::RecoverEscapedParagraphsMode,
+    operations: &mut Vec<FormatterOperation>,
+) {
+    let children = get_children(node);
+    let n = children.len();
+    let mut i = 0;
+    while i < n {
+        if let Node::List(list1) = &children[i] {
+            let mut j = i + 1;
+            while j < n && matches!(children[j], Node::Paragraph(_)) {
+                j += 1;
+            }
+            if j > i + 1 && j < n {
+                if let Node::List(list2) = &children[j] {
+                    let paragraphs: Vec<&Node> = children[i + 1..j].iter().collect();
+                    try_recover_paragraph_run(
+                        list1,
+                        list2,
+                        &paragraphs,
+                        lines,
+                        mode,
+                        operations,
+                    );
+                }
+            }
+            i = j;
+            continue;
+        }
+        i += 1;
+    }
+
+    // Recurse so nested containers (ListItem, Blockquote, etc.) are covered.
+    for child in children {
+        collect_recover_paragraph_ops(child, lines, mode, operations);
+    }
+}
+
+/// Classify the first inline token of a paragraph and decide whether it looks
+/// like continuation prose. Returns `true` when the heuristic (or aggressive)
+/// mode should recover this paragraph.
+fn paragraph_triggers_recovery(
+    paragraph: &Node,
+    mode: crate::types::RecoverEscapedParagraphsMode,
+) -> bool {
+    use crate::types::RecoverEscapedParagraphsMode::*;
+    let inlines = get_children(paragraph);
+    let first_inline = match inlines.first() {
+        Some(n) => n,
+        None => return false,
+    };
+
+    // Strong signal: inline code at the start (backtick).
+    if matches!(first_inline, Node::InlineCode(_)) {
+        return true;
+    }
+
+    let first_char = match first_inline {
+        Node::Text(t) => t.value.trim_start().chars().next(),
+        _ => None,
+    };
+
+    match mode {
+        Off => false,
+        Heuristic => match first_char {
+            Some(c) if c.is_ascii_lowercase() => true,
+            // Continuation punctuation: commas, dashes, colons, semicolons,
+            // opening paren, closing quote, em/en-dash.
+            Some(',' | ';' | ':' | '(' | ')' | '"' | '\'' | '—' | '–' | '-') => true,
+            _ => false,
+        },
+        // Aggressive: the structural signals (numbering resumption + col-0)
+        // are already strong; fire regardless of first-inline shape.
+        Aggressive => true,
+    }
+}
+
+/// Validate and emit recovery ops for a candidate run `List → Paragraph(s) → List`.
+/// Returns `None` (ignored) when the run fails any structural or heuristic check.
+fn try_recover_paragraph_run(
+    list1: &markdown::mdast::List,
+    list2: &markdown::mdast::List,
+    paragraphs: &[&Node],
+    lines: &[&str],
+    mode: crate::types::RecoverEscapedParagraphsMode,
+    operations: &mut Vec<FormatterOperation>,
+) -> Option<()> {
+    // 1. Same list variety (both ordered or both unordered).
+    if list1.ordered != list2.ordered {
+        return None;
+    }
+
+    // 2. Resolve the preceding list's continuation indent from its last item.
+    let last_item = list1.children.last()?;
+    let (list1_marker_col, list1_start_line, list1_marker_ch) = match last_item {
+        Node::ListItem(item) => {
+            let pos = item.position.as_ref()?;
+            let col = pos.start.column.saturating_sub(1);
+            let ln = pos.start.line.saturating_sub(1);
+            let ch = lines.get(ln)?.trim_start().chars().next()?;
+            (col, ln, ch)
+        }
+        _ => return None,
+    };
+    let trimmed1 = lines.get(list1_start_line)?.trim_start();
+    let continuation_indent = list1_marker_col + list_marker_width(trimmed1);
+
+    // 3. list2 must resume at the same marker column (same nesting level).
+    let first_item2 = list2.children.first()?;
+    let (list2_marker_col, list2_start_line, list2_marker_ch) = match first_item2 {
+        Node::ListItem(item) => {
+            let pos = item.position.as_ref()?;
+            let col = pos.start.column.saturating_sub(1);
+            let ln = pos.start.line.saturating_sub(1);
+            let ch = lines.get(ln)?.trim_start().chars().next()?;
+            (col, ln, ch)
+        }
+        _ => return None,
+    };
+    if list2_marker_col != list1_marker_col {
+        return None;
+    }
+
+    // 4. Sequence resumption.
+    if list1.ordered {
+        let start1 = list1.start.unwrap_or(1);
+        let count1 = list1.children.len() as u32;
+        let expected_next = start1.saturating_add(count1);
+        let start2 = list2.start.unwrap_or(1);
+        if start2 != expected_next {
+            // Restarts at 1 or jumps — not a continuation; likely an intentional
+            // new list.
+            return None;
+        }
+    } else {
+        // Bullet marker must match exactly (-/*/+).
+        if list1_marker_ch != list2_marker_ch {
+            return None;
+        }
+    }
+
+    // 5. All paragraphs must be dedented below the continuation indent (i.e.
+    //    currently "escaped"). Collect their line ranges along the way.
+    let mut para_ranges: Vec<(usize, usize)> = Vec::with_capacity(paragraphs.len());
+    for p in paragraphs {
+        let pos = p.position()?;
+        let col = pos.start.column.saturating_sub(1);
+        if col >= continuation_indent {
+            return None;
+        }
+        let s = pos.start.line.saturating_sub(1);
+        let e = pos.end.line.saturating_sub(1);
+        para_ranges.push((s, e));
+    }
+
+    // 6. Heuristic / aggressive signal on the first paragraph's leading token.
+    let first_paragraph = paragraphs.first()?;
+    if !paragraph_triggers_recovery(first_paragraph, mode) {
+        return None;
+    }
+
+    // 7. Guard: don't touch lines that already sit inside `list2`'s range
+    //    (shouldn't happen, but defensive).
+    let safe_upper = list2_start_line;
+
+    // 8. Emit IndentLine ops so each paragraph line is prefixed by
+    //    `continuation_indent` spaces. IndentLine trims the existing line and
+    //    prepends the indent — safe because the paragraphs sit at col 0 and
+    //    have no meaningful leading whitespace.
+    let indent: String = " ".repeat(continuation_indent);
+    for (s, e) in para_ranges {
+        for ln in s..=e {
+            if ln >= safe_upper {
+                break;
+            }
+            let line = match lines.get(ln) {
+                Some(l) => l,
+                None => continue,
+            };
+            if line.trim().is_empty() {
+                continue;
+            }
+            operations.push(FormatterOperation::IndentLine {
+                start_line: ln,
+                indent: indent.clone(),
+            });
+        }
+    }
+
+    Some(())
 }
 
 fn apply_tighten_list_continuations(
@@ -2729,6 +2936,233 @@ escaped();
         let settings = FormatterSettings::default();
         let result = format(input, &settings);
         assert_eq!(result, input);
+    }
+
+    // ── Recover-escaped-paragraphs-in-lists tests (issue #85) ──
+
+    fn settings_with_recover_paragraphs_mode(
+        mode: crate::types::RecoverEscapedParagraphsMode,
+    ) -> FormatterSettings {
+        use crate::types::{
+            RecoverEscapedCodeMode, RecoverEscapedTablesMode, TightenListContinuationsMode,
+        };
+        let mut s = FormatterSettings::default();
+        // Isolate the rule under test: turn sibling list-normalize rules off so
+        // cross-rule interactions (#82-#84) don't perturb output assertions.
+        s.list_normalize.tighten_list_continuations = TightenListContinuationsMode::Off;
+        s.list_normalize.recover_escaped_code_in_lists = RecoverEscapedCodeMode::Off;
+        s.list_normalize.recover_escaped_tables_in_lists = RecoverEscapedTablesMode::Off;
+        s.list_normalize.recover_escaped_paragraphs_in_lists = mode;
+        s
+    }
+
+    #[test]
+    fn recover_paragraphs_off_is_byte_identical_on_escaped_case() {
+        // The canonical false-positive-risky shape: paragraph at col 0 between
+        // two numbered items that resume sequence. Default mode is Off, so
+        // the formatter must leave it untouched.
+        let input = "\
+1. first item
+
+also, this continues the first item
+
+2. second item
+";
+        let settings = FormatterSettings::default();
+        assert_eq!(
+            settings.list_normalize.recover_escaped_paragraphs_in_lists,
+            crate::types::RecoverEscapedParagraphsMode::Off,
+            "default mode must be Off (opt-in)"
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, input, "Off mode must be byte-identical");
+    }
+
+    #[test]
+    fn recover_paragraphs_off_is_byte_identical_on_assorted_inputs() {
+        // A few shapes chosen to touch the walker without tripping Off: nested
+        // lists, blockquote-wrapped lists, mixed markers.
+        let samples = [
+            "- a\n- b\n- c\n",
+            "1. one\n2. two\n",
+            "- outer\n  - inner\n- outer again\n",
+            "> 1. quoted\n>\n> text\n>\n> 2. more quoted\n",
+        ];
+        let settings = FormatterSettings::default();
+        for input in samples {
+            let result = format(input, &settings);
+            assert_eq!(result, input, "Off mode altered input:\n{input}");
+        }
+    }
+
+    #[test]
+    fn recover_paragraphs_heuristic_recovers_lowercase_continuation() {
+        // Classic escape: numbering resumes 1→2, paragraph at col 0 starts
+        // lowercase — strong continuation signal.
+        let input = "\
+1. first item
+
+also continues the first
+
+2. second item
+";
+        let expected = "\
+1. first item
+
+   also continues the first
+
+2. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Heuristic,
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn recover_paragraphs_heuristic_recovers_backtick_continuation() {
+        // Paragraph starts with inline code — backtick is a strong continuation
+        // signal per the issue description.
+        let input = "\
+1. first item
+
+`foo` is shorthand for the item above
+
+2. second item
+";
+        let expected = "\
+1. first item
+
+   `foo` is shorthand for the item above
+
+2. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Heuristic,
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn recover_paragraphs_heuristic_leaves_capital_new_topic_alone() {
+        // Capital-initial paragraph between items. Heuristic must NOT touch it
+        // — it reads like a deliberate mid-list new topic, not a continuation.
+        let input = "\
+1. first item
+
+New unrelated topic that the author meant to stay at column 0.
+
+2. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Heuristic,
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, input, "heuristic must not touch capital/new-topic paragraph");
+    }
+
+    #[test]
+    fn recover_paragraphs_heuristic_leaves_non_resuming_numbering_alone() {
+        // Numbering does not resume (1. then 1.) — the structural precondition
+        // fails so heuristic must not fire even with a lowercase start.
+        let input = "\
+1. first item
+
+also continues the first (but numbering does not resume)
+
+1. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Heuristic,
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn recover_paragraphs_aggressive_captures_capital_case() {
+        // Aggressive mode fires even without the lowercase/backtick/punctuation
+        // gate, as long as the structural preconditions hold.
+        let input = "\
+1. first item
+
+Capital start but numbering resumes so aggressive fires
+
+2. second item
+";
+        let expected = "\
+1. first item
+
+   Capital start but numbering resumes so aggressive fires
+
+2. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Aggressive,
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn recover_paragraphs_heuristic_handles_bullet_lists() {
+        // Bullet-list variant: same marker char on both sides + lowercase
+        // start → recover.
+        let input = "\
+- first bullet
+
+continues the bullet above
+
+- second bullet
+";
+        let expected = "\
+- first bullet
+
+  continues the bullet above
+
+- second bullet
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Heuristic,
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn recover_paragraphs_idempotent_under_heuristic() {
+        let input = "\
+1. first item
+
+also continues the first
+
+2. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Heuristic,
+        );
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        assert_eq!(once, twice, "recover-paragraphs heuristic is not idempotent");
+    }
+
+    #[test]
+    fn recover_paragraphs_idempotent_under_aggressive() {
+        let input = "\
+1. first item
+
+Capital continuation line.
+
+2. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Aggressive,
+        );
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        assert_eq!(once, twice, "recover-paragraphs aggressive is not idempotent");
     }
 
     #[test]
