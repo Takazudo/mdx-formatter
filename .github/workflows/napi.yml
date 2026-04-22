@@ -36,6 +36,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Sync platform package versions with root
+        shell: bash
+        run: node scripts/sync-napi-versions.mjs
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.settings.target }}
@@ -49,6 +52,9 @@ jobs:
           if-no-files-found: error
 
   publish:
+    # Invariant: platform package.json versions are synced with root via
+    # scripts/sync-napi-versions.mjs before build and before publish, so each
+    # tag publishes the four platform packages at the tag's root version.
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -56,6 +62,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Sync platform package versions with root
+        shell: bash
+        run: node scripts/sync-napi-versions.mjs
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -86,6 +95,6 @@ jobs:
           for dir in npm/darwin-arm64 npm/darwin-x64 npm/linux-x64-gnu npm/win32-x64-msvc; do
             echo "Publishing $dir..."
             cd "$dir"
-            npm publish --access public || echo "Already published or failed: $dir"
+            npm publish --access public
             cd ../..
           done
