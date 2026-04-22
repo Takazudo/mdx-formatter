@@ -167,7 +167,13 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
         &escaped_block_candidates,
         &mut operations,
     );
-    apply_tighten_list_continuations(settings, &list_item_shapes, &mut operations);
+    apply_tighten_list_continuations(
+        settings,
+        &list_item_shapes,
+        &ast,
+        &lines,
+        &mut operations,
+    );
 
     // HTML block formatting
     if settings.format_html_blocks_in_mdx.enabled {
@@ -1618,18 +1624,172 @@ fn apply_recover_escaped_paragraphs_in_lists(
     }
 }
 
+/// Tighten-list-continuations (#82).
+///
+/// Collapses a single blank line that sits between two adjacent paragraph
+/// children of a `ParagraphsOnly` list item, when heuristics indicate the
+/// second paragraph is a syntactic continuation of the first (rather than a
+/// deliberate paragraph break the author wanted).
+///
+/// Runs AFTER recover-escaped-* and BEFORE wrap-markdown (per the ordering
+/// contract documented above `collect_list_item_shapes`). Recover reshapes
+/// children; tighten must see the post-recover child set. wrap-markdown must
+/// see the post-tighten line set so it can re-wrap merged paragraphs.
+///
+/// Trigger conditions (heuristic mode, all three required):
+///   a) list item's `shape` is `ParagraphsOnly` (no code fence / table /
+///      sublist sibling that would change continuation semantics)
+///   b) the two paragraphs are separated by EXACTLY one blank line
+///   c) the second paragraph's first non-whitespace character is lowercase,
+///      a backtick, or an opening-punctuation character (`(`, `[`, `"`,
+///      `'`, en-dash, em-dash, comma).
+///
+/// Aggressive mode drops condition (c): any single-blank gap between two
+/// paragraph children of a `ParagraphsOnly` list item collapses.
+///
+/// Off mode is a no-op (matches pre-rule behavior byte-for-byte).
 fn apply_tighten_list_continuations(
     settings: &FormatterSettings,
-    _shapes: &[ListItemDetection],
-    _operations: &mut Vec<FormatterOperation>,
+    shapes: &[ListItemDetection],
+    ast: &Node,
+    lines: &[&str],
+    operations: &mut Vec<FormatterOperation>,
 ) {
     use crate::types::TightenListContinuationsMode;
-    match settings.list_normalize.tighten_list_continuations {
-        TightenListContinuationsMode::Off => {}
-        // #82 fills the Heuristic / Aggressive arms.
-        TightenListContinuationsMode::Heuristic
-        | TightenListContinuationsMode::Aggressive => {}
+    let mode = settings.list_normalize.tighten_list_continuations;
+    if matches!(mode, TightenListContinuationsMode::Off) {
+        return;
     }
+
+    // Lookup: which (start_line, end_line) spans are ParagraphsOnly.
+    // Detection output is the single source of truth for shape, so we consume
+    // it here instead of re-classifying from the AST.
+    use crate::types::ListItemShape;
+    use std::collections::HashSet;
+    let paragraphs_only: HashSet<(usize, usize)> = shapes
+        .iter()
+        .filter(|s| s.shape == ListItemShape::ParagraphsOnly)
+        .map(|s| (s.start_line, s.end_line))
+        .collect();
+
+    if paragraphs_only.is_empty() {
+        return;
+    }
+
+    walk_for_tighten(ast, lines, &paragraphs_only, mode, operations);
+}
+
+fn walk_for_tighten(
+    node: &Node,
+    lines: &[&str],
+    paragraphs_only: &std::collections::HashSet<(usize, usize)>,
+    mode: crate::types::TightenListContinuationsMode,
+    operations: &mut Vec<FormatterOperation>,
+) {
+    if let Node::ListItem(item) = node {
+        if let Some(pos) = &item.position {
+            let s = pos.start.line.saturating_sub(1);
+            let e = pos.end.line.saturating_sub(1);
+            if paragraphs_only.contains(&(s, e)) {
+                emit_tighten_ops_for_item(item, lines, mode, operations);
+            }
+        }
+    }
+    for child in get_children(node) {
+        walk_for_tighten(child, lines, paragraphs_only, mode, operations);
+    }
+}
+
+/// For a single `ParagraphsOnly` list item, emit one delete-line op for every
+/// adjacent paragraph pair that qualifies under the selected mode.
+fn emit_tighten_ops_for_item(
+    item: &markdown::mdast::ListItem,
+    lines: &[&str],
+    mode: crate::types::TightenListContinuationsMode,
+    operations: &mut Vec<FormatterOperation>,
+) {
+    use crate::types::TightenListContinuationsMode;
+
+    // Pull out paragraph children in document order. `ParagraphsOnly` is
+    // expected to mean all children are paragraphs, but we still filter
+    // defensively — that way a future shape-classification edge case can't
+    // trip the rule.
+    let paras: Vec<&markdown::mdast::Paragraph> = item
+        .children
+        .iter()
+        .filter_map(|c| match c {
+            Node::Paragraph(p) => Some(p),
+            _ => None,
+        })
+        .collect();
+
+    for window in paras.windows(2) {
+        let p1 = window[0];
+        let p2 = window[1];
+        let (pos1, pos2) = match (&p1.position, &p2.position) {
+            (Some(a), Some(b)) => (a, b),
+            _ => continue,
+        };
+        let p1_end_0 = pos1.end.line.saturating_sub(1);
+        let p2_start_0 = pos2.start.line.saturating_sub(1);
+
+        // Exactly one blank line between: p2_start_0 == p1_end_0 + 2.
+        if p2_start_0 != p1_end_0 + 2 {
+            continue;
+        }
+        let blank_idx = p1_end_0 + 1;
+        if blank_idx >= lines.len() {
+            continue;
+        }
+        if !lines[blank_idx].trim().is_empty() {
+            // Defensive: AST said there was a gap line, but the source line
+            // is non-blank. Skip rather than corrupt content.
+            continue;
+        }
+
+        if matches!(mode, TightenListContinuationsMode::Heuristic)
+            && !second_paragraph_looks_like_continuation(lines, p2_start_0)
+        {
+            continue;
+        }
+
+        // Delete the blank line by replacing [blank_idx..=blank_idx] with
+        // an empty Vec. `normalize_empty_lines` in format_once will not
+        // mind the result; adjacent paragraphs simply become adjacent.
+        operations.push(FormatterOperation::ReplaceLines {
+            start_line: blank_idx,
+            end_line: blank_idx,
+            lines: Vec::new(),
+        });
+    }
+}
+
+/// Heuristic (c): the second paragraph's first inline character suggests
+/// it is mid-sentence continuation text.
+///
+/// Triggers on: any lowercase letter (Unicode), a backtick (inline code
+/// continuation), or one of the opening-punct / conjunction characters
+/// `(`, `[`, `"`, `'`, `,`, en-dash `–`, em-dash `—`.
+///
+/// Preserves (does NOT trigger) on: uppercase start, digit start, list
+/// marker, blockquote marker, anything else. When in doubt we preserve —
+/// false preservations only cost output loose-ness; false collapses can
+/// destroy meaningful breaks.
+fn second_paragraph_looks_like_continuation(lines: &[&str], p_start_0: usize) -> bool {
+    let Some(line) = lines.get(p_start_0) else {
+        return false;
+    };
+    let trimmed = line.trim_start();
+    let Some(first) = trimmed.chars().next() else {
+        return false;
+    };
+    if first.is_lowercase() {
+        return true;
+    }
+    matches!(
+        first,
+        '`' | '(' | '[' | '"' | '\'' | ',' | '–' | '—'
+    )
 }
 
 // ============================================================================
@@ -3587,6 +3747,201 @@ escaped();
             result.contains("description: >-\n  top text"),
             "top-level block scalar should be preserved; got:\n{}",
             result
+        );
+    }
+
+    // ── tighten-list-continuations (issue #82) tests ──
+    //
+    // These tests drive the full public `format()` entry point because the
+    // rule composes with the rest of the pipeline (wrap-markdown, convergence
+    // loop, post-processing `normalize_empty_lines`). Driving the API
+    // end-to-end also doubles as a regression guard for the rule-ordering
+    // contract: if tighten ever gets reordered past wrap-markdown or past the
+    // convergence loop, the fixture assertions will break.
+
+    fn settings_with_tighten(
+        mode: crate::types::TightenListContinuationsMode,
+    ) -> FormatterSettings {
+        let mut s = FormatterSettings::default();
+        s.list_normalize.tighten_list_continuations = mode;
+        s
+    }
+
+    #[test]
+    fn tighten_heuristic_collapses_lowercase_continuation() {
+        use crate::types::TightenListContinuationsMode;
+        let input = "- first line of the item, which is long and continues\n\n  with more prose.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        // Blank line between the two paragraphs should be gone.
+        assert!(
+            !out.contains("continues\n\n  with more prose"),
+            "blank gap not collapsed; output:\n{out}"
+        );
+        assert!(
+            out.contains("with more prose."),
+            "second paragraph content missing; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_preserves_capital_start() {
+        use crate::types::TightenListContinuationsMode;
+        // "Also, ..." — capital letter — must be left alone by heuristic mode.
+        let input = "- first sentence ends here.\n\n  Also, a new idea starts here.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            out.contains("ends here.\n\n  Also, a new idea"),
+            "heuristic should preserve capital-start second paragraph; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_preserves_item_with_code_fence() {
+        use crate::types::TightenListContinuationsMode;
+        // Shape is Mixed (paragraph + code fence), so the rule must not fire,
+        // even though the second paragraph starts with lowercase.
+        let input = "\
+- intro paragraph
+
+  ```js
+  const x = 1;
+  ```
+
+  continuing lowercase prose that would otherwise trigger.
+";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        // The final paragraph should stay separated from the code fence.
+        assert!(
+            out.contains("```\n\n  continuing lowercase"),
+            "tighten must not collapse across non-paragraph children; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_preserves_item_with_sublist() {
+        use crate::types::TightenListContinuationsMode;
+        // Shape is HasSublist / Mixed, not ParagraphsOnly — do not fire.
+        let input = "\
+- parent item intro paragraph
+
+  - nested child one
+  - nested child two
+
+  continuing lowercase prose that would otherwise trigger.
+";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            out.contains("child two\n\n  continuing lowercase"),
+            "tighten must not collapse around a sublist child; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_aggressive_collapses_capital_start() {
+        use crate::types::TightenListContinuationsMode;
+        let input = "- first sentence ends here.\n\n  Also, a new idea starts here.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Aggressive));
+        // Aggressive drops condition (c): the gap collapses even though the
+        // second paragraph starts with a capital letter.
+        assert!(
+            !out.contains("ends here.\n\n  Also,"),
+            "aggressive mode should collapse; output:\n{out}"
+        );
+        assert!(
+            out.contains("Also, a new idea"),
+            "content must survive; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_off_is_no_op() {
+        use crate::types::TightenListContinuationsMode;
+        // Identical to the heuristic fixture. With mode=off, the blank gap
+        // must survive byte-for-byte.
+        let input = "- first line of the item, which is long and continues\n\n  with more prose.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Off));
+        assert!(
+            out.contains("continues\n\n  with more prose"),
+            "off mode must be a no-op; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_is_idempotent() {
+        use crate::types::TightenListContinuationsMode;
+        let input = "- first line of the item, which is long and continues\n\n  with more prose.\n";
+        let once = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        let twice = format(&once, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert_eq!(once, twice, "tighten must be idempotent");
+    }
+
+    #[test]
+    fn tighten_preserves_double_blank_gap() {
+        use crate::types::TightenListContinuationsMode;
+        // Two blank lines between paragraphs — not exactly one — must not
+        // collapse. After format(), `normalize_empty_lines` will reduce it
+        // to one blank line, but the rule itself must not fire on the
+        // original AST state, and the collapsed post-normalize result will
+        // either be left alone on the next convergence iteration (aggressive
+        // would collapse, heuristic won't if start is capital). Here we use
+        // capital start so heuristic cannot trigger on the post-normalized
+        // version either.
+        let input = "- first sentence.\n\n\n  Also follows.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        // "Also" starts capital → heuristic preserves even after normalize.
+        assert!(
+            out.contains("first sentence.\n\n  Also follows."),
+            "heuristic must not collapse normalized double-gap with capital second para; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_real_content_fixture_local_llm_search_spike() {
+        // Short snippet from the observed loose AI-authored form in
+        // `zudo-text/doc/src/content/docs/architecture/local-llm-search-spike.mdx`
+        // (captured in the epic #80 investigation). The second paragraph
+        // starts with a backtick (inline code), which is a heuristic trigger.
+        let input = "\
+- No `candle`, `ort` / ONNX Runtime, `llama.cpp` / `llama-cpp-2`, `tch` / libtorch, or
+
+  `rust-bert` dependency in `tauri-app/Cargo.toml` or `tauri-app/core/Cargo.toml`.
+- No `gguf` / `.onnx` / `.safetensors` assets in the repo.
+";
+        let out = format(input, &FormatterSettings::default());
+        // The blank gap between the two continuation lines must be gone.
+        assert!(
+            !out.contains("libtorch, or\n\n  `rust-bert`"),
+            "real-content fixture: blank gap not collapsed; output:\n{out}"
+        );
+        // Both content halves must still be present.
+        assert!(
+            out.contains("libtorch, or"),
+            "first continuation line missing; output:\n{out}"
+        );
+        assert!(
+            out.contains("`rust-bert` dependency"),
+            "second continuation content missing; output:\n{out}"
+        );
+        // The second list item is untouched.
+        assert!(
+            out.contains("- No `gguf` / `.onnx` / `.safetensors` assets in the repo."),
+            "second list item must be untouched; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_default_matches_heuristic() {
+        // The FormatterSettings::default() must pick heuristic mode (the
+        // locked-in default) — a regression guard for the config layer.
+        let input = "- first line of the item, which is long and continues\n\n  with more prose.\n";
+        let out_default = format(input, &FormatterSettings::default());
+        let out_explicit = format(
+            input,
+            &settings_with_tighten(crate::types::TightenListContinuationsMode::Heuristic),
+        );
+        assert_eq!(
+            out_default, out_explicit,
+            "default settings must match explicit heuristic; default=\n{out_default}\nexplicit=\n{out_explicit}"
         );
     }
 
