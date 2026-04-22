@@ -1,0 +1,66 @@
+---
+title: tighten-list-continuations
+description: Collapse unwanted blank lines inside a list item whose children are continuation paragraphs
+sidebar_position: 20
+---
+
+Collapse the blank line between two adjacent paragraph children of a list item when heuristics indicate the second paragraph is a continuation of the first sentence — the shape AI authors sometimes emit when wrapping long bullet items.
+
+## Modes
+
+| Value           | Default | Behavior                                                                                                                                                                                          |
+| --------------- | :-----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"off"`         |         | Never collapse. Output is byte-identical to the input for this rule.                                                                                                                              |
+| `"heuristic"`   |    ✓    | Collapse only when (a) the item's children are paragraphs only, (b) they are separated by exactly one blank line at continuation indent, and (c) the second paragraph starts with a continuation signal (lowercase letter, backtick, `(`, `[`, `"`, `'`, `,`, en-dash, em-dash). |
+| `"aggressive"`  |         | Drop trigger (c); collapse any paragraphs-only list item whose paragraphs are separated by exactly one blank line.                                                                                |
+
+## Config
+
+```json
+{
+  "tighten-list-continuations": "heuristic"
+}
+```
+
+This key sits at the **top level** of the config — not nested under an object. See the [Options overview](./) for the list-normalize section.
+
+## Example
+
+Before:
+
+````markdown
+- No `candle`, `ort` / ONNX Runtime, `llama.cpp` / `llama-cpp-2`, `tch` / libtorch, or
+
+  `rust-bert` dependency in `tauri-app/Cargo.toml` or `tauri-app/core/Cargo.toml`.
+- No `gguf` / `.onnx` / `.safetensors` assets in the repo.
+````
+
+After (`"heuristic"` — default):
+
+````markdown
+- No `candle`, `ort` / ONNX Runtime, `llama.cpp` / `llama-cpp-2`, `tch` / libtorch, or
+  `rust-bert` dependency in `tauri-app/Cargo.toml` or `tauri-app/core/Cargo.toml`.
+- No `gguf` / `.onnx` / `.safetensors` assets in the repo.
+````
+
+The second paragraph starts with `` ` `` (inline code), which is a heuristic continuation signal — the blank gap is collapsed.
+
+### Capital-initial continuation is left alone
+
+Before:
+
+````markdown
+- first item that intros a follow-up topic.
+
+  Also, this is a new sentence but starts with a capital word.
+````
+
+Output in `"heuristic"` mode is byte-identical — the capital start suggests a deliberate new topic, not a continuation.
+
+In `"aggressive"` mode the blank gap collapses regardless.
+
+## Notes
+
+- The rule runs **before** `wrap-markdown` in the formatter pipeline, and after the three `recover-escaped-*` rules. See [rule ordering](/docs/architecture).
+- The rule is idempotent — running the formatter twice on the tightened output produces no further change.
+- Sublists and fenced code children disqualify an item from collapsing in both modes.

@@ -58,6 +58,36 @@ const formatted = await format('# Hello\nWorld');
 console.log(formatted); // '# Hello\n\nWorld'
 ```
 
+### List Normalize
+
+Four rules clean up AI-authored list-item content. They are exposed as flat
+top-level kebab-case keys (not nested objects):
+
+| Key                                   | Default       | Purpose                                                                           |
+| ------------------------------------- | ------------- | --------------------------------------------------------------------------------- |
+| `tighten-list-continuations`          | `"heuristic"` | Collapse blank gaps inside list items whose children are continuation paragraphs. |
+| `recover-escaped-code-in-lists`       | `"safe"`      | Re-indent fenced code blocks that escaped to column 0 between list items.         |
+| `recover-escaped-tables-in-lists`     | `"safe"`      | Re-indent GFM tables that escaped to column 0 between list items.                 |
+| `recover-escaped-paragraphs-in-lists` | `"off"`       | Re-indent continuation paragraphs that escaped to column 0 (opt-in).              |
+
+Each accepts `"off"` to disable, its default middle value (`"heuristic"` or
+`"safe"`) for the conservative trigger, or `"aggressive"` to drop the
+structural safeguards. See the
+[List Normalize options docs](https://takazudomodular.com/pj/mdx-formatter/docs/options/#list-normalize)
+for per-rule before/after examples.
+
+### Preview with `--dry-run`
+
+```bash
+mdx-formatter --dry-run "**/*.{md,mdx}"
+```
+
+Writes every rule-level change to **stderr** without touching the files.
+Useful for auditing what the list-normalize rules (or any other rule) would
+change before committing. Exits 0 whether or not there was anything to
+report; conflicts with `--write` / `--check`. The same report is available
+programmatically via the `dryRunReport()` API.
+
 ### Browser (WASM)
 
 ```bash

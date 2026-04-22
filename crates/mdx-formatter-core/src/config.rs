@@ -11,13 +11,60 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::types::FormatterSettings;
+use crate::types::{
+    FormatterSettings, ListNormalizeSettings, RecoverEscapedCodeMode,
+    RecoverEscapedParagraphsMode, RecoverEscapedTablesMode, TightenListContinuationsMode,
+};
 
 /// Result of loading full config — settings plus CLI-level exclude patterns.
 #[derive(Debug, Clone)]
 pub struct FullConfig {
     pub settings: FormatterSettings,
     pub exclude_patterns: Vec<String>,
+}
+
+/// Top-level kebab-case keys the list-normalize schema exposes. These sit at
+/// the root of the public config (not nested under `listNormalize`) so users
+/// can opt individual rules on/off without learning a hierarchy. The loader
+/// lifts them into `FormatterSettings::list_normalize` after the 3-layer merge.
+const LIST_NORMALIZE_TOP_KEYS: &[&str] = &[
+    "tighten-list-continuations",
+    "recover-escaped-code-in-lists",
+    "recover-escaped-tables-in-lists",
+    "recover-escaped-paragraphs-in-lists",
+];
+
+/// Extract the 4 list-normalize top-level keys from a merged JSON object into
+/// a `ListNormalizeSettings`, falling back to per-field defaults. Missing keys
+/// keep defaults; unknown variants also fall back to defaults (permissive parse).
+pub(crate) fn extract_list_normalize(merged: &Value) -> ListNormalizeSettings {
+    let mut settings = ListNormalizeSettings::default();
+    let obj = match merged.as_object() {
+        Some(o) => o,
+        None => return settings,
+    };
+
+    if let Some(v) = obj.get("tighten-list-continuations") {
+        if let Ok(mode) = serde_json::from_value::<TightenListContinuationsMode>(v.clone()) {
+            settings.tighten_list_continuations = mode;
+        }
+    }
+    if let Some(v) = obj.get("recover-escaped-code-in-lists") {
+        if let Ok(mode) = serde_json::from_value::<RecoverEscapedCodeMode>(v.clone()) {
+            settings.recover_escaped_code_in_lists = mode;
+        }
+    }
+    if let Some(v) = obj.get("recover-escaped-tables-in-lists") {
+        if let Ok(mode) = serde_json::from_value::<RecoverEscapedTablesMode>(v.clone()) {
+            settings.recover_escaped_tables_in_lists = mode;
+        }
+    }
+    if let Some(v) = obj.get("recover-escaped-paragraphs-in-lists") {
+        if let Ok(mode) = serde_json::from_value::<RecoverEscapedParagraphsMode>(v.clone()) {
+            settings.recover_escaped_paragraphs_in_lists = mode;
+        }
+    }
+    settings
 }
 
 /// Deep merge two JSON objects. Objects are recursively merged; arrays and
@@ -133,7 +180,21 @@ pub fn load_full_config_from(
         after_file
     };
 
-    let settings = FormatterSettings::from_partial_json(&final_json);
+    // Extract list-normalize top-level kebab-case keys before forwarding the
+    // rest to FormatterSettings serde deserialization (which uses camelCase).
+    let list_normalize = extract_list_normalize(&final_json);
+
+    // Strip the 4 keys so they do not trip the serde deserializer if it ever
+    // moves to deny_unknown_fields. Also keeps the JSON round-trip clean.
+    let mut settings_json = final_json.clone();
+    if let Value::Object(ref mut map) = settings_json {
+        for key in LIST_NORMALIZE_TOP_KEYS {
+            map.remove(*key);
+        }
+    }
+
+    let mut settings = FormatterSettings::from_partial_json(&settings_json);
+    settings.list_normalize = list_normalize;
 
     FullConfig {
         settings,
@@ -144,6 +205,36 @@ pub fn load_full_config_from(
 /// Load and merge all configuration layers, returning just the settings.
 pub fn load_config(config_path: Option<&str>, programmatic: Option<&Value>) -> FormatterSettings {
     load_full_config(config_path, programmatic).settings
+}
+
+/// Build a `FormatterSettings` from a single already-merged JSON value that
+/// may include the four public `list-normalize` top-level kebab-case keys.
+///
+/// Call this from front-ends (napi, wasm, …) that accept a single blob of
+/// public settings JSON already produced by their own loader (e.g. the TS
+/// `loadConfig`). It:
+///   1. extracts the four list-normalize kebab-case keys into
+///      `ListNormalizeSettings` via `extract_list_normalize`, then
+///   2. strips those keys from a clone of the JSON before handing the rest
+///      to `FormatterSettings::from_partial_json` (camelCase serde path), and
+///   3. sets `settings.list_normalize` to the extracted bundle.
+///
+/// This is the glue `load_full_config_from` does for the on-disk config
+/// path. Without this (or that), the kebab-case keys are silently dropped
+/// because `FormatterSettings::list_normalize` is `#[serde(skip)]`.
+pub fn from_public_json(value: &Value) -> FormatterSettings {
+    let list_normalize = extract_list_normalize(value);
+
+    let mut settings_json = value.clone();
+    if let Value::Object(ref mut map) = settings_json {
+        for key in LIST_NORMALIZE_TOP_KEYS {
+            map.remove(*key);
+        }
+    }
+
+    let mut settings = FormatterSettings::from_partial_json(&settings_json);
+    settings.list_normalize = list_normalize;
+    settings
 }
 
 /// Load exclude patterns from config file.
@@ -505,6 +596,208 @@ mod tests {
         assert_eq!(
             settings.add_empty_lines_in_block_jsx.block_components,
             vec!["Details", "Summary"]
+        );
+    }
+
+    // ── list-normalize schema tests (issue #81) ──
+
+    #[test]
+    fn load_config_list_normalize_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = load_full_config_from(dir.path(), None, None).settings;
+        // Defaults: tighten=heuristic, recover-code=safe, recover-tables=safe, recover-paragraphs=off
+        assert_eq!(
+            settings.list_normalize.tighten_list_continuations,
+            TightenListContinuationsMode::Heuristic
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_code_in_lists,
+            RecoverEscapedCodeMode::Safe
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_tables_in_lists,
+            RecoverEscapedTablesMode::Safe
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_paragraphs_in_lists,
+            RecoverEscapedParagraphsMode::Off
+        );
+    }
+
+    #[test]
+    fn load_config_list_normalize_reads_kebab_case_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        fs::write(
+            &config_path,
+            r#"{
+                "tighten-list-continuations": "aggressive",
+                "recover-escaped-code-in-lists": "off",
+                "recover-escaped-tables-in-lists": "aggressive",
+                "recover-escaped-paragraphs-in-lists": "heuristic"
+            }"#,
+        )
+        .unwrap();
+
+        let settings =
+            load_full_config_from(dir.path(), Some(config_path.to_str().unwrap()), None).settings;
+
+        assert_eq!(
+            settings.list_normalize.tighten_list_continuations,
+            TightenListContinuationsMode::Aggressive
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_code_in_lists,
+            RecoverEscapedCodeMode::Off
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_tables_in_lists,
+            RecoverEscapedTablesMode::Aggressive
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_paragraphs_in_lists,
+            RecoverEscapedParagraphsMode::Heuristic
+        );
+    }
+
+    #[test]
+    fn load_config_list_normalize_programmatic_overrides_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        fs::write(
+            &config_path,
+            r#"{"tighten-list-continuations": "off"}"#,
+        )
+        .unwrap();
+
+        let overrides = json!({"tighten-list-continuations": "aggressive"});
+        let settings = load_full_config_from(
+            dir.path(),
+            Some(config_path.to_str().unwrap()),
+            Some(&overrides),
+        )
+        .settings;
+
+        assert_eq!(
+            settings.list_normalize.tighten_list_continuations,
+            TightenListContinuationsMode::Aggressive
+        );
+    }
+
+    #[test]
+    fn load_config_list_normalize_partial_file_keeps_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        fs::write(
+            &config_path,
+            r#"{"tighten-list-continuations": "off"}"#,
+        )
+        .unwrap();
+
+        let settings =
+            load_full_config_from(dir.path(), Some(config_path.to_str().unwrap()), None).settings;
+
+        assert_eq!(
+            settings.list_normalize.tighten_list_continuations,
+            TightenListContinuationsMode::Off
+        );
+        // Other keys keep defaults
+        assert_eq!(
+            settings.list_normalize.recover_escaped_code_in_lists,
+            RecoverEscapedCodeMode::Safe
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_paragraphs_in_lists,
+            RecoverEscapedParagraphsMode::Off
+        );
+    }
+
+    #[test]
+    fn load_config_list_normalize_invalid_variant_falls_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        fs::write(
+            &config_path,
+            r#"{"tighten-list-continuations": "bogus"}"#,
+        )
+        .unwrap();
+
+        let settings =
+            load_full_config_from(dir.path(), Some(config_path.to_str().unwrap()), None).settings;
+
+        // Permissive parse: unknown variant falls back to default ("heuristic").
+        assert_eq!(
+            settings.list_normalize.tighten_list_continuations,
+            TightenListContinuationsMode::Heuristic
+        );
+    }
+
+    // ── from_public_json tests (issue #88) ──
+    //
+    // `from_public_json` is the one-shot settings builder the napi and wasm
+    // shims call. Regression guard against the #88 bug where the four
+    // list-normalize kebab-case keys were silently dropped (because
+    // `FormatterSettings::list_normalize` is `#[serde(skip)]`), which caused
+    // the TS "formatter is innocent" baseline test to fail even with all
+    // rules set to `"off"`.
+
+    #[test]
+    fn from_public_json_lifts_list_normalize_kebab_keys() {
+        let json: Value = serde_json::json!({
+            "tighten-list-continuations": "off",
+            "recover-escaped-code-in-lists": "off",
+            "recover-escaped-tables-in-lists": "aggressive",
+            "recover-escaped-paragraphs-in-lists": "heuristic",
+        });
+        let settings = from_public_json(&json);
+        assert_eq!(
+            settings.list_normalize.tighten_list_continuations,
+            TightenListContinuationsMode::Off
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_code_in_lists,
+            crate::types::RecoverEscapedCodeMode::Off
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_tables_in_lists,
+            crate::types::RecoverEscapedTablesMode::Aggressive
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_paragraphs_in_lists,
+            crate::types::RecoverEscapedParagraphsMode::Heuristic
+        );
+    }
+
+    #[test]
+    fn from_public_json_preserves_camelcase_settings() {
+        let json: Value = serde_json::json!({
+            "addEmptyLineBetweenElements": { "enabled": false },
+            "tighten-list-continuations": "off",
+        });
+        let settings = from_public_json(&json);
+        assert!(
+            !settings.add_empty_line_between_elements.enabled,
+            "camelCase key must still apply"
+        );
+        assert_eq!(
+            settings.list_normalize.tighten_list_continuations,
+            TightenListContinuationsMode::Off
+        );
+    }
+
+    #[test]
+    fn from_public_json_empty_is_all_defaults() {
+        let json: Value = serde_json::json!({});
+        let settings = from_public_json(&json);
+        assert_eq!(
+            settings.list_normalize.tighten_list_continuations,
+            TightenListContinuationsMode::Heuristic,
+            "default must be heuristic"
+        );
+        assert_eq!(
+            settings.list_normalize.recover_escaped_paragraphs_in_lists,
+            crate::types::RecoverEscapedParagraphsMode::Off,
+            "default must be off (opt-in)"
         );
     }
 

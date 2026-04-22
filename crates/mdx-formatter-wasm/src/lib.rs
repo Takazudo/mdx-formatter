@@ -6,7 +6,9 @@ pub fn format(content: &str, settings_json: Option<String>) -> String {
     let mut settings = if let Some(json) = settings_json {
         let partial: serde_json::Value = serde_json::from_str(&json)
             .unwrap_or_default();
-        FormatterSettings::from_partial_json(&partial)
+        // Honor the four list-normalize top-level kebab-case keys. See
+        // `from_public_json` doc in mdx-formatter-core (issue #88).
+        mdx_formatter_core::from_public_json(&partial)
     } else {
         FormatterSettings::default()
     };

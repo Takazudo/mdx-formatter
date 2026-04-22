@@ -6,3 +6,8 @@ pnpm-lock.yaml
 doc/
 target/
 worktrees/
+
+# Formatter fixtures must stay verbatim — their shape is the point of the
+# test. Prettier would rewrap / re-indent them and break assertions.
+test/fixtures/
+test/snapshots/

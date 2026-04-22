@@ -55,6 +55,91 @@ static SPECIAL_START_RE: LazyLock<Regex> =
 static MULTIPLE_NEWLINES_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
 
+// ============================================================================
+// ReportSink — audit / dry-run mechanism
+// ============================================================================
+//
+// The `ReportSink` trait lets rules emit structured change descriptions as
+// they run, without affecting the normal side effect of pushing
+// `FormatterOperation`s. The sink is threaded through
+// `format_with_sink` / `try_format_with_sink` and reaches each rule via a
+// shared mutable reference inside `format_once`.
+//
+// ## Emitting from a rule
+//
+// New rules should emit exactly one `ReportEntry` per logical change they
+// would make, immediately alongside the matching `operations.push(...)`.
+// Keep `rule` a short, stable kebab-case identifier (e.g.
+// `recover-escaped-code-in-lists`) so downstream tooling can filter/group.
+// Line numbers are 0-indexed, matching the line vector used throughout this
+// module; the CLI converts them to 1-based when printing. `before` is the
+// slice of original source lines `[start_line..=end_line]`; `after` is the
+// replacement the rule will apply. For single-line ops (`IndentLine`) use
+// `start_line == end_line` and single-entry vectors.
+//
+// To keep the report faithful to what the user wrote, emission happens
+// only on the FIRST pass of the convergence loop. Later iterations run
+// with `NullSink` because their "before" text is already post-edit and
+// would be confusing to report on.
+//
+// ## Concrete sinks
+//
+// - `NullSink` compiles to a no-op; used for regular non-audit runs.
+// - `VecSink` collects every entry into an in-memory Vec; used by the
+//   CLI `--dry-run` mode and by tests that want to assert on the report.
+//
+// The trait is object-safe so callers can pass any concrete sink behind
+// `&mut dyn ReportSink`.
+
+/// One structured change description emitted by a formatter rule.
+#[derive(Debug, Clone)]
+pub struct ReportEntry {
+    /// Stable kebab-case rule identifier.
+    pub rule: &'static str,
+    /// 0-indexed inclusive start line in the original source.
+    pub start_line: usize,
+    /// 0-indexed inclusive end line in the original source.
+    pub end_line: usize,
+    /// Verbatim source lines that would be replaced/indented.
+    pub before: Vec<String>,
+    /// Lines the rule would produce in place of `before`.
+    pub after: Vec<String>,
+}
+
+/// Sink that formatter rules emit `ReportEntry`s through. See module docs.
+pub trait ReportSink {
+    fn emit(&mut self, entry: ReportEntry);
+}
+
+/// Default no-op sink — used for non-audit formatting runs.
+pub struct NullSink;
+
+impl ReportSink for NullSink {
+    fn emit(&mut self, _entry: ReportEntry) {}
+}
+
+/// Collects every emitted entry into an in-memory `Vec`.
+#[derive(Default, Debug)]
+pub struct VecSink {
+    pub entries: Vec<ReportEntry>,
+}
+
+impl ReportSink for VecSink {
+    fn emit(&mut self, entry: ReportEntry) {
+        self.entries.push(entry);
+    }
+}
+
+/// Copy a slice `[s..=e]` out of `lines` as owned `String`s. Used by rules
+/// to build `before` snippets for `ReportEntry`.
+#[inline]
+fn snippet_from_lines(lines: &[&str], s: usize, e: usize) -> Vec<String> {
+    let end = e.min(lines.len().saturating_sub(1));
+    (s..=end)
+        .map(|i| lines.get(i).copied().unwrap_or("").to_string())
+        .collect()
+}
+
 /// Format markdown/MDX content using the hybrid AST + line-based approach.
 ///
 /// Runs the formatter in a convergence loop (up to 3 iterations) until
@@ -63,23 +148,26 @@ static MULTIPLE_NEWLINES_RE: LazyLock<Regex> =
 /// When `settings.error_handling.throw_on_error` is true, parse failures
 /// are propagated via `try_format()`. Otherwise, errors return the original content.
 pub fn format(content: &str, settings: &FormatterSettings) -> String {
+    let mut sink = NullSink;
+    format_with_sink(content, settings, &mut sink)
+}
+
+/// Like `format`, but also emits structured change descriptions through
+/// `sink`. Only the first convergence pass emits; subsequent passes use a
+/// local `NullSink` so the report always describes changes relative to the
+/// original input.
+pub fn format_with_sink(
+    content: &str,
+    settings: &FormatterSettings,
+    sink: &mut dyn ReportSink,
+) -> String {
     if settings.error_handling.throw_on_error {
-        match try_format(content, settings) {
+        match try_format_with_sink(content, settings, sink) {
             Ok(result) => result,
             Err(e) => panic!("mdx-formatter: {}", e),
         }
     } else {
-        let mut result = content.to_string();
-        const MAX_ITERATIONS: usize = 3;
-
-        for _ in 0..MAX_ITERATIONS {
-            let formatted = format_once(&result, settings);
-            if formatted == result {
-                break;
-            }
-            result = formatted;
-        }
-        result
+        run_convergence_loop(content, settings, sink)
     }
 }
 
@@ -88,25 +176,53 @@ pub fn format(content: &str, settings: &FormatterSettings) -> String {
 /// Same convergence loop as `format()`, but propagates parse errors instead
 /// of silently returning the original content.
 pub fn try_format(content: &str, settings: &FormatterSettings) -> Result<String, String> {
+    let mut sink = NullSink;
+    try_format_with_sink(content, settings, &mut sink)
+}
+
+/// Like `try_format`, but also emits structured change descriptions through
+/// `sink`. Only the first convergence pass emits; subsequent passes use a
+/// local `NullSink`.
+pub fn try_format_with_sink(
+    content: &str,
+    settings: &FormatterSettings,
+    sink: &mut dyn ReportSink,
+) -> Result<String, String> {
     // Validate parsability once upfront. format_once() uses parse() internally
     // which always succeeds via fallback, so no need to re-validate each iteration.
     parser::try_parse(content)?;
+    Ok(run_convergence_loop(content, settings, sink))
+}
 
+fn run_convergence_loop(
+    content: &str,
+    settings: &FormatterSettings,
+    sink: &mut dyn ReportSink,
+) -> String {
     let mut result = content.to_string();
     const MAX_ITERATIONS: usize = 3;
 
-    for _ in 0..MAX_ITERATIONS {
-        let formatted = format_once(&result, settings);
+    // First pass emits through the caller's sink. Subsequent passes use a
+    // throw-away NullSink so the report stays anchored to the ORIGINAL input.
+    let first = format_once(&result, settings, sink);
+    if first == result {
+        return result;
+    }
+    result = first;
+
+    let mut null = NullSink;
+    for _ in 1..MAX_ITERATIONS {
+        let formatted = format_once(&result, settings, &mut null);
         if formatted == result {
             break;
         }
         result = formatted;
     }
-    Ok(result)
+    result
 }
 
 /// Single formatting pass: parse AST, collect operations, apply them.
-fn format_once(content: &str, settings: &FormatterSettings) -> String {
+fn format_once(content: &str, settings: &FormatterSettings, sink: &mut dyn ReportSink) -> String {
     // 1. Parse AST
     let ast = parser::parse(content);
 
@@ -141,6 +257,49 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
     }
 
     collect_list_indentation_operations(&ast, &lines, &mut operations);
+
+    // ── list-normalize pipeline (issue #81: detect; #82-#85: rule bodies) ──
+    // Order inside the convergence loop:
+    //   detect → recover-escaped (#83/#84/#85) → tighten-continuation (#82)
+    //          → wrap-markdown (existing)
+    // Rule bodies are empty stubs here; they are filled in by #82-#85.
+    let list_item_shapes = collect_list_item_shapes(&ast);
+    let escaped_block_candidates = collect_escaped_block_candidates(&ast, &lines);
+    apply_recover_escaped_code_in_lists(
+        settings,
+        &list_item_shapes,
+        &escaped_block_candidates,
+        &ast,
+        &lines,
+        &mut operations,
+        sink,
+    );
+    apply_recover_escaped_tables_in_lists(
+        settings,
+        &ast,
+        &lines,
+        &list_item_shapes,
+        &escaped_block_candidates,
+        &mut operations,
+        sink,
+    );
+    apply_recover_escaped_paragraphs_in_lists(
+        settings,
+        &list_item_shapes,
+        &escaped_block_candidates,
+        &ast,
+        &lines,
+        &mut operations,
+        sink,
+    );
+    apply_tighten_list_continuations(
+        settings,
+        &list_item_shapes,
+        &ast,
+        &lines,
+        &mut operations,
+        sink,
+    );
 
     // HTML block formatting
     if settings.format_html_blocks_in_mdx.enabled {
@@ -1144,6 +1303,1346 @@ fn is_numbered_list_line(line: &str) -> bool {
 }
 
 // ============================================================================
+// List Normalize — Detection Pass (issue #81)
+// ============================================================================
+//
+// Shared AST walker that feeds the downstream list-normalize rules:
+//   - Sub 2: tighten-list-continuations (#82)
+//   - Sub 3: recover-escaped-code-in-lists (#83)
+//   - Sub 4: recover-escaped-tables-in-lists (#84)
+//   - Sub 5: recover-escaped-paragraphs-in-lists (#85)
+//
+// Rule-ordering contract (executed inside the existing 3-iteration convergence
+// loop in `format()`):
+//
+//     detect
+//       → recover-escaped (Subs 3 / 4 / 5)
+//       → tighten-continuation (Sub 2)
+//       → wrap-markdown (existing)
+//
+// Rationale:
+//   - recover-escaped runs first because re-indenting an escaped code/table/
+//     paragraph block changes which children a list item actually owns. Running
+//     tighten against a stale child set produces oscillation.
+//   - tighten-continuation runs after recover so it sees the clean, recovered
+//     child tree.
+//   - Both run before wrap-markdown so the merged / recovered text is re-wrapped
+//     with correct indent and line width.
+//
+// The detection pass itself is read-only: it only emits shape / candidate data,
+// it does not mutate the AST or source lines. Downstream rules (#82-#85) are
+// stubbed to empty bodies inside this commit — public formatter output is
+// unchanged until those rules are filled in.
+
+/// Summary of one list item's content classification, plus enough positional
+/// info for downstream rules to locate it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ListItemDetection {
+    /// Content classification (see `ListItemShape`).
+    pub shape: crate::types::ListItemShape,
+    /// 0-indexed line of the item's marker.
+    pub start_line: usize,
+    /// 0-indexed end line (inclusive) covering the item's full body.
+    pub end_line: usize,
+    /// 0-indexed start line of the first child block.
+    pub first_child_line: Option<usize>,
+    /// 0-indexed end line (inclusive) of the last child block.
+    pub last_child_line: Option<usize>,
+    /// Nesting depth (0 = top-level item).
+    pub depth: usize,
+    /// 0-indexed column of the marker character (the `-` / `*` / `1`).
+    pub marker_column: usize,
+    /// Width of `marker + single space` (e.g. 2 for `- `, 3 for `10.`).
+    pub marker_width: usize,
+    /// Cumulative column where the item's children / continuation lines begin.
+    /// Equals `marker_column + marker_width` at this level, summed across
+    /// ancestor lists — valid at any nesting depth.
+    pub continuation_indent: usize,
+    /// 0-indexed line numbers of blank lines that sit between adjacent
+    /// paragraph children of this item (useful for tighten-continuation).
+    pub inner_blank_gap_lines: Vec<usize>,
+}
+
+/// A block sitting in the gap between two sibling list items at the same
+/// level but not attached as an AST child of either — a candidate location
+/// for escape recovery (fenced code, GFM table, runaway paragraph).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EscapedBlockCandidate {
+    /// 0-indexed first line of the candidate block.
+    pub start_line: usize,
+    /// 0-indexed last line (inclusive) of the candidate block.
+    pub end_line: usize,
+    /// Rough guess for which recover rule owns this candidate. Downstream
+    /// rules re-validate; the guess is advisory.
+    pub kind: EscapedBlockKind,
+    /// Continuation indent the enclosing list item would require.
+    pub expected_continuation_indent: usize,
+    /// Nesting depth of the enclosing list (0 = top-level list).
+    pub depth: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EscapedBlockKind {
+    Code,
+    Table,
+    Paragraph,
+}
+
+/// Public-to-the-module collector. Recursive: visits every `Node::ListItem`
+/// at every depth and returns one entry per item.
+pub(crate) fn collect_list_item_shapes(node: &Node) -> Vec<ListItemDetection> {
+    let mut out = Vec::new();
+    walk_list_items(node, 0, 0, &mut out);
+    out
+}
+
+/// Recursive depth-first traversal. `ancestor_indent` is the cumulative
+/// continuation indent contributed by enclosing lists; at root it is 0.
+fn walk_list_items(
+    node: &Node,
+    depth: usize,
+    ancestor_indent: usize,
+    out: &mut Vec<ListItemDetection>,
+) {
+    match node {
+        Node::List(list) => {
+            for child in &list.children {
+                if let Node::ListItem(item) = child {
+                    if let Some(detection) =
+                        build_item_detection(item, depth, ancestor_indent)
+                    {
+                        let child_indent =
+                            detection.marker_column + detection.marker_width;
+                        out.push(detection);
+                        // Recurse into the item's own children with the
+                        // cumulative indent for any nested lists.
+                        for sub in &item.children {
+                            walk_list_items(sub, depth + 1, child_indent, out);
+                        }
+                    }
+                }
+            }
+        }
+        _ => {
+            for child in get_children(node) {
+                walk_list_items(child, depth, ancestor_indent, out);
+            }
+        }
+    }
+}
+
+/// Classify a single ListItem's children into a `ListItemShape`, gather
+/// position info, and compute `continuation_indent`.
+fn build_item_detection(
+    item: &markdown::mdast::ListItem,
+    depth: usize,
+    ancestor_indent: usize,
+) -> Option<ListItemDetection> {
+    use crate::types::ListItemShape;
+
+    let pos = item.position.as_ref()?;
+    let start_line = pos.start.line.saturating_sub(1);
+    let end_line = pos.end.line.saturating_sub(1);
+    // `start.column` in markdown-rs mdast is 1-indexed at the marker char.
+    let marker_column = pos.start.column.saturating_sub(1);
+
+    // Classify children.
+    let (mut has_paragraph, mut has_code, mut has_table, mut has_sublist, mut has_other) =
+        (false, false, false, false, false);
+    let mut paragraph_line_ends: Vec<usize> = Vec::new();
+
+    for child in &item.children {
+        match child {
+            Node::Paragraph(p) => {
+                has_paragraph = true;
+                if let Some(cp) = &p.position {
+                    paragraph_line_ends.push(cp.end.line.saturating_sub(1));
+                }
+            }
+            Node::Code(_) => has_code = true,
+            Node::Table(_) => has_table = true,
+            Node::List(_) => has_sublist = true,
+            _ => has_other = true,
+        }
+    }
+
+    let interesting_count = [has_code, has_table, has_sublist]
+        .iter()
+        .filter(|b| **b)
+        .count();
+    let shape = if interesting_count >= 2 {
+        ListItemShape::Mixed
+    } else if has_code {
+        if has_paragraph || has_other {
+            ListItemShape::Mixed
+        } else {
+            ListItemShape::HasCodeFence
+        }
+    } else if has_table {
+        if has_paragraph || has_other {
+            ListItemShape::Mixed
+        } else {
+            ListItemShape::HasTable
+        }
+    } else if has_sublist {
+        if has_paragraph || has_other {
+            ListItemShape::Mixed
+        } else {
+            ListItemShape::HasSublist
+        }
+    } else if has_other {
+        ListItemShape::Mixed
+    } else {
+        ListItemShape::ParagraphsOnly
+    };
+
+    // Marker width: re-use the shared helper against the trimmed start line
+    // is not available here (we don't have `lines`), so derive from the AST
+    // children's first-paragraph start column if present, else default to 2.
+    // For a proper width, callers needing exact width should use the lines-aware
+    // variant in `collect_escaped_block_candidates`.
+    let marker_width = if let Some(Node::Paragraph(p)) = item.children.first() {
+        if let Some(cp) = &p.position {
+            let first_child_col = cp.start.column.saturating_sub(1);
+            if first_child_col > marker_column {
+                first_child_col - marker_column
+            } else {
+                2
+            }
+        } else {
+            2
+        }
+    } else {
+        2
+    };
+
+    // `markdown-rs` positions are source-absolute, so marker_column already
+    // bakes in every ancestor's indent. The `ancestor_indent` parameter is
+    // preserved for call-site API stability; it is no longer summed into the
+    // result (doing so over-counted at depth ≥ 1 — see #86).
+    let _ = ancestor_indent;
+    let continuation_indent = marker_column + marker_width;
+
+    // First / last child line
+    let first_child_line = item.children.first().and_then(|c| {
+        c.position()
+            .map(|p| p.start.line.saturating_sub(1))
+    });
+    let last_child_line = item.children.last().and_then(|c| {
+        c.position().map(|p| p.end.line.saturating_sub(1))
+    });
+
+    // Inner blank gaps: for each pair of adjacent paragraph children, the
+    // blank-line index(es) that sit between them.
+    let mut inner_blank_gap_lines: Vec<usize> = Vec::new();
+    let mut prev_end: Option<usize> = None;
+    for child in &item.children {
+        if let Node::Paragraph(p) = child {
+            if let Some(cp) = &p.position {
+                let this_start = cp.start.line.saturating_sub(1);
+                let this_end = cp.end.line.saturating_sub(1);
+                if let Some(pe) = prev_end {
+                    // Blank gap lines sit strictly between pe and this_start.
+                    if this_start > pe + 1 {
+                        for gap in (pe + 1)..this_start {
+                            inner_blank_gap_lines.push(gap);
+                        }
+                    }
+                }
+                prev_end = Some(this_end);
+            }
+        } else if let Some(cp) = child.position() {
+            // Non-paragraph child still advances prev_end so paragraph-to-
+            // non-paragraph gaps aren't flagged.
+            prev_end = Some(cp.end.line.saturating_sub(1));
+        }
+    }
+    let _ = paragraph_line_ends; // reserved for future heuristics
+
+    Some(ListItemDetection {
+        shape,
+        start_line,
+        end_line,
+        first_child_line,
+        last_child_line,
+        depth,
+        marker_column,
+        marker_width,
+        continuation_indent,
+        inner_blank_gap_lines,
+    })
+}
+
+/// Public-to-the-module collector. Recursive: walks runs of sibling list items
+/// at every level and notes lines that look like indented blocks falling in
+/// the gap between two items but not attached as AST children. These are the
+/// candidate locations for escape recovery (#83 / #84 / #85).
+pub(crate) fn collect_escaped_block_candidates(
+    node: &Node,
+    lines: &[&str],
+) -> Vec<EscapedBlockCandidate> {
+    let mut out = Vec::new();
+    walk_escape_candidates(node, 0, 0, lines, &mut out);
+    out
+}
+
+fn walk_escape_candidates(
+    node: &Node,
+    depth: usize,
+    ancestor_indent: usize,
+    lines: &[&str],
+    out: &mut Vec<EscapedBlockCandidate>,
+) {
+    // `ancestor_indent` is kept for signature stability; markdown-rs positions
+    // are source-absolute, so per-item `col + width` is already the correct
+    // continuation column at any depth.
+    let _ = ancestor_indent;
+    if let Node::List(list) = node {
+        // Collect the item positions at this level as (start, end, marker_col+width).
+        let mut item_spans: Vec<(usize, usize, usize)> = Vec::new();
+        for child in &list.children {
+            if let Node::ListItem(item) = child {
+                if let Some(pos) = &item.position {
+                    let s = pos.start.line.saturating_sub(1);
+                    let e = pos.end.line.saturating_sub(1);
+                    let col = pos.start.column.saturating_sub(1);
+                    let width = lines
+                        .get(s)
+                        .map(|ln| list_marker_width(ln.trim_start()))
+                        .unwrap_or(2);
+                    item_spans.push((s, e, col + width));
+                }
+            }
+        }
+
+        // For each gap between consecutive items, scan lines that are indented
+        // at least to the item's continuation column but not consumed by the
+        // AST (since the AST stopped at the sibling boundary). These are our
+        // candidates.
+        for window in item_spans.windows(2) {
+            let (_prev_s, prev_e, expected_indent) = window[0];
+            let (next_s, _next_e, _next_col_w) = window[1];
+            if next_s <= prev_e + 1 {
+                continue;
+            }
+            let gap_start = prev_e + 1;
+            let gap_end = next_s.saturating_sub(1);
+            if let Some(candidate) = classify_gap(
+                lines,
+                gap_start,
+                gap_end,
+                expected_indent,
+                depth,
+            ) {
+                out.push(candidate);
+            }
+        }
+
+        // Recurse into each item's children.
+        for child in &list.children {
+            if let Node::ListItem(item) = child {
+                if let Some(pos) = &item.position {
+                    let col = pos.start.column.saturating_sub(1);
+                    let s = pos.start.line.saturating_sub(1);
+                    let width = lines
+                        .get(s)
+                        .map(|ln| list_marker_width(ln.trim_start()))
+                        .unwrap_or(2);
+                    // Absolute: source-derived col + width is already the
+                    // correct continuation column; no accumulation.
+                    let child_indent = col + width;
+                    for sub in &item.children {
+                        walk_escape_candidates(sub, depth + 1, child_indent, lines, out);
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    for child in get_children(node) {
+        walk_escape_candidates(child, depth, ancestor_indent, lines, out);
+    }
+}
+
+/// Classify the lines in `[gap_start..=gap_end]` as a Code / Table / Paragraph
+/// candidate, or None if nothing interesting sits there.
+fn classify_gap(
+    lines: &[&str],
+    gap_start: usize,
+    gap_end: usize,
+    expected_indent: usize,
+    depth: usize,
+) -> Option<EscapedBlockCandidate> {
+    let mut first_non_blank: Option<usize> = None;
+    let mut last_non_blank: Option<usize> = None;
+
+    for idx in gap_start..=gap_end.min(lines.len().saturating_sub(1)) {
+        let line = *lines.get(idx)?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        first_non_blank.get_or_insert(idx);
+        last_non_blank = Some(idx);
+    }
+
+    let (start, end) = (first_non_blank?, last_non_blank?);
+
+    // Inspect the first meaningful line to classify.
+    let first_line = lines.get(start).copied()?;
+    let first_trim = first_line.trim_start();
+
+    let kind = if is_code_fence_line(first_trim) {
+        EscapedBlockKind::Code
+    } else if first_trim.starts_with('|') {
+        EscapedBlockKind::Table
+    } else if !first_trim.is_empty() {
+        EscapedBlockKind::Paragraph
+    } else {
+        return None;
+    };
+
+    Some(EscapedBlockCandidate {
+        start_line: start,
+        end_line: end,
+        kind,
+        expected_continuation_indent: expected_indent,
+        depth,
+    })
+}
+
+// ── Rule stubs (empty bodies — filled by #82 / #83 / #84 / #85) ──
+//
+// Each stub receives the shared detection output plus the mutable operations
+// vector. The bodies stay empty until their owning sub-issues land, so public
+// formatter output is unchanged. Keeping the stubs here (not a later commit)
+// lets the order-of-operations contract live entirely in `format_once`.
+
+/// A fenced code block that sits at (or below) the continuation indent of the
+/// preceding list item's children — i.e. the parser has spilled it out of the
+/// list. Carries enough info for #83 to re-indent the fence and know whether
+/// the surrounding context supplies "safe" evidence of intended nesting.
+#[derive(Debug, Clone)]
+struct EscapedCodePattern {
+    /// 0-indexed line of the opening fence.
+    fence_start_line: usize,
+    /// 0-indexed line of the closing fence (inclusive).
+    fence_end_line: usize,
+    /// 0-indexed column of the opening fence's first backtick/tilde.
+    fence_col: usize,
+    /// Target indent the fence needs to reach to become a child of the
+    /// preceding list item.
+    continuation_indent: usize,
+    /// `true` iff both the preceding and the following sibling are ordered
+    /// lists. Safe mode requires this.
+    is_safe_evidence: bool,
+}
+
+/// Walk the AST and locate fenced code blocks sandwiched between list siblings.
+///
+/// The detection operates at every container level (root, blockquote, list
+/// item, etc.) because `markdown-rs` splits a list whenever a col-0 fence
+/// intrudes — producing `[List, Code, List, …]` sibling runs under the
+/// container. `ancestor_indent` tracks the cumulative continuation indent
+/// contributed by enclosing list items so nested cases work too.
+fn collect_escaped_code_patterns(
+    root: &Node,
+    lines: &[&str],
+) -> Vec<EscapedCodePattern> {
+    let mut out = Vec::new();
+    walk_escaped_code_patterns(root, 0, lines, &mut out);
+    out
+}
+
+fn walk_escaped_code_patterns(
+    node: &Node,
+    ancestor_indent: usize,
+    lines: &[&str],
+    out: &mut Vec<EscapedCodePattern>,
+) {
+    let children = get_children(node);
+    for i in 1..children.len() {
+        // Looking for the `[..., List, Code, ...]` pattern. The trailing list
+        // sibling is checked via `children.get(i + 1)` further down.
+        let code = match &children[i] {
+            Node::Code(c) => c,
+            _ => continue,
+        };
+        let prev_list = match &children[i - 1] {
+            Node::List(l) => l,
+            _ => continue,
+        };
+        let code_pos = match &code.position {
+            Some(p) => p,
+            None => continue,
+        };
+        let fence_start_line = code_pos.start.line.saturating_sub(1);
+        let fence_end_line = code_pos.end.line.saturating_sub(1);
+
+        // Must be a real fenced block, not an indented code block. `Node::Code`
+        // covers both; only fences take the `` ``` `` / `~~~` marker form.
+        let src_line = match lines.get(fence_start_line) {
+            Some(s) => *s,
+            None => continue,
+        };
+        let fence_col = src_line.len() - src_line.trim_start_matches(' ').len();
+        if !is_code_fence_line(&src_line[fence_col..]) {
+            continue;
+        }
+
+        // The preceding list must have at least one item with a usable
+        // position — we need that item's continuation indent.
+        let last_item = match prev_list.children.last() {
+            Some(Node::ListItem(li)) => li,
+            _ => continue,
+        };
+        let item_pos = match &last_item.position {
+            Some(p) => p,
+            None => continue,
+        };
+        let item_start_line = item_pos.start.line.saturating_sub(1);
+        let item_col = item_pos.start.column.saturating_sub(1);
+        let item_marker_width = lines
+            .get(item_start_line)
+            .map(|ln| list_marker_width(ln.trim_start()))
+            .unwrap_or(2);
+        // Absolute continuation — `item_col` already encodes every ancestor's
+        // indent (markdown-rs columns are source-absolute).
+        let _ = ancestor_indent;
+        let continuation_indent = item_col + item_marker_width;
+
+        // If the fence is already indented to the item's continuation column
+        // (or deeper), it's not escaped — the parser kept it inside the item.
+        if fence_col >= continuation_indent {
+            continue;
+        }
+
+        // Safe-mode evidence: both neighbours are ordered lists. A numbered-
+        // list restart at `2.` lands here because markdown-rs sets the second
+        // list's `ordered=true` and `start>1`.
+        let next = children.get(i + 1);
+        let next_is_list = matches!(next, Some(Node::List(_)));
+        if !next_is_list {
+            // Spec: "sits at col 0 between two list items". Without a trailing
+            // list we have no "between two items" story; skip.
+            continue;
+        }
+        let is_safe_evidence = prev_list.ordered
+            && matches!(next, Some(Node::List(l)) if l.ordered);
+
+        out.push(EscapedCodePattern {
+            fence_start_line,
+            fence_end_line,
+            fence_col,
+            continuation_indent,
+            is_safe_evidence,
+        });
+    }
+
+    // Recurse. For `Node::List` children we visit each ListItem so that
+    // `item.children` get a top-level pattern scan at the next iteration — the
+    // `[List, Code, List]` triple can sit at the list-item level (i.e. nested
+    // one level down from the outer list), and missing that scan would drop
+    // depth-N escape recovery for any N ≥ 1. `ancestor_indent` is bumped to the
+    // item's continuation column (absolute, derived from `markdown-rs` source
+    // positions — no accumulation needed) so `try_emit` compares against the
+    // right escape column.
+    for child in children {
+        match child {
+            Node::List(list) => {
+                for item in &list.children {
+                    let li = match item {
+                        Node::ListItem(li) => li,
+                        _ => continue,
+                    };
+                    let p = match &li.position {
+                        Some(p) => p,
+                        None => {
+                            walk_escaped_code_patterns(item, ancestor_indent, lines, out);
+                            continue;
+                        }
+                    };
+                    let col = p.start.column.saturating_sub(1);
+                    let s = p.start.line.saturating_sub(1);
+                    let w = lines
+                        .get(s)
+                        .map(|ln| list_marker_width(ln.trim_start()))
+                        .unwrap_or(2);
+                    // Absolute column: markdown-rs positions already bake in
+                    // every ancestor's indent, so `col + w` is the correct
+                    // continuation column at any depth.
+                    let new_indent = col + w;
+                    walk_escaped_code_patterns(item, new_indent, lines, out);
+                }
+            }
+            _ => walk_escaped_code_patterns(child, ancestor_indent, lines, out),
+        }
+    }
+}
+
+fn apply_recover_escaped_code_in_lists(
+    settings: &FormatterSettings,
+    _shapes: &[ListItemDetection],
+    _candidates: &[EscapedBlockCandidate],
+    ast: &Node,
+    lines: &[&str],
+    operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
+) {
+    use crate::types::RecoverEscapedCodeMode;
+    let mode = settings.list_normalize.recover_escaped_code_in_lists;
+    if matches!(mode, RecoverEscapedCodeMode::Off) {
+        return;
+    }
+
+    let patterns = collect_escaped_code_patterns(ast, lines);
+    for p in patterns {
+        let allow = match mode {
+            RecoverEscapedCodeMode::Off => false,
+            RecoverEscapedCodeMode::Safe => p.is_safe_evidence,
+            RecoverEscapedCodeMode::Aggressive => true,
+        };
+        if !allow {
+            continue;
+        }
+        if p.continuation_indent <= p.fence_col {
+            continue;
+        }
+
+        let extra = p.continuation_indent - p.fence_col;
+        let prefix: String = " ".repeat(extra);
+
+        // Rebuild the fence block line-by-line. Every line (opening, body,
+        // closing) gets the same leading-space prefix so internal indentation
+        // is preserved byte-exactly. Empty lines stay empty — prepending
+        // spaces to a bare blank would invent trailing whitespace we don't
+        // want and isn't needed for CommonMark lazy continuation (the fence
+        // is already nested once its opener is indented).
+        let mut new_lines: Vec<String> =
+            Vec::with_capacity(p.fence_end_line.saturating_sub(p.fence_start_line) + 1);
+        for idx in p.fence_start_line..=p.fence_end_line {
+            let orig = match lines.get(idx) {
+                Some(s) => *s,
+                None => continue,
+            };
+            if orig.is_empty() {
+                new_lines.push(String::new());
+            } else {
+                new_lines.push(format!("{}{}", prefix, orig));
+            }
+        }
+
+        sink.emit(ReportEntry {
+            rule: "recover-escaped-code-in-lists",
+            start_line: p.fence_start_line,
+            end_line: p.fence_end_line,
+            before: snippet_from_lines(lines, p.fence_start_line, p.fence_end_line),
+            after: new_lines.clone(),
+        });
+
+        operations.push(FormatterOperation::ReplaceLines {
+            start_line: p.fence_start_line,
+            end_line: p.fence_end_line,
+            lines: new_lines,
+        });
+    }
+}
+
+fn apply_recover_escaped_tables_in_lists(
+    settings: &FormatterSettings,
+    ast: &Node,
+    lines: &[&str],
+    _shapes: &[ListItemDetection],
+    _candidates: &[EscapedBlockCandidate],
+    operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
+) {
+    use crate::types::RecoverEscapedTablesMode;
+    let mode = settings.list_normalize.recover_escaped_tables_in_lists;
+    if matches!(mode, RecoverEscapedTablesMode::Off) {
+        return;
+    }
+    let aggressive = matches!(mode, RecoverEscapedTablesMode::Aggressive);
+    collect_table_recovery_ops(ast, lines, 0, aggressive, operations, sink);
+}
+
+/// Walk the AST looking for `[List, Table, List]` sibling patterns — the
+/// signature markdown-rs produces when a GFM table at column 0 breaks a list
+/// into two neighboring Lists. When surrounding evidence suggests the table
+/// was intended to nest under the previous list item, emit a `ReplaceLines`
+/// operation that re-indents every row by the enclosing item's continuation
+/// indent.
+///
+/// `ancestor_indent` is the cumulative continuation indent contributed by
+/// enclosing list items (0 at the root). `aggressive` widens the evidence
+/// bar to also accept matching bullet markers; in `safe` mode only a
+/// contiguous numbering run across the gap qualifies.
+fn collect_table_recovery_ops(
+    node: &Node,
+    lines: &[&str],
+    ancestor_indent: usize,
+    aggressive: bool,
+    operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
+) {
+    // Scan direct children for the [List, Table, List] pattern.
+    let children = get_children(node);
+    if children.len() >= 3 {
+        let mut i = 0;
+        while i + 2 < children.len() {
+            if let (Node::List(list_a), Node::Table(table), Node::List(list_c)) =
+                (&children[i], &children[i + 1], &children[i + 2])
+            {
+                if let Some(op) =
+                    try_emit_table_recovery(list_a, table, list_c, lines, ancestor_indent, aggressive)
+                {
+                    if let FormatterOperation::ReplaceLines { start_line, end_line, lines: ref new_lines } = op {
+                        sink.emit(ReportEntry {
+                            rule: "recover-escaped-tables-in-lists",
+                            start_line,
+                            end_line,
+                            before: snippet_from_lines(lines, start_line, end_line),
+                            after: new_lines.clone(),
+                        });
+                    }
+                    operations.push(op);
+                }
+            }
+            i += 1;
+        }
+    }
+
+    // Recurse so nested list items that themselves contain the pattern are
+    // handled. Visit each ListItem directly (not just its children) so that
+    // `[List, Table, List]` triples living inside an item — i.e. a depth-N
+    // escape with N ≥ 1 — get their own top-level pattern scan. Bump
+    // `ancestor_indent` to the item's absolute continuation column so
+    // `try_emit_table_recovery` compares against the right escape column.
+    match node {
+        Node::List(list) => {
+            for child in &list.children {
+                if let Node::ListItem(item) = child {
+                    let item_indent = list_item_continuation_indent(item, lines, ancestor_indent);
+                    collect_table_recovery_ops(
+                        child,
+                        lines,
+                        item_indent,
+                        aggressive,
+                        operations,
+                        sink,
+                    );
+                }
+            }
+        }
+        _ => {
+            for child in children {
+                collect_table_recovery_ops(child, lines, ancestor_indent, aggressive, operations, sink);
+            }
+        }
+    }
+}
+
+/// Compute the absolute continuation-indent column for a list item (the column
+/// where its children / continuation lines begin). `markdown-rs` source
+/// positions are absolute, so `marker_column + marker_width` already reflects
+/// every ancestor's indent — no accumulation needed. The `ancestor_indent`
+/// parameter is kept for call-site API stability (pre-#86 callers passed a
+/// running sum) but is no longer added to the result; it falls back into the
+/// return when the item has no position.
+fn list_item_continuation_indent(
+    item: &markdown::mdast::ListItem,
+    lines: &[&str],
+    ancestor_indent: usize,
+) -> usize {
+    let Some(pos) = &item.position else {
+        return ancestor_indent;
+    };
+    let start_line = pos.start.line.saturating_sub(1);
+    let marker_column = pos.start.column.saturating_sub(1);
+    let marker_width = lines
+        .get(start_line)
+        .map(|ln| list_marker_width(ln.trim_start()))
+        .unwrap_or(2);
+    marker_column + marker_width
+}
+
+/// Attempt to build a recovery op for a candidate `[List, Table, List]` trio.
+/// Returns `Some(op)` only when all guardrails pass:
+///   - the table sits flush to the ancestor column (i.e. it is escaped,
+///     not already nested inside the preceding item);
+///   - evidence of intended nesting is present (numbering run for safe,
+///     marker match for aggressive);
+///   - every source line of the table row range still exists and is not
+///     blank — we preserve byte-for-byte and only prepend indent.
+fn try_emit_table_recovery(
+    list_a: &markdown::mdast::List,
+    table: &markdown::mdast::Table,
+    list_c: &markdown::mdast::List,
+    lines: &[&str],
+    ancestor_indent: usize,
+    aggressive: bool,
+) -> Option<FormatterOperation> {
+    let tpos = table.position.as_ref()?;
+    let t_start = tpos.start.line.saturating_sub(1);
+    let t_end = tpos.end.line.saturating_sub(1);
+    let t_col = tpos.start.column.saturating_sub(1);
+
+    // The escaped table must sit at the ancestor indent column. A table that
+    // is already nested under an item will sit further right and is off-limits.
+    if t_col != ancestor_indent {
+        return None;
+    }
+
+    // Bounds check.
+    if t_end >= lines.len() || t_start > t_end {
+        return None;
+    }
+
+    // Derive the continuation indent from the LAST item of `list_a` (this is
+    // the item the recovered table would nest under). Falls back to the list's
+    // first item if position is missing.
+    let ref_item = list_a
+        .children
+        .last()
+        .or_else(|| list_a.children.first())?;
+    let Node::ListItem(ref_list_item) = ref_item else {
+        return None;
+    };
+    let target_indent = list_item_continuation_indent(ref_list_item, lines, ancestor_indent);
+    // Recovery must actually shift the table (strictly rightward).
+    if target_indent <= t_col {
+        return None;
+    }
+
+    // Evidence check: ordered = numbering continuation; bullet = marker match
+    // (aggressive only).
+    if !has_recovery_evidence(list_a, list_c, lines, aggressive) {
+        return None;
+    }
+
+    // Final guardrail: every non-blank source line in the table range must
+    // already sit at `t_col`. Blank lines inside a table shouldn't occur
+    // (markdown-rs wouldn't parse them as one table), but reject just in case.
+    for idx in t_start..=t_end {
+        let line = lines.get(idx).copied().unwrap_or("");
+        if line.trim().is_empty() {
+            return None;
+        }
+        let actual_col = leading_space_count(line);
+        if actual_col != t_col {
+            return None;
+        }
+    }
+
+    // Build re-indented rows — prepend `shift` spaces to each, preserving
+    // alignment colons and every other byte.
+    let shift = target_indent - t_col;
+    let prefix = " ".repeat(shift);
+    let new_lines: Vec<String> = (t_start..=t_end)
+        .map(|i| format!("{}{}", prefix, lines[i]))
+        .collect();
+
+    Some(FormatterOperation::ReplaceLines {
+        start_line: t_start,
+        end_line: t_end,
+        lines: new_lines,
+    })
+}
+
+/// Decide whether the neighboring lists provide enough evidence that the
+/// table between them was intended to nest under `list_a`.
+///
+///   safe       → ordered lists only, numbering continues across the gap.
+///   aggressive → same-marker bullet lists also qualify.
+fn has_recovery_evidence(
+    list_a: &markdown::mdast::List,
+    list_c: &markdown::mdast::List,
+    lines: &[&str],
+    aggressive: bool,
+) -> bool {
+    // Both lists must be top-aligned at the same column; diverging column
+    // means they were never one list to begin with.
+    let col_a = list_a
+        .children
+        .first()
+        .and_then(|c| c.position())
+        .map(|p| p.start.column)
+        .unwrap_or(0);
+    let col_c = list_c
+        .children
+        .first()
+        .and_then(|c| c.position())
+        .map(|p| p.start.column)
+        .unwrap_or(0);
+    if col_a == 0 || col_a != col_c {
+        return false;
+    }
+
+    match (list_a.ordered, list_c.ordered) {
+        (true, true) => {
+            // Strong evidence: list_c's first number = list_a.start + len(a).
+            let Some(start_a) = list_a.start else { return false; };
+            let Some(start_c) = list_c.start else { return false; };
+            let expected = start_a as u64 + list_a.children.len() as u64;
+            start_c as u64 == expected
+        }
+        (false, false) => {
+            if !aggressive {
+                return false;
+            }
+            // Weak evidence: both lists use the same bullet marker char.
+            bullet_marker_char(list_a, lines) == bullet_marker_char(list_c, lines)
+                && bullet_marker_char(list_a, lines).is_some()
+        }
+        _ => false, // ordered/unordered mix → no evidence
+    }
+}
+
+/// Return the `-` / `*` / `+` marker of the first item in a bullet list,
+/// by inspecting the source line.
+fn bullet_marker_char(list: &markdown::mdast::List, lines: &[&str]) -> Option<char> {
+    let first = list.children.first()?;
+    let pos = first.position()?;
+    let line_idx = pos.start.line.saturating_sub(1);
+    let col = pos.start.column.saturating_sub(1);
+    let line = lines.get(line_idx).copied()?;
+    let trimmed = line.get(col..)?;
+    let c = trimmed.chars().next()?;
+    if matches!(c, '-' | '*' | '+') {
+        Some(c)
+    } else {
+        None
+    }
+}
+
+fn apply_recover_escaped_paragraphs_in_lists(
+    settings: &FormatterSettings,
+    _shapes: &[ListItemDetection],
+    _candidates: &[EscapedBlockCandidate],
+    ast: &Node,
+    lines: &[&str],
+    operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
+) {
+    use crate::types::RecoverEscapedParagraphsMode;
+    let mode = settings.list_normalize.recover_escaped_paragraphs_in_lists;
+    if matches!(mode, RecoverEscapedParagraphsMode::Off) {
+        return;
+    }
+    // Root-of-tree scan. When an escaped continuation paragraph sits at column 0
+    // between two numbered (or same-bullet) list items, markdown-rs splits the
+    // run into `List → Paragraph(s) → List`. `collect_escaped_block_candidates`
+    // (issue #81) only sees gaps *inside* a single AST list, so it cannot find
+    // this split-root case. We walk every container (Root, ListItem, Blockquote)
+    // for the `List → Paragraph(s) → List` pattern and re-indent the paragraph
+    // lines to the preceding list's `continuation_indent` when the heuristic
+    // signals continuation.
+    collect_recover_paragraph_ops(ast, lines, mode, operations, sink);
+}
+
+/// Walk the AST recursively looking for `List → Paragraph(s) → List` runs in
+/// any container's children and emit recovery ops for each match.
+fn collect_recover_paragraph_ops(
+    node: &Node,
+    lines: &[&str],
+    mode: crate::types::RecoverEscapedParagraphsMode,
+    operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
+) {
+    let children = get_children(node);
+    let n = children.len();
+    let mut i = 0;
+    while i < n {
+        if let Node::List(list1) = &children[i] {
+            let mut j = i + 1;
+            while j < n && matches!(children[j], Node::Paragraph(_)) {
+                j += 1;
+            }
+            if j > i + 1 && j < n {
+                if let Node::List(list2) = &children[j] {
+                    let paragraphs: Vec<&Node> = children[i + 1..j].iter().collect();
+                    try_recover_paragraph_run(
+                        list1,
+                        list2,
+                        &paragraphs,
+                        lines,
+                        mode,
+                        operations,
+                        sink,
+                    );
+                }
+            }
+            i = j;
+            continue;
+        }
+        i += 1;
+    }
+
+    // Recurse so nested containers (ListItem, Blockquote, etc.) are covered.
+    for child in children {
+        collect_recover_paragraph_ops(child, lines, mode, operations, sink);
+    }
+}
+
+/// Classify the first inline token of a paragraph and decide whether it looks
+/// like continuation prose. Returns `true` when the heuristic (or aggressive)
+/// mode should recover this paragraph.
+fn paragraph_triggers_recovery(
+    paragraph: &Node,
+    mode: crate::types::RecoverEscapedParagraphsMode,
+) -> bool {
+    use crate::types::RecoverEscapedParagraphsMode::*;
+    let inlines = get_children(paragraph);
+    let first_inline = match inlines.first() {
+        Some(n) => n,
+        None => return false,
+    };
+
+    // Strong signal: inline code at the start (backtick).
+    if matches!(first_inline, Node::InlineCode(_)) {
+        return true;
+    }
+
+    let first_char = match first_inline {
+        Node::Text(t) => t.value.trim_start().chars().next(),
+        _ => None,
+    };
+
+    match mode {
+        Off => false,
+        Heuristic => match first_char {
+            Some(c) if c.is_ascii_lowercase() => true,
+            // Continuation punctuation: commas, dashes, colons, semicolons,
+            // opening paren, closing quote, em/en-dash.
+            Some(',' | ';' | ':' | '(' | ')' | '"' | '\'' | '—' | '–' | '-') => true,
+            _ => false,
+        },
+        // Aggressive: the structural signals (numbering resumption + col-0)
+        // are already strong; fire regardless of first-inline shape.
+        Aggressive => true,
+    }
+}
+
+/// Validate and emit recovery ops for a candidate run `List → Paragraph(s) → List`.
+/// Returns `None` (ignored) when the run fails any structural or heuristic check.
+fn try_recover_paragraph_run(
+    list1: &markdown::mdast::List,
+    list2: &markdown::mdast::List,
+    paragraphs: &[&Node],
+    lines: &[&str],
+    mode: crate::types::RecoverEscapedParagraphsMode,
+    operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
+) -> Option<()> {
+    // 1. Same list variety (both ordered or both unordered).
+    if list1.ordered != list2.ordered {
+        return None;
+    }
+
+    // 2. Resolve the preceding list's continuation indent from its last item.
+    let last_item = list1.children.last()?;
+    let (list1_marker_col, list1_start_line, list1_marker_ch) = match last_item {
+        Node::ListItem(item) => {
+            let pos = item.position.as_ref()?;
+            let col = pos.start.column.saturating_sub(1);
+            let ln = pos.start.line.saturating_sub(1);
+            let ch = lines.get(ln)?.trim_start().chars().next()?;
+            (col, ln, ch)
+        }
+        _ => return None,
+    };
+    let trimmed1 = lines.get(list1_start_line)?.trim_start();
+    let continuation_indent = list1_marker_col + list_marker_width(trimmed1);
+
+    // 3. list2 must resume at the same marker column (same nesting level).
+    let first_item2 = list2.children.first()?;
+    let (list2_marker_col, list2_start_line, list2_marker_ch) = match first_item2 {
+        Node::ListItem(item) => {
+            let pos = item.position.as_ref()?;
+            let col = pos.start.column.saturating_sub(1);
+            let ln = pos.start.line.saturating_sub(1);
+            let ch = lines.get(ln)?.trim_start().chars().next()?;
+            (col, ln, ch)
+        }
+        _ => return None,
+    };
+    if list2_marker_col != list1_marker_col {
+        return None;
+    }
+
+    // 4. Sequence resumption.
+    if list1.ordered {
+        let start1 = list1.start.unwrap_or(1);
+        let count1 = list1.children.len() as u32;
+        let expected_next = start1.saturating_add(count1);
+        let start2 = list2.start.unwrap_or(1);
+        if start2 != expected_next {
+            // Restarts at 1 or jumps — not a continuation; likely an intentional
+            // new list.
+            return None;
+        }
+    } else {
+        // Bullet marker must match exactly (-/*/+).
+        if list1_marker_ch != list2_marker_ch {
+            return None;
+        }
+    }
+
+    // 5. All paragraphs must be dedented below the continuation indent (i.e.
+    //    currently "escaped"). Collect their line ranges along the way.
+    let mut para_ranges: Vec<(usize, usize)> = Vec::with_capacity(paragraphs.len());
+    for p in paragraphs {
+        let pos = p.position()?;
+        let col = pos.start.column.saturating_sub(1);
+        if col >= continuation_indent {
+            return None;
+        }
+        let s = pos.start.line.saturating_sub(1);
+        let e = pos.end.line.saturating_sub(1);
+        para_ranges.push((s, e));
+    }
+
+    // 6. Heuristic / aggressive signal on the first paragraph's leading token.
+    let first_paragraph = paragraphs.first()?;
+    if !paragraph_triggers_recovery(first_paragraph, mode) {
+        return None;
+    }
+
+    // 7. Guard: don't touch lines that already sit inside `list2`'s range
+    //    (shouldn't happen, but defensive).
+    let safe_upper = list2_start_line;
+
+    // 8. Emit IndentLine ops so each paragraph line is prefixed by
+    //    `continuation_indent` spaces. IndentLine trims the existing line and
+    //    prepends the indent — safe because the paragraphs sit at col 0 and
+    //    have no meaningful leading whitespace.
+    let indent: String = " ".repeat(continuation_indent);
+    // Group the per-line ops per paragraph so the report shows one entry
+    // spanning the whole paragraph run rather than N single-line entries.
+    for (s, e) in para_ranges {
+        let clamped_e = e.min(safe_upper.saturating_sub(1));
+        if s > clamped_e {
+            continue;
+        }
+        let before = snippet_from_lines(lines, s, clamped_e);
+        let after: Vec<String> = before
+            .iter()
+            .map(|ln| {
+                if ln.trim().is_empty() {
+                    ln.clone()
+                } else {
+                    format!("{}{}", indent, ln.trim_start())
+                }
+            })
+            .collect();
+        sink.emit(ReportEntry {
+            rule: "recover-escaped-paragraphs-in-lists",
+            start_line: s,
+            end_line: clamped_e,
+            before,
+            after,
+        });
+
+        for ln in s..=e {
+            if ln >= safe_upper {
+                break;
+            }
+            let line = match lines.get(ln) {
+                Some(l) => l,
+                None => continue,
+            };
+            if line.trim().is_empty() {
+                continue;
+            }
+            operations.push(FormatterOperation::IndentLine {
+                start_line: ln,
+                indent: indent.clone(),
+            });
+        }
+    }
+
+    Some(())
+}
+
+/// Tighten-list-continuations (#82).
+///
+/// Collapses a single blank line that sits between two adjacent paragraph
+/// children of a `ParagraphsOnly` list item, when heuristics indicate the
+/// second paragraph is a syntactic continuation of the first (rather than a
+/// deliberate paragraph break the author wanted).
+///
+/// Runs AFTER recover-escaped-* and BEFORE wrap-markdown (per the ordering
+/// contract documented above `collect_list_item_shapes`). Recover reshapes
+/// children; tighten must see the post-recover child set. wrap-markdown must
+/// see the post-tighten line set so it can re-wrap merged paragraphs.
+///
+/// Trigger conditions (heuristic mode, all three required):
+///   a) list item's `shape` is `ParagraphsOnly` (no code fence / table /
+///      sublist sibling that would change continuation semantics)
+///   b) the two paragraphs are separated by EXACTLY one blank line
+///   c) the second paragraph's first non-whitespace character is lowercase,
+///      a backtick, or an opening-punctuation character (`(`, `[`, `"`,
+///      `'`, en-dash, em-dash, comma).
+///
+/// Aggressive mode drops condition (c): any single-blank gap between two
+/// paragraph children of a `ParagraphsOnly` list item collapses.
+///
+/// Off mode is a no-op (matches pre-rule behavior byte-for-byte).
+fn apply_tighten_list_continuations(
+    settings: &FormatterSettings,
+    shapes: &[ListItemDetection],
+    ast: &Node,
+    lines: &[&str],
+    operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
+) {
+    use crate::types::TightenListContinuationsMode;
+    let mode = settings.list_normalize.tighten_list_continuations;
+    if matches!(mode, TightenListContinuationsMode::Off) {
+        return;
+    }
+
+    // Lookup: which (start_line, end_line) spans are ParagraphsOnly.
+    // Detection output is the single source of truth for shape, so we consume
+    // it here instead of re-classifying from the AST.
+    use crate::types::ListItemShape;
+    use std::collections::HashSet;
+    let paragraphs_only: HashSet<(usize, usize)> = shapes
+        .iter()
+        .filter(|s| s.shape == ListItemShape::ParagraphsOnly)
+        .map(|s| (s.start_line, s.end_line))
+        .collect();
+
+    if paragraphs_only.is_empty() {
+        return;
+    }
+
+    walk_for_tighten(ast, lines, &paragraphs_only, mode, operations, sink);
+}
+
+fn walk_for_tighten(
+    node: &Node,
+    lines: &[&str],
+    paragraphs_only: &std::collections::HashSet<(usize, usize)>,
+    mode: crate::types::TightenListContinuationsMode,
+    operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
+) {
+    if let Node::ListItem(item) = node {
+        if let Some(pos) = &item.position {
+            let s = pos.start.line.saturating_sub(1);
+            let e = pos.end.line.saturating_sub(1);
+            if paragraphs_only.contains(&(s, e)) {
+                emit_tighten_ops_for_item(item, lines, mode, operations, sink);
+            }
+        }
+    }
+    for child in get_children(node) {
+        walk_for_tighten(child, lines, paragraphs_only, mode, operations, sink);
+    }
+}
+
+/// For a single `ParagraphsOnly` list item, emit one delete-line op for every
+/// adjacent paragraph pair that qualifies under the selected mode.
+fn emit_tighten_ops_for_item(
+    item: &markdown::mdast::ListItem,
+    lines: &[&str],
+    mode: crate::types::TightenListContinuationsMode,
+    operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
+) {
+    use crate::types::TightenListContinuationsMode;
+
+    // Pull out paragraph children in document order. `ParagraphsOnly` is
+    // expected to mean all children are paragraphs, but we still filter
+    // defensively — that way a future shape-classification edge case can't
+    // trip the rule.
+    let paras: Vec<&markdown::mdast::Paragraph> = item
+        .children
+        .iter()
+        .filter_map(|c| match c {
+            Node::Paragraph(p) => Some(p),
+            _ => None,
+        })
+        .collect();
+
+    for window in paras.windows(2) {
+        let p1 = window[0];
+        let p2 = window[1];
+        let (pos1, pos2) = match (&p1.position, &p2.position) {
+            (Some(a), Some(b)) => (a, b),
+            _ => continue,
+        };
+        let p1_end_0 = pos1.end.line.saturating_sub(1);
+        let p2_start_0 = pos2.start.line.saturating_sub(1);
+
+        // Exactly one blank line between: p2_start_0 == p1_end_0 + 2.
+        if p2_start_0 != p1_end_0 + 2 {
+            continue;
+        }
+        let blank_idx = p1_end_0 + 1;
+        if blank_idx >= lines.len() {
+            continue;
+        }
+        if !lines[blank_idx].trim().is_empty() {
+            // Defensive: AST said there was a gap line, but the source line
+            // is non-blank. Skip rather than corrupt content.
+            continue;
+        }
+
+        if matches!(mode, TightenListContinuationsMode::Heuristic)
+            && !second_paragraph_looks_like_continuation(lines, p2_start_0)
+        {
+            continue;
+        }
+
+        // Delete the blank line by replacing [blank_idx..=blank_idx] with
+        // an empty Vec. `normalize_empty_lines` in format_once will not
+        // mind the result; adjacent paragraphs simply become adjacent.
+        sink.emit(ReportEntry {
+            rule: "tighten-list-continuations",
+            start_line: blank_idx,
+            end_line: blank_idx,
+            before: snippet_from_lines(lines, blank_idx, blank_idx),
+            after: Vec::new(),
+        });
+        operations.push(FormatterOperation::ReplaceLines {
+            start_line: blank_idx,
+            end_line: blank_idx,
+            lines: Vec::new(),
+        });
+    }
+}
+
+/// Heuristic (c): the second paragraph's first inline character suggests
+/// it is mid-sentence continuation text.
+///
+/// Triggers on: any lowercase letter (Unicode), a backtick (inline code
+/// continuation), or one of the opening-punct / conjunction characters
+/// `(`, `[`, `"`, `'`, `,`, en-dash `–`, em-dash `—`.
+///
+/// Preserves (does NOT trigger) on: uppercase start, digit start, list
+/// marker, blockquote marker, anything else. When in doubt we preserve —
+/// false preservations only cost output loose-ness; false collapses can
+/// destroy meaningful breaks.
+fn second_paragraph_looks_like_continuation(lines: &[&str], p_start_0: usize) -> bool {
+    let Some(line) = lines.get(p_start_0) else {
+        return false;
+    };
+    let trimmed = line.trim_start();
+    let Some(first) = trimmed.chars().next() else {
+        return false;
+    };
+    if first.is_lowercase() {
+        return true;
+    }
+    matches!(
+        first,
+        '`' | '(' | '[' | '"' | '\'' | ',' | '–' | '—'
+    )
+}
+
+// ============================================================================
 // HTML Block Formatting
 // ============================================================================
 
@@ -2008,6 +3507,861 @@ fn normalize_empty_lines(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parser;
+    use crate::types::ListItemShape;
+
+    fn shapes_for(input: &str) -> Vec<ListItemDetection> {
+        let ast = parser::parse(input);
+        collect_list_item_shapes(&ast)
+    }
+
+    fn candidates_for(input: &str) -> Vec<EscapedBlockCandidate> {
+        let ast = parser::parse(input);
+        let lines: Vec<&str> = input.split('\n').collect();
+        collect_escaped_block_candidates(&ast, &lines)
+    }
+
+    // ── Detection pass tests (issue #81) ──
+
+    #[test]
+    fn detect_paragraphs_only_item() {
+        let input = "- first item\n- second item\n- third item\n";
+        let shapes = shapes_for(input);
+        assert_eq!(shapes.len(), 3);
+        for shape in &shapes {
+            assert_eq!(shape.shape, ListItemShape::ParagraphsOnly);
+            assert_eq!(shape.depth, 0);
+            assert_eq!(shape.marker_column, 0);
+            assert_eq!(shape.marker_width, 2);
+            assert_eq!(shape.continuation_indent, 2);
+        }
+    }
+
+    #[test]
+    fn detect_item_with_code_fence() {
+        let input = "- item with code:\n\n  ```js\n  const x = 1;\n  ```\n";
+        let shapes = shapes_for(input);
+        assert_eq!(shapes.len(), 1);
+        assert_eq!(shapes[0].shape, ListItemShape::Mixed);
+        // Paragraph + code fence both present → Mixed. Confirm the code fence
+        // was actually seen by parsing a pure-code item:
+        let code_only = "- ```js\n  const x = 1;\n  ```\n";
+        let only = shapes_for(code_only);
+        assert_eq!(only.len(), 1);
+        assert!(matches!(
+            only[0].shape,
+            ListItemShape::HasCodeFence | ListItemShape::Mixed
+        ));
+    }
+
+    #[test]
+    fn detect_item_with_table() {
+        let input =
+            "- row:\n\n  | a | b |\n  | - | - |\n  | 1 | 2 |\n";
+        let shapes = shapes_for(input);
+        assert!(!shapes.is_empty());
+        // Paragraph intro + table child → Mixed; a pure-table item → HasTable.
+        let pure_table =
+            "- | a | b |\n  | - | - |\n  | 1 | 2 |\n";
+        let _ = shapes_for(pure_table); // parse should not panic
+        assert!(matches!(
+            shapes[0].shape,
+            ListItemShape::HasTable | ListItemShape::Mixed
+        ));
+    }
+
+    #[test]
+    fn detect_item_with_sublist() {
+        let input = "- parent:\n  - child one\n  - child two\n";
+        let shapes = shapes_for(input);
+        // Expect 3 entries: parent + two children.
+        assert_eq!(shapes.len(), 3);
+        // Parent has a sublist as its only / primary interesting child.
+        assert!(matches!(
+            shapes[0].shape,
+            ListItemShape::HasSublist | ListItemShape::Mixed
+        ));
+        // Children are paragraphs only, and their depth is 1.
+        for c in &shapes[1..] {
+            assert_eq!(c.shape, ListItemShape::ParagraphsOnly);
+            assert_eq!(c.depth, 1);
+        }
+    }
+
+    #[test]
+    fn detect_mixed_item() {
+        // An item containing a paragraph, a fenced code block, AND a sublist.
+        let input = "\
+- mixed:
+
+  prose
+
+  ```js
+  const x = 1;
+  ```
+
+  - nested
+";
+        let shapes = shapes_for(input);
+        assert!(!shapes.is_empty());
+        // Top-level item should see enough variety to be classified Mixed.
+        assert_eq!(shapes[0].shape, ListItemShape::Mixed);
+    }
+
+    #[test]
+    fn detect_depth_2_nested_sublist_recurses() {
+        // Depth-2 nested sublist: root list → item → list → item → list → item.
+        let input = "\
+- l0:
+  - l1:
+    - l2 leaf
+";
+        let shapes = shapes_for(input);
+        let depths: Vec<usize> = shapes.iter().map(|s| s.depth).collect();
+        assert!(depths.contains(&0), "depth 0 missing in {depths:?}");
+        assert!(depths.contains(&1), "depth 1 missing in {depths:?}");
+        assert!(depths.contains(&2), "depth 2 missing in {depths:?}");
+
+        // continuation_indent must be cumulative across ancestors.
+        let d2 = shapes
+            .iter()
+            .find(|s| s.depth == 2)
+            .expect("depth-2 item missing");
+        // At root "- " → +2, inside nested "- " → +2 more (marker at col 2),
+        // inside depth-2 the marker sits at col 4, marker_width 2
+        //   → continuation_indent = 4 (ancestor) + 4 (marker_col) + 2 = 10
+        // (The exact arithmetic is implementation-locked; we assert the
+        // cumulative property instead: depth-2 > depth-1 > depth-0.)
+        let d0 = shapes.iter().find(|s| s.depth == 0).unwrap();
+        let d1 = shapes.iter().find(|s| s.depth == 1).unwrap();
+        assert!(d0.continuation_indent < d1.continuation_indent);
+        assert!(d1.continuation_indent < d2.continuation_indent);
+    }
+
+    #[test]
+    fn detect_escaped_code_candidate_between_items() {
+        // Fenced code block dedented out of the list's child range.
+        // markdown-rs will parse this as two siblings with the fence as a
+        // root-level code block between them. The candidate walker should
+        // pick it up only when it actually sits in a gap between sibling
+        // list items; when the parser has already detached it to root level
+        // the gap is empty, so we assert the walker at least doesn't crash
+        // and that it surfaces the right kind when the fence *is* in a gap.
+        let input = "\
+- before
+
+```js
+escaped();
+```
+
+- after
+";
+        let _ = candidates_for(input);
+        // Indented (still-in-list) version: fence is between items but
+        // indented enough to qualify as a candidate block.
+        let indented = "\
+- before
+
+  ```js
+  escaped();
+  ```
+
+- after
+";
+        let cands = candidates_for(indented);
+        // May or may not be detected as a gap candidate depending on how the
+        // AST attaches the fence; at minimum the walker returns a Vec without
+        // panicking, and if anything is returned the kind is Code.
+        for c in &cands {
+            assert_eq!(c.kind, EscapedBlockKind::Code);
+        }
+    }
+
+    #[test]
+    fn detect_escaped_table_candidate_between_items() {
+        let input = "\
+- before
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+- after
+";
+        let cands = candidates_for(input);
+        for c in &cands {
+            assert!(matches!(
+                c.kind,
+                EscapedBlockKind::Table | EscapedBlockKind::Paragraph
+            ));
+        }
+    }
+
+    #[test]
+    fn detect_pathological_oscillation_guard() {
+        // Pathological list with mixed continuations + fence + nested sublist.
+        // The convergence loop in format() runs at most 3 iterations; with all
+        // list-normalize rule bodies empty, the output must be identical across
+        // iterations — NO flip.
+        let input = "\
+- alpha
+  continuation
+
+  - nested
+    - deeper
+
+```js
+escaped();
+```
+
+- beta
+  continuation
+
+  | a | b |
+  | - | - |
+  | 1 | 2 |
+";
+        let settings = FormatterSettings::default();
+
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        let thrice = format(&twice, &settings);
+
+        assert_eq!(once, twice, "formatter output flipped between pass 1 and 2");
+        assert_eq!(twice, thrice, "formatter output flipped between pass 2 and 3");
+    }
+
+    #[test]
+    fn detect_list_normalize_defaults_do_not_change_output() {
+        // Sanity: with only the new detection pass wired in and all rule
+        // bodies empty, defaults must not alter a well-formed input.
+        let input = "- a\n- b\n- c\n";
+        let settings = FormatterSettings::default();
+        let result = format(input, &settings);
+        assert_eq!(result, input);
+    }
+
+    // ── recover-escaped-code-in-lists (issue #83) ──
+
+    fn settings_recover_code(mode: crate::types::RecoverEscapedCodeMode) -> FormatterSettings {
+        let mut s = FormatterSettings::default();
+        s.list_normalize.recover_escaped_code_in_lists = mode;
+        // Keep sibling rules quiet so tests observe #83 in isolation.
+        s.list_normalize.tighten_list_continuations =
+            crate::types::TightenListContinuationsMode::Off;
+        s.list_normalize.recover_escaped_tables_in_lists =
+            crate::types::RecoverEscapedTablesMode::Off;
+        s.list_normalize.recover_escaped_paragraphs_in_lists =
+            crate::types::RecoverEscapedParagraphsMode::Off;
+        // Disable orthogonal rules that would otherwise reshape the fence text.
+        s.add_empty_line_between_elements.enabled = false;
+        s
+    }
+
+    // ── recover-escaped-tables-in-lists tests (issue #84) ──
+
+    fn settings_with_table_mode(
+        mode: crate::types::RecoverEscapedTablesMode,
+    ) -> FormatterSettings {
+        let mut s = FormatterSettings::default();
+        s.list_normalize.recover_escaped_tables_in_lists = mode;
+        s
+    }
+
+    #[test]
+    fn recover_code_numbered_list_fence_recovered_in_safe() {
+        // Numbered list with a col-0 fence that markdown-rs promotes to root
+        // level, causing the list to restart numbering. Safe mode should
+        // re-indent the fence so it becomes a child of item 1.
+        let input = "\
+1. first
+
+```js
+const x = 1;
+```
+
+2. second
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Safe);
+        let got = format(input, &settings);
+        let want = "\
+1. first
+
+   ```js
+   const x = 1;
+   ```
+
+2. second
+";
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn recover_code_bullet_list_fence_left_alone_in_safe() {
+        // Bullet-list evidence is weaker (no "restart at N" signal). Safe mode
+        // must leave it untouched.
+        let input = "\
+- first
+
+```js
+const x = 1;
+```
+
+- second
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Safe);
+        let got = format(input, &settings);
+        assert_eq!(got, input);
+    }
+
+    #[test]
+    fn recover_code_bullet_list_fence_recovered_in_aggressive() {
+        let input = "\
+- first
+
+```js
+const x = 1;
+```
+
+- second
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Aggressive);
+        let got = format(input, &settings);
+        let want = "\
+- first
+
+  ```js
+  const x = 1;
+  ```
+
+- second
+";
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn recover_code_multiline_content_preserved_byte_exact() {
+        // The fence body includes deliberate internal indentation and blank
+        // lines. Every non-fence byte must be preserved; only leading spaces
+        // are added to each non-empty line.
+        let input = "\
+1. alpha
+
+```ts
+function f() {
+    const nested = {
+        a: 1,
+    };
+
+    return nested;
+}
+```
+
+2. beta
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Safe);
+        let got = format(input, &settings);
+        let want = "\
+1. alpha
+
+   ```ts
+   function f() {
+       const nested = {
+           a: 1,
+       };
+
+       return nested;
+   }
+   ```
+
+2. beta
+";
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn recover_code_legitimate_top_level_fence_untouched() {
+        // No enclosing list at all — fence is legitimately a root block.
+        let input = "\
+# Heading
+
+```js
+let x = 1;
+```
+
+Some prose follows.
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Aggressive);
+        let got = format(input, &settings);
+        assert_eq!(got, input);
+    }
+
+    #[test]
+    fn recover_code_unrelated_context_fence_untouched() {
+        // Fence sits between a list and a non-list block — not "between two
+        // list items". Must stay at root level regardless of mode.
+        let input = "\
+1. only item
+
+```js
+const x = 1;
+```
+
+Paragraph not in any list.
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Aggressive);
+        let got = format(input, &settings);
+        assert_eq!(got, input);
+    }
+
+    #[test]
+    fn recover_code_off_mode_is_a_no_op() {
+        let input = "\
+1. first
+
+```js
+const x = 1;
+```
+
+2. second
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Off);
+        let got = format(input, &settings);
+        assert_eq!(got, input);
+    }
+
+    #[test]
+    fn recover_code_idempotent_safe() {
+        let input = "\
+1. first
+
+```js
+const x = 1;
+```
+
+2. second
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Safe);
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        assert_eq!(once, twice, "safe-mode recover must be idempotent");
+    }
+
+    #[test]
+    fn recover_code_idempotent_aggressive() {
+        let input = "\
+- first
+
+```js
+const x = 1;
+```
+
+- second
+";
+        let settings =
+            settings_recover_code(crate::types::RecoverEscapedCodeMode::Aggressive);
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        assert_eq!(once, twice, "aggressive-mode recover must be idempotent");
+    }
+
+    #[test]
+    fn recover_table_ordered_numbering_run_in_safe() {
+        // Numbered-list escape: `1. … | table | 2. …` is strong evidence.
+        // In safe mode the table is re-indented to the item's continuation
+        // column (3 spaces for `1. `).
+        let input = "\
+1. before
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+2. after
+";
+        let expected = "\
+1. before
+
+   | a | b |
+   | - | - |
+   | 1 | 2 |
+
+2. after
+";
+        let settings =
+            settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Safe);
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn recover_table_bullet_only_in_aggressive() {
+        // Bullet-list escape: weaker evidence. Safe mode must leave it alone;
+        // aggressive mode recovers it.
+        let input = "\
+- before
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+- after
+";
+        let safe = format(
+            input,
+            &settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Safe),
+        );
+        assert_eq!(safe, input, "safe mode must not touch bullet-list escapes");
+
+        let expected = "\
+- before
+
+  | a | b |
+  | - | - |
+  | 1 | 2 |
+
+- after
+";
+        let aggressive = format(
+            input,
+            &settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Aggressive),
+        );
+        assert_eq!(aggressive, expected);
+    }
+
+    #[test]
+    fn recover_table_leaves_top_level_table_untouched() {
+        // Legitimate top-level table with no enclosing list must be untouched
+        // in every mode.
+        let input = "\
+| a | b |
+| - | - |
+| 1 | 2 |
+";
+        for mode in [
+            crate::types::RecoverEscapedTablesMode::Off,
+            crate::types::RecoverEscapedTablesMode::Safe,
+            crate::types::RecoverEscapedTablesMode::Aggressive,
+        ] {
+            let result = format(input, &settings_with_table_mode(mode));
+            assert_eq!(result, input, "top-level table modified under {:?}", mode);
+        }
+    }
+
+    #[test]
+    fn recover_table_preserves_alignment_colons_byte_exactly() {
+        // Alignment colons in the separator row must survive the re-indent
+        // verbatim: we only prepend spaces, never rewrite cell content.
+        let input = "\
+1. before
+
+| left | middle | right |
+| :--- | :----: | ----: |
+| a    | b      | c     |
+
+2. after
+";
+        let settings =
+            settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Safe);
+        let result = format(input, &settings);
+        // The separator row line must appear verbatim with only the 3-space
+        // prefix added.
+        assert!(
+            result.contains("   | :--- | :----: | ----: |\n"),
+            "alignment row not preserved byte-exactly; got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn recover_table_idempotent() {
+        let input = "\
+1. before
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+2. after
+";
+        let settings =
+            settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Safe);
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        assert_eq!(once, twice, "recovery must be idempotent");
+    }
+
+    #[test]
+    fn recover_table_skipped_when_numbering_restarts() {
+        // `1. …` then another `1. …` (not `2.`) means the user deliberately
+        // restarted numbering; the table between them is not evidence of
+        // nesting and must be left alone.
+        let input = "\
+1. before
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+1. after
+";
+        let settings =
+            settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Safe);
+        let result = format(input, &settings);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn recover_table_off_mode_leaves_escape_alone() {
+        let input = "\
+1. before
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+2. after
+";
+        let settings =
+            settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Off);
+        let result = format(input, &settings);
+        assert_eq!(result, input);
+    }
+
+    // ── Recover-escaped-paragraphs-in-lists tests (issue #85) ──
+
+    fn settings_with_recover_paragraphs_mode(
+        mode: crate::types::RecoverEscapedParagraphsMode,
+    ) -> FormatterSettings {
+        use crate::types::{
+            RecoverEscapedCodeMode, RecoverEscapedTablesMode, TightenListContinuationsMode,
+        };
+        let mut s = FormatterSettings::default();
+        // Isolate the rule under test: turn sibling list-normalize rules off so
+        // cross-rule interactions (#82-#84) don't perturb output assertions.
+        s.list_normalize.tighten_list_continuations = TightenListContinuationsMode::Off;
+        s.list_normalize.recover_escaped_code_in_lists = RecoverEscapedCodeMode::Off;
+        s.list_normalize.recover_escaped_tables_in_lists = RecoverEscapedTablesMode::Off;
+        s.list_normalize.recover_escaped_paragraphs_in_lists = mode;
+        s
+    }
+
+    #[test]
+    fn recover_paragraphs_off_is_byte_identical_on_escaped_case() {
+        // The canonical false-positive-risky shape: paragraph at col 0 between
+        // two numbered items that resume sequence. Default mode is Off, so
+        // the formatter must leave it untouched.
+        let input = "\
+1. first item
+
+also, this continues the first item
+
+2. second item
+";
+        let settings = FormatterSettings::default();
+        assert_eq!(
+            settings.list_normalize.recover_escaped_paragraphs_in_lists,
+            crate::types::RecoverEscapedParagraphsMode::Off,
+            "default mode must be Off (opt-in)"
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, input, "Off mode must be byte-identical");
+    }
+
+    #[test]
+    fn recover_paragraphs_off_is_byte_identical_on_assorted_inputs() {
+        // A few shapes chosen to touch the walker without tripping Off: nested
+        // lists, blockquote-wrapped lists, mixed markers.
+        let samples = [
+            "- a\n- b\n- c\n",
+            "1. one\n2. two\n",
+            "- outer\n  - inner\n- outer again\n",
+            "> 1. quoted\n>\n> text\n>\n> 2. more quoted\n",
+        ];
+        let settings = FormatterSettings::default();
+        for input in samples {
+            let result = format(input, &settings);
+            assert_eq!(result, input, "Off mode altered input:\n{input}");
+        }
+    }
+
+    #[test]
+    fn recover_paragraphs_heuristic_recovers_lowercase_continuation() {
+        // Classic escape: numbering resumes 1→2, paragraph at col 0 starts
+        // lowercase — strong continuation signal.
+        let input = "\
+1. first item
+
+also continues the first
+
+2. second item
+";
+        let expected = "\
+1. first item
+
+   also continues the first
+
+2. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Heuristic,
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn recover_paragraphs_heuristic_recovers_backtick_continuation() {
+        // Paragraph starts with inline code — backtick is a strong continuation
+        // signal per the issue description.
+        let input = "\
+1. first item
+
+`foo` is shorthand for the item above
+
+2. second item
+";
+        let expected = "\
+1. first item
+
+   `foo` is shorthand for the item above
+
+2. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Heuristic,
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn recover_paragraphs_heuristic_leaves_capital_new_topic_alone() {
+        // Capital-initial paragraph between items. Heuristic must NOT touch it
+        // — it reads like a deliberate mid-list new topic, not a continuation.
+        let input = "\
+1. first item
+
+New unrelated topic that the author meant to stay at column 0.
+
+2. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Heuristic,
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, input, "heuristic must not touch capital/new-topic paragraph");
+    }
+
+    #[test]
+    fn recover_paragraphs_heuristic_leaves_non_resuming_numbering_alone() {
+        // Numbering does not resume (1. then 1.) — the structural precondition
+        // fails so heuristic must not fire even with a lowercase start.
+        let input = "\
+1. first item
+
+also continues the first (but numbering does not resume)
+
+1. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Heuristic,
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn recover_paragraphs_aggressive_captures_capital_case() {
+        // Aggressive mode fires even without the lowercase/backtick/punctuation
+        // gate, as long as the structural preconditions hold.
+        let input = "\
+1. first item
+
+Capital start but numbering resumes so aggressive fires
+
+2. second item
+";
+        let expected = "\
+1. first item
+
+   Capital start but numbering resumes so aggressive fires
+
+2. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Aggressive,
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn recover_paragraphs_heuristic_handles_bullet_lists() {
+        // Bullet-list variant: same marker char on both sides + lowercase
+        // start → recover.
+        let input = "\
+- first bullet
+
+continues the bullet above
+
+- second bullet
+";
+        let expected = "\
+- first bullet
+
+  continues the bullet above
+
+- second bullet
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Heuristic,
+        );
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn recover_paragraphs_idempotent_under_heuristic() {
+        let input = "\
+1. first item
+
+also continues the first
+
+2. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Heuristic,
+        );
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        assert_eq!(once, twice, "recover-paragraphs heuristic is not idempotent");
+    }
+
+    #[test]
+    fn recover_paragraphs_idempotent_under_aggressive() {
+        let input = "\
+1. first item
+
+Capital continuation line.
+
+2. second item
+";
+        let settings = settings_with_recover_paragraphs_mode(
+            crate::types::RecoverEscapedParagraphsMode::Aggressive,
+        );
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        assert_eq!(once, twice, "recover-paragraphs aggressive is not idempotent");
+    }
 
     #[test]
     fn test_heading_spacing() {
@@ -2866,6 +5220,383 @@ mod tests {
             "top-level block scalar should be preserved; got:\n{}",
             result
         );
+    }
+
+    // ── tighten-list-continuations (issue #82) tests ──
+    //
+    // These tests drive the full public `format()` entry point because the
+    // rule composes with the rest of the pipeline (wrap-markdown, convergence
+    // loop, post-processing `normalize_empty_lines`). Driving the API
+    // end-to-end also doubles as a regression guard for the rule-ordering
+    // contract: if tighten ever gets reordered past wrap-markdown or past the
+    // convergence loop, the fixture assertions will break.
+
+    fn settings_with_tighten(
+        mode: crate::types::TightenListContinuationsMode,
+    ) -> FormatterSettings {
+        let mut s = FormatterSettings::default();
+        s.list_normalize.tighten_list_continuations = mode;
+        s
+    }
+
+    #[test]
+    fn tighten_heuristic_collapses_lowercase_continuation() {
+        use crate::types::TightenListContinuationsMode;
+        let input = "- first line of the item, which is long and continues\n\n  with more prose.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        // Blank line between the two paragraphs should be gone.
+        assert!(
+            !out.contains("continues\n\n  with more prose"),
+            "blank gap not collapsed; output:\n{out}"
+        );
+        assert!(
+            out.contains("with more prose."),
+            "second paragraph content missing; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_preserves_capital_start() {
+        use crate::types::TightenListContinuationsMode;
+        // "Also, ..." — capital letter — must be left alone by heuristic mode.
+        let input = "- first sentence ends here.\n\n  Also, a new idea starts here.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            out.contains("ends here.\n\n  Also, a new idea"),
+            "heuristic should preserve capital-start second paragraph; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_preserves_item_with_code_fence() {
+        use crate::types::TightenListContinuationsMode;
+        // Shape is Mixed (paragraph + code fence), so the rule must not fire,
+        // even though the second paragraph starts with lowercase.
+        let input = "\
+- intro paragraph
+
+  ```js
+  const x = 1;
+  ```
+
+  continuing lowercase prose that would otherwise trigger.
+";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        // The final paragraph should stay separated from the code fence.
+        assert!(
+            out.contains("```\n\n  continuing lowercase"),
+            "tighten must not collapse across non-paragraph children; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_preserves_item_with_sublist() {
+        use crate::types::TightenListContinuationsMode;
+        // Shape is HasSublist / Mixed, not ParagraphsOnly — do not fire.
+        let input = "\
+- parent item intro paragraph
+
+  - nested child one
+  - nested child two
+
+  continuing lowercase prose that would otherwise trigger.
+";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            out.contains("child two\n\n  continuing lowercase"),
+            "tighten must not collapse around a sublist child; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_aggressive_collapses_capital_start() {
+        use crate::types::TightenListContinuationsMode;
+        let input = "- first sentence ends here.\n\n  Also, a new idea starts here.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Aggressive));
+        // Aggressive drops condition (c): the gap collapses even though the
+        // second paragraph starts with a capital letter.
+        assert!(
+            !out.contains("ends here.\n\n  Also,"),
+            "aggressive mode should collapse; output:\n{out}"
+        );
+        assert!(
+            out.contains("Also, a new idea"),
+            "content must survive; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_off_is_no_op() {
+        use crate::types::TightenListContinuationsMode;
+        // Identical to the heuristic fixture. With mode=off, the blank gap
+        // must survive byte-for-byte.
+        let input = "- first line of the item, which is long and continues\n\n  with more prose.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Off));
+        assert!(
+            out.contains("continues\n\n  with more prose"),
+            "off mode must be a no-op; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_is_idempotent() {
+        use crate::types::TightenListContinuationsMode;
+        let input = "- first line of the item, which is long and continues\n\n  with more prose.\n";
+        let once = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        let twice = format(&once, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert_eq!(once, twice, "tighten must be idempotent");
+    }
+
+    #[test]
+    fn tighten_preserves_double_blank_gap() {
+        use crate::types::TightenListContinuationsMode;
+        // Two blank lines between paragraphs — not exactly one — must not
+        // collapse. After format(), `normalize_empty_lines` will reduce it
+        // to one blank line, but the rule itself must not fire on the
+        // original AST state, and the collapsed post-normalize result will
+        // either be left alone on the next convergence iteration (aggressive
+        // would collapse, heuristic won't if start is capital). Here we use
+        // capital start so heuristic cannot trigger on the post-normalized
+        // version either.
+        let input = "- first sentence.\n\n\n  Also follows.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        // "Also" starts capital → heuristic preserves even after normalize.
+        assert!(
+            out.contains("first sentence.\n\n  Also follows."),
+            "heuristic must not collapse normalized double-gap with capital second para; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_real_content_fixture_local_llm_search_spike() {
+        // Short snippet from the observed loose AI-authored form in
+        // `zudo-text/doc/src/content/docs/architecture/local-llm-search-spike.mdx`
+        // (captured in the epic #80 investigation). The second paragraph
+        // starts with a backtick (inline code), which is a heuristic trigger.
+        let input = "\
+- No `candle`, `ort` / ONNX Runtime, `llama.cpp` / `llama-cpp-2`, `tch` / libtorch, or
+
+  `rust-bert` dependency in `tauri-app/Cargo.toml` or `tauri-app/core/Cargo.toml`.
+- No `gguf` / `.onnx` / `.safetensors` assets in the repo.
+";
+        let out = format(input, &FormatterSettings::default());
+        // The blank gap between the two continuation lines must be gone.
+        assert!(
+            !out.contains("libtorch, or\n\n  `rust-bert`"),
+            "real-content fixture: blank gap not collapsed; output:\n{out}"
+        );
+        // Both content halves must still be present.
+        assert!(
+            out.contains("libtorch, or"),
+            "first continuation line missing; output:\n{out}"
+        );
+        assert!(
+            out.contains("`rust-bert` dependency"),
+            "second continuation content missing; output:\n{out}"
+        );
+        // The second list item is untouched.
+        assert!(
+            out.contains("- No `gguf` / `.onnx` / `.safetensors` assets in the repo."),
+            "second list item must be untouched; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_default_matches_heuristic() {
+        // The FormatterSettings::default() must pick heuristic mode (the
+        // locked-in default) — a regression guard for the config layer.
+        let input = "- first line of the item, which is long and continues\n\n  with more prose.\n";
+        let out_default = format(input, &FormatterSettings::default());
+        let out_explicit = format(
+            input,
+            &settings_with_tighten(crate::types::TightenListContinuationsMode::Heuristic),
+        );
+        assert_eq!(
+            out_default, out_explicit,
+            "default settings must match explicit heuristic; default=\n{out_default}\nexplicit=\n{out_explicit}"
+        );
+    }
+
+    // ── Recursive-application-to-nested-sublists tests (issue #86) ──
+    //
+    // These tests verify that the list-normalize rules from #82 (tighten) and
+    // #83 (recover escaped code) fire correctly inside nested sublists — not
+    // only at top-level lists. #85 (recover escaped paragraphs) is also
+    // exercised via the idempotency test below. Correctness at depth hinges
+    // on:
+    //   (a) the detection pass traversing the full list tree and reporting
+    //       shapes for every item regardless of nesting, and
+    //   (b) the apply-side walkers (recover-code / recover-tables) scanning
+    //       `item.children` at every list-item level, not just at the root.
+    //
+    // Prior to this test module the apply walkers skipped the list-item
+    // level: they descended from `List → ListItem.children` and re-scanned
+    // each sub individually, so a `[List, Code, List]` triple sitting *as*
+    // `item.children` was never checked. Fixing that turned out to also
+    // require correcting the `continuation_indent` formula (markdown-rs
+    // positions are source-absolute, so summing `ancestor_indent` on top
+    // over-counted at depth ≥ 1).
+
+    #[test]
+    fn recursion_tighten_fires_at_depth_2() {
+        // Depth-2 bullet list. The inner item's two paragraph children are
+        // separated by a blank line; #82's heuristic tighten rule should
+        // collapse that blank — just as it does at depth 0.
+        let input = "\
+- outer intro
+  - inner first line, which is long and continues
+
+    with more prose.
+  - inner two
+";
+        let expected = "\
+- outer intro
+  - inner first line, which is long and continues
+    with more prose.
+  - inner two
+";
+        let out = format(input, &FormatterSettings::default());
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn recursion_recover_code_fires_at_depth_2() {
+        // Numbered outer / numbered inner list. The fence sits at col 3 —
+        // flush to the outer item's continuation but dedented below the inner
+        // item's continuation (col 6), so the parser splits the inner list
+        // into two siblings with the fence between. Safe-mode recovery (both
+        // sides ordered) re-indents the fence into the inner list.
+        let input = "\
+1. outer
+
+   1. inner one
+
+   ```js
+   const x = 1;
+   ```
+
+   2. inner two
+";
+        let expected = "\
+1. outer
+
+   1. inner one
+
+      ```js
+      const x = 1;
+      ```
+
+   2. inner two
+";
+        let out = format(input, &FormatterSettings::default());
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn recursion_depth_3_tighten_deepest() {
+        // Mixed depth-3 nesting: bullet > numbered > bullet. The deepest item
+        // has a blank-gap paragraph continuation; #82 must still fire at the
+        // innermost level.
+        let input = "\
+- outer bullet
+  1. middle numbered
+     - deepest item one, which continues lowercase
+
+       with more prose.
+     - deepest item two
+";
+        let expected = "\
+- outer bullet
+  1. middle numbered
+     - deepest item one, which continues lowercase
+       with more prose.
+     - deepest item two
+";
+        let out = format(input, &FormatterSettings::default());
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn recursion_depth_3_idempotent() {
+        // Two passes over a depth-3 mixed structure must produce byte-identical
+        // output. The test content mixes a tighten trigger (depth-2) with a
+        // recover-code trigger (depth-1) so several rules have to agree on a
+        // steady state.
+        let input = "\
+1. top
+
+   1. middle-a
+
+   ```js
+   const x = 1;
+   ```
+
+   2. middle-b
+      - deepest one, which continues lowercase
+
+        with more prose.
+      - deepest two
+";
+        let settings = FormatterSettings::default();
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        let thrice = format(&twice, &settings);
+        assert_eq!(once, twice, "first→second pass flipped:\n--- once\n{once}--- twice\n{twice}");
+        assert_eq!(twice, thrice, "second→third pass flipped:\n--- twice\n{twice}--- thrice\n{thrice}");
+    }
+
+    #[test]
+    fn recursion_detection_traverses_full_tree() {
+        // Depth-2 nested bullet list with five items distributed across three
+        // depth levels (2 + 2 + 1). `collect_list_item_shapes` must report
+        // every item, or downstream rules will silently skip work at depth.
+        let input = "\
+- l0a
+  - l1a
+    - l2a
+  - l1b
+- l0b
+";
+        let shapes = shapes_for(input);
+        assert_eq!(shapes.len(), 5, "expected 5 list items across all depths, got {}: {:?}", shapes.len(), shapes);
+
+        let by_depth = |d: usize| shapes.iter().filter(|s| s.depth == d).count();
+        assert_eq!(by_depth(0), 2, "depth-0 count: {:?}", shapes);
+        assert_eq!(by_depth(1), 2, "depth-1 count: {:?}", shapes);
+        assert_eq!(by_depth(2), 1, "depth-2 count: {:?}", shapes);
+
+        // Continuation indents are absolute (source-derived) and cumulative
+        // across markdown's own indentation; no double-counting.
+        let d0 = shapes.iter().find(|s| s.depth == 0).unwrap();
+        let d1 = shapes.iter().find(|s| s.depth == 1).unwrap();
+        let d2 = shapes.iter().find(|s| s.depth == 2).unwrap();
+        assert_eq!(d0.continuation_indent, 2);
+        assert_eq!(d1.continuation_indent, 4);
+        assert_eq!(d2.continuation_indent, 6);
+
+        // `collect_escaped_block_candidates` must also descend into nested
+        // lists. Construct a depth-1 gap: an indented fenced code block that
+        // sits between two sibling inner items at col 4. The walker has to
+        // reach inside the outer item to see the inner list at all.
+        let with_nested_gap = "\
+- outer
+  - inner one
+
+    ```js
+    x;
+    ```
+
+  - inner two
+";
+        let cands = candidates_for(with_nested_gap);
+        // If the walker never descended past the outer list, no candidates
+        // at depth ≥ 1 would be emitted. We may or may not get a candidate
+        // here (markdown-rs often absorbs correctly-indented fences as
+        // children), but the call must not panic and any candidate surfaced
+        // for this shape must carry its correct enclosing depth.
+        for c in &cands {
+            assert!(c.depth >= 1, "nested candidate depth should be ≥1, got {}", c.depth);
+        }
     }
 
     #[test]

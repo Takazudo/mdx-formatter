@@ -1,0 +1,56 @@
+---
+title: recover-escaped-tables-in-lists
+description: Re-indent GFM tables that escaped to column 0 between two list items
+sidebar_position: 22
+---
+
+When an AI author writes a GFM table between two numbered list items without indenting it, CommonMark parses it as a root-level table and breaks the list. This rule detects that shape and re-indents the table to the preceding item's continuation column.
+
+## Modes
+
+| Value          | Default | Behavior                                                                                                                              |
+| -------------- | :-----: | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `"off"`        |         | Never touch. Output is byte-identical for this rule.                                                                                  |
+| `"safe"`       |    ✓    | Fire only for numbering runs (`1. … | table | 2. …`). Bullet-list escapes are left alone.                                            |
+| `"aggressive"` |         | Additionally fire on bullet-list pairs (`- … | table | - …`) where the surrounding markers match.                                    |
+
+## Config
+
+```json
+{
+  "recover-escaped-tables-in-lists": "safe"
+}
+```
+
+## Example
+
+Before:
+
+````markdown
+1. before
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+2. after
+````
+
+After (`"safe"` — default):
+
+````markdown
+1. before
+
+   | a | b |
+   | - | - |
+   | 1 | 2 |
+
+2. after
+````
+
+Every row is re-indented by 3 spaces. Alignment colons in the separator row (e.g. `| :-- | --: |`) are preserved byte-for-byte.
+
+## Notes
+
+- Legitimate top-level tables (no enclosing list) are never touched in any mode.
+- The rule is idempotent and runs **before** [`tighten-list-continuations`](./tighten-list-continuations) in the formatter pipeline.

@@ -1,9 +1,12 @@
 use clap::Parser;
 use colored::Colorize;
 use glob::glob;
-use mdx_formatter_core::{try_format, load_full_config, FullConfig};
+use mdx_formatter_core::{
+    load_full_config, try_format, try_format_with_sink, FullConfig, ReportEntry, VecSink,
+};
 use std::collections::HashSet;
 use std::fs;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process;
 
@@ -22,6 +25,14 @@ struct Cli {
     /// Check if files need formatting (exit 1 if any need formatting)
     #[arg(short, long, conflicts_with = "write")]
     check: bool,
+
+    /// Preview every change on stderr without touching files or stdout.
+    ///
+    /// Each entry is: `<path>:<start>-<end> [<rule>]`, followed by indented
+    /// `- <before>` / `+ <after>` lines (≤3 each, truncated with `…`).
+    /// Exits 0 whether or not there was anything to report.
+    #[arg(long, conflicts_with_all = ["write", "check"])]
+    dry_run: bool,
 
     /// Path to config file (.mdx-formatter.json)
     #[arg(long)]
@@ -85,6 +96,47 @@ fn collect_files(patterns: &[String], ignore_patterns: &[String]) -> Vec<PathBuf
     files
 }
 
+/// Render one ReportEntry to `stderr` in the stable `--dry-run` format.
+///
+/// Format — greppable by path, filterable by rule token:
+///   <path>:<start>-<end> [<rule>]
+///     - <before line 1>
+///     - <before line 2>
+///     - …           (when > 3 lines)
+///     + <after line 1>
+///     + <after line 2>
+///     + …           (when > 3 lines)
+///
+/// Lines are 1-based in output (CLI-facing) even though the core tracks them
+/// 0-based internally.
+fn write_report_entry<W: Write>(out: &mut W, path: &str, entry: &ReportEntry) -> io::Result<()> {
+    let start_1 = entry.start_line + 1;
+    let end_1 = entry.end_line + 1;
+    writeln!(out, "{}:{}-{} [{}]", path, start_1, end_1, entry.rule)?;
+    write_snippet(out, &entry.before, '-')?;
+    write_snippet(out, &entry.after, '+')?;
+    Ok(())
+}
+
+/// Write up to 3 lines of a before/after snippet, truncating the rest with `…`.
+/// Prefix is `-` for before, `+` for after. Empty snippets (e.g. tighten ops
+/// that delete a blank line) render as a single "(deleted)" marker so the
+/// user can tell the rule meant to remove content.
+fn write_snippet<W: Write>(out: &mut W, snippet: &[String], prefix: char) -> io::Result<()> {
+    if snippet.is_empty() {
+        writeln!(out, "  {} (no lines)", prefix)?;
+        return Ok(());
+    }
+    const MAX_LINES: usize = 3;
+    for line in snippet.iter().take(MAX_LINES) {
+        writeln!(out, "  {} {}", prefix, line)?;
+    }
+    if snippet.len() > MAX_LINES {
+        writeln!(out, "  {} …", prefix)?;
+    }
+    Ok(())
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -107,7 +159,16 @@ fn main() {
     let files = collect_files(&cli.patterns, &all_ignore);
 
     if files.is_empty() {
-        println!("{}", "No files found matching the patterns.".yellow());
+        if cli.dry_run {
+            eprintln!("{}", "No files found matching the patterns.".yellow());
+        } else {
+            println!("{}", "No files found matching the patterns.".yellow());
+        }
+        return;
+    }
+
+    if cli.dry_run {
+        run_dry_run(&files, &loaded);
         return;
     }
 
@@ -257,4 +318,54 @@ fn main() {
     if cli.check && changed_count > 0 {
         process::exit(1);
     }
+}
+
+/// `--dry-run` handler. Writes EVERYTHING to stderr: nothing to stdout, nothing
+/// to disk. Always exits 0. Errors reading/parsing individual files are
+/// reported as stderr lines but do NOT change the exit code — dry-run is an
+/// audit tool and must not fail CI when a file is malformed.
+fn run_dry_run(files: &[PathBuf], loaded: &FullConfig) {
+    let stderr = io::stderr();
+    let mut err = stderr.lock();
+    let mut total_entries = 0usize;
+    let mut files_with_changes = 0usize;
+
+    for file in files {
+        let path_str = file.to_string_lossy();
+        let content = match fs::read_to_string(file) {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = writeln!(err, "{}: read error: {}", path_str, e);
+                continue;
+            }
+        };
+
+        let mut sink = VecSink::default();
+        match try_format_with_sink(&content, &loaded.settings, &mut sink) {
+            Ok(_) => {}
+            Err(e) => {
+                let _ = writeln!(err, "{}: parse error: {}", path_str, e);
+                continue;
+            }
+        }
+
+        if sink.entries.is_empty() {
+            continue;
+        }
+
+        files_with_changes += 1;
+        for entry in &sink.entries {
+            total_entries += 1;
+            let _ = write_report_entry(&mut err, &path_str, entry);
+        }
+    }
+
+    let _ = writeln!(
+        err,
+        "\n{} entr{} across {} file{} (dry-run; no files were modified).",
+        total_entries,
+        if total_entries == 1 { "y" } else { "ies" },
+        files_with_changes,
+        if files_with_changes == 1 { "" } else { "s" },
+    );
 }

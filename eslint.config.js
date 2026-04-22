@@ -27,7 +27,7 @@ export default [
     },
   },
   {
-    files: ['src/cli.ts', 'format-stdin.js'],
+    files: ['src/cli.ts', 'format-stdin.js', 'scripts/**/*.ts'],
     rules: {
       'no-console': 'off',
     },
