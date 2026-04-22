@@ -46,6 +46,7 @@
     "build:wasm:bundler": ". \"$HOME/.cargo/env\" && wasm-pack build crates/mdx-formatter-wasm --target bundler --out-dir ../../wasm/pkg-bundler",
     "build:wasm:doc": ". \"$HOME/.cargo/env\" && wasm-pack build crates/mdx-formatter-wasm --target web --out-dir ../../doc/src/wasm-pkg && mkdir -p doc/public/wasm && cp doc/src/wasm-pkg/mdx_formatter_wasm_bg.wasm doc/public/wasm/ && cp doc/src/wasm-pkg/mdx_formatter_wasm.js doc/public/wasm/",
     "b4push": "./scripts/run-b4push.sh",
+    "sync:napi-versions": "node scripts/sync-napi-versions.mjs",
     "doc:start": "pnpm --dir doc start",
     "prepublishOnly": "tsc && vitest run"
   },
@@ -89,10 +90,10 @@
     "vitest": "^4.0.17"
   },
   "optionalDependencies": {
-    "@takazudo/mdx-formatter-darwin-arm64": "1.0.0",
-    "@takazudo/mdx-formatter-darwin-x64": "1.0.0",
-    "@takazudo/mdx-formatter-linux-x64-gnu": "1.0.0",
-    "@takazudo/mdx-formatter-win32-x64-msvc": "1.0.0"
+    "@takazudo/mdx-formatter-darwin-arm64": "1.2.1",
+    "@takazudo/mdx-formatter-darwin-x64": "1.2.1",
+    "@takazudo/mdx-formatter-linux-x64-gnu": "1.2.1",
+    "@takazudo/mdx-formatter-win32-x64-msvc": "1.2.1"
   },
   "engines": {
     "node": ">=18.0.0"
