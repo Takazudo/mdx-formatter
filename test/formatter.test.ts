@@ -1,6 +1,25 @@
 import { describe, it, expect } from 'vitest';
+import { promises as fs } from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { format } from '../src/index.js';
 import { testSettings } from './test-helpers.js';
+import type { DeepPartial, FormatterSettings } from '../src/types.js';
+
+const __fixturesDirname = path.dirname(fileURLToPath(import.meta.url));
+const fixturesDir = path.join(__fixturesDirname, 'fixtures');
+
+async function readFixture(name: string): Promise<string> {
+  return fs.readFile(path.join(fixturesDir, name), 'utf-8');
+}
+
+// The four list-normalize rules are exposed as flat top-level kebab-case
+// keys (see `crates/mdx-formatter-core/src/config.rs`). They are not part of
+// the TS `FormatterSettings` shape, so cast at the boundary.
+type ListNormalizeOverride = Record<string, unknown> & DeepPartial<FormatterSettings>;
+function lnSettings(overrides: Record<string, unknown>): DeepPartial<FormatterSettings> {
+  return overrides as ListNormalizeOverride;
+}
 
 describe('Markdown Formatter', () => {
   describe('Basic Markdown Formatting', () => {
@@ -948,6 +967,74 @@ This paragraph follows an image.
       const expected = 'Some text\n\n- Item 1\n- Item 2\n\nMore text';
       const result = await format(input, { settings: testSettings });
       expect(result).toBe(expected);
+    });
+  });
+
+  // ── List-normalize real-content fixtures (issue #88) ──────────────────────
+  //
+  // Each fixture under `test/fixtures/` mirrors a real AI-authored pattern
+  // reported in epic #80. The test loads the input, runs `format` with the
+  // profile that exercises the target rule (usually defaults — the locked
+  // middle variants fire automatically), and asserts byte-equality with the
+  // paired `*.expected.md`.
+  describe('List Normalize Fixtures (issue #88)', () => {
+    it('tighten-list-continuations: collapses blank gaps inside ParagraphsOnly items', async () => {
+      const input = await readFixture('tighten-continuations.md');
+      const expected = await readFixture('tighten-continuations.expected.md');
+      const result = await format(input);
+      expect(result).toBe(expected);
+    });
+
+    it('recover-escaped-code-in-lists: re-indents a col-0 fence between numbered items', async () => {
+      const input = await readFixture('recover-escaped-code.md');
+      const expected = await readFixture('recover-escaped-code.expected.md');
+      const result = await format(input);
+      expect(result).toBe(expected);
+    });
+
+    it('recover-escaped-tables-in-lists: re-indents a col-0 GFM table between numbered items', async () => {
+      const input = await readFixture('recover-escaped-tables.md');
+      const expected = await readFixture('recover-escaped-tables.expected.md');
+      const result = await format(input);
+      expect(result).toBe(expected);
+    });
+
+    it('recover-escaped-paragraphs-in-lists: heuristic mode recovers lowercase continuation', async () => {
+      const input = await readFixture('recover-escaped-paragraphs.md');
+      const expected = await readFixture('recover-escaped-paragraphs.expected.md');
+      // Default is "off" — opt in to heuristic for this fixture.
+      const result = await format(input, {
+        settings: lnSettings({
+          'recover-escaped-paragraphs-in-lists': 'heuristic',
+        }),
+      });
+      expect(result).toBe(expected);
+    });
+
+    it('recover-escaped-paragraphs-in-lists: default OFF leaves the same fixture byte-identical', async () => {
+      // The opt-in rule must not fire under default settings.
+      const input = await readFixture('recover-escaped-paragraphs.md');
+      const result = await format(input);
+      expect(result).toBe(input);
+    });
+
+    // ── "Formatter is innocent" baseline (epic #80) ─────────────────────────
+    // With all four list-normalize rules set to "off", the loose-shape
+    // continuation-paragraph snippet round-trips byte-identically. This is
+    // the repo-local assertion that the formatter does not introduce the
+    // blank lines observed in AI-authored content — they must be present in
+    // the input to appear in the output.
+    it('baseline: formatter is innocent — rules=off leaves the loose-shape snippet byte-identical', async () => {
+      const input = await readFixture('baseline-loose-list-preserved.md');
+      const result = await format(input, {
+        settings: lnSettings({
+          'tighten-list-continuations': 'off',
+          'recover-escaped-code-in-lists': 'off',
+          'recover-escaped-tables-in-lists': 'off',
+          'recover-escaped-paragraphs-in-lists': 'off',
+        }),
+      });
+      expect(result).toBe(input);
     });
   });
 });
