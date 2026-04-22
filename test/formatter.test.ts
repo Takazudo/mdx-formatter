@@ -21,6 +21,27 @@ function lnSettings(overrides: Record<string, unknown>): DeepPartial<FormatterSe
   return overrides as ListNormalizeOverride;
 }
 
+// "Every rule off" baseline for fenced-code regression tests (issue #98).
+// Disables every top-level enabled-flag rule AND every list-normalize rule,
+// so a passing round-trip proves the formatter's base pass (parse → emit →
+// post-process) preserves fenced interiors regardless of any rule body.
+function allRulesOff(): DeepPartial<FormatterSettings> {
+  return {
+    addEmptyLineBetweenElements: { enabled: false },
+    formatMultiLineJsx: { enabled: false },
+    formatHtmlBlocksInMdx: { enabled: false },
+    expandSingleLineJsx: { enabled: false },
+    indentJsxContent: { enabled: false },
+    addEmptyLinesInBlockJsx: { enabled: false },
+    formatYamlFrontmatter: { enabled: false },
+    'tighten-list-continuations': 'off',
+    'tighten-list-item-spacing': 'off',
+    'recover-escaped-code-in-lists': 'off',
+    'recover-escaped-tables-in-lists': 'off',
+    'recover-escaped-paragraphs-in-lists': 'off',
+  } as ListNormalizeOverride;
+}
+
 describe('Markdown Formatter', () => {
   describe('Basic Markdown Formatting', () => {
     it('should format headings with proper spacing', async () => {
@@ -1022,6 +1043,115 @@ This paragraph follows an image.
       // The opt-in rule must not fire under default settings.
       const input = await readFixture('recover-escaped-paragraphs.md');
       const result = await format(input);
+      expect(result).toBe(input);
+    });
+
+    // ── Regression: issue #97 — blank injection inside list-item continuation ──
+    //
+    // A list item whose first line soft-wraps to indented continuation lines
+    // previously got a blank line inserted between the first line and the
+    // continuation (turning tight lists into loose lists and breaking
+    // byte-identical round-trips). Both the bulleted and ordered variants
+    // must round-trip byte-identically under default settings AND under an
+    // "every list-normalize rule off" baseline.
+    it('regression #97 (bulleted): list-item continuation round-trips under default settings', async () => {
+      const input = await readFixture('regression-list-continuation-blank.md');
+      const expected = await readFixture('regression-list-continuation-blank.expected.md');
+      const result = await format(input);
+      expect(result).toBe(expected);
+    });
+
+    it('regression #97 (bulleted): list-item continuation round-trips with rules=off', async () => {
+      const input = await readFixture('regression-list-continuation-blank.md');
+      const result = await format(input, {
+        settings: lnSettings({
+          'tighten-list-continuations': 'off',
+          'tighten-list-item-spacing': 'off',
+          'recover-escaped-code-in-lists': 'off',
+          'recover-escaped-tables-in-lists': 'off',
+          'recover-escaped-paragraphs-in-lists': 'off',
+        }),
+      });
+      expect(result).toBe(input);
+    });
+
+    it('regression #97 (ordered, upstream #66): list-item continuation round-trips under default settings', async () => {
+      const input = await readFixture('regression-list-continuation-blank-ordered.md');
+      const expected = await readFixture('regression-list-continuation-blank-ordered.expected.md');
+      const result = await format(input);
+      expect(result).toBe(expected);
+    });
+
+    it('regression #97 (ordered, upstream #66): list-item continuation round-trips with rules=off', async () => {
+      const input = await readFixture('regression-list-continuation-blank-ordered.md');
+      const result = await format(input, {
+        settings: lnSettings({
+          'tighten-list-continuations': 'off',
+          'tighten-list-item-spacing': 'off',
+          'recover-escaped-code-in-lists': 'off',
+          'recover-escaped-tables-in-lists': 'off',
+          'recover-escaped-paragraphs-in-lists': 'off',
+        }),
+      });
+      expect(result).toBe(input);
+    });
+
+    // ── Regression: issue #98 — blank injection inside fenced code blocks ──
+    //
+    // The formatter must preserve the interior of fenced code blocks
+    // byte-for-byte. A prior bug caused `ensure_block_element_spacing` (and
+    // the AST-based spacing collector) to inject blanks immediately after
+    // the opening fence / before the closing fence. The nested 4-backtick
+    // case was additionally path-dependent: html-then-js ordering mangled
+    // only the second (js) inner block. All three fixtures must round-trip
+    // byte-identically under default settings AND under a baseline that
+    // disables every format-time rule ("all rules off").
+    //
+    // Covers:
+    //   - top-level 3-backtick block  (upstream #68 minimal repro)
+    //   - nested 3-backtick blocks inside a 4-backtick outer fence
+    //     (html-then-js ordering, asserts path-dependence is gone)
+    //   - tilde-fenced block  (fence-char agnostic)
+    it('regression #98 (top-level 3-backtick): interior round-trips under default settings', async () => {
+      const input = await readFixture('regression-fenced-code-interior-blank.md');
+      const expected = await readFixture('regression-fenced-code-interior-blank.expected.md');
+      const result = await format(input);
+      expect(result).toBe(expected);
+    });
+
+    it('regression #98 (top-level 3-backtick): interior round-trips with all rules off', async () => {
+      const input = await readFixture('regression-fenced-code-interior-blank.md');
+      const result = await format(input, { settings: allRulesOff() });
+      expect(result).toBe(input);
+    });
+
+    it('regression #98 (nested 4-backtick): html-then-js interiors round-trip under default settings', async () => {
+      const input = await readFixture('regression-fenced-code-nested-4backtick.md');
+      const expected = await readFixture('regression-fenced-code-nested-4backtick.expected.md');
+      const result = await format(input);
+      expect(result).toBe(expected);
+      // Path-dependence guard: neither inner block body gets a blank
+      // injected after its opening fence or before its closing fence.
+      expect(result).toContain('```html\n<div id="app"></div>\n```');
+      expect(result).toContain('```js\nmyLibrary.init({\n  /* ... */\n});\n```');
+    });
+
+    it('regression #98 (nested 4-backtick): html-then-js interiors round-trip with all rules off', async () => {
+      const input = await readFixture('regression-fenced-code-nested-4backtick.md');
+      const result = await format(input, { settings: allRulesOff() });
+      expect(result).toBe(input);
+    });
+
+    it('regression #98 (tilde fence): interior round-trips under default settings', async () => {
+      const input = await readFixture('regression-fenced-code-tilde.md');
+      const expected = await readFixture('regression-fenced-code-tilde.expected.md');
+      const result = await format(input);
+      expect(result).toBe(expected);
+    });
+
+    it('regression #98 (tilde fence): interior round-trips with all rules off', async () => {
+      const input = await readFixture('regression-fenced-code-tilde.md');
+      const result = await format(input, { settings: allRulesOff() });
       expect(result).toBe(input);
     });
 
