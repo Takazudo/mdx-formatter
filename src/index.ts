@@ -6,11 +6,13 @@
 import { promises as fs } from 'fs';
 import { loadConfig } from './load-config.js';
 import { detectMdx } from './detect-mdx.js';
-import { nativeFormat } from './rust-formatter.js';
+import { nativeFormat, nativeDryRunReport } from './rust-formatter.js';
+import type { DryRunReportEntry } from './rust-formatter.js';
 import { formatterSettings } from './settings.js';
 import type { FormatOptions } from './types.js';
 
 export { detectMdx };
+export type { DryRunReportEntry };
 
 /**
  * Format markdown/MDX content using the Rust formatter.
@@ -54,10 +56,24 @@ export async function checkFile(filePath: string, options: FormatOptions = {}): 
   return content !== formatted;
 }
 
+/**
+ * Compute the dry-run report for `content` without modifying it.
+ *
+ * Entries describe every change the formatter's rules would make, with
+ * 0-indexed line ranges and `before`/`after` snippets. Used by the CLI
+ * `--dry-run` flag and exposed here so library consumers can audit a corpus
+ * programmatically.
+ */
+export function dryRunReport(content: string, options: FormatOptions = {}): DryRunReportEntry[] {
+  const settings = loadConfig(options);
+  return nativeDryRunReport(content, JSON.stringify(settings));
+}
+
 export default {
   format,
   formatSync,
   formatFile,
   checkFile,
+  dryRunReport,
   detectMdx,
 };
