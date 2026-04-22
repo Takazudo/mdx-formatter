@@ -1396,7 +1396,12 @@ fn build_item_detection(
         2
     };
 
-    let continuation_indent = ancestor_indent + marker_column + marker_width;
+    // `markdown-rs` positions are source-absolute, so marker_column already
+    // bakes in every ancestor's indent. The `ancestor_indent` parameter is
+    // preserved for call-site API stability; it is no longer summed into the
+    // result (doing so over-counted at depth ≥ 1 — see #86).
+    let _ = ancestor_indent;
+    let continuation_indent = marker_column + marker_width;
 
     // First / last child line
     let first_child_line = item.children.first().and_then(|c| {
@@ -1468,6 +1473,10 @@ fn walk_escape_candidates(
     lines: &[&str],
     out: &mut Vec<EscapedBlockCandidate>,
 ) {
+    // `ancestor_indent` is kept for signature stability; markdown-rs positions
+    // are source-absolute, so per-item `col + width` is already the correct
+    // continuation column at any depth.
+    let _ = ancestor_indent;
     if let Node::List(list) = node {
         // Collect the item positions at this level as (start, end, marker_col+width).
         let mut item_spans: Vec<(usize, usize, usize)> = Vec::new();
@@ -1502,7 +1511,7 @@ fn walk_escape_candidates(
                 lines,
                 gap_start,
                 gap_end,
-                ancestor_indent + expected_indent,
+                expected_indent,
                 depth,
             ) {
                 out.push(candidate);
@@ -1519,7 +1528,9 @@ fn walk_escape_candidates(
                         .get(s)
                         .map(|ln| list_marker_width(ln.trim_start()))
                         .unwrap_or(2);
-                    let child_indent = ancestor_indent + col + width;
+                    // Absolute: source-derived col + width is already the
+                    // correct continuation column; no accumulation.
+                    let child_indent = col + width;
                     for sub in &item.children {
                         walk_escape_candidates(sub, depth + 1, child_indent, lines, out);
                     }
@@ -1675,7 +1686,10 @@ fn walk_escaped_code_patterns(
             .get(item_start_line)
             .map(|ln| list_marker_width(ln.trim_start()))
             .unwrap_or(2);
-        let continuation_indent = ancestor_indent + item_col + item_marker_width;
+        // Absolute continuation — `item_col` already encodes every ancestor's
+        // indent (markdown-rs columns are source-absolute).
+        let _ = ancestor_indent;
+        let continuation_indent = item_col + item_marker_width;
 
         // If the fence is already indented to the item's continuation column
         // (or deeper), it's not escaped — the parser kept it inside the item.
@@ -1705,8 +1719,14 @@ fn walk_escaped_code_patterns(
         });
     }
 
-    // Recurse. For `Node::List` children we bump `ancestor_indent` by the
-    // current item's continuation column so nested lists see the correct base.
+    // Recurse. For `Node::List` children we visit each ListItem so that
+    // `item.children` get a top-level pattern scan at the next iteration — the
+    // `[List, Code, List]` triple can sit at the list-item level (i.e. nested
+    // one level down from the outer list), and missing that scan would drop
+    // depth-N escape recovery for any N ≥ 1. `ancestor_indent` is bumped to the
+    // item's continuation column (absolute, derived from `markdown-rs` source
+    // positions — no accumulation needed) so `try_emit` compares against the
+    // right escape column.
     for child in children {
         match child {
             Node::List(list) => {
@@ -1717,7 +1737,10 @@ fn walk_escaped_code_patterns(
                     };
                     let p = match &li.position {
                         Some(p) => p,
-                        None => continue,
+                        None => {
+                            walk_escaped_code_patterns(item, ancestor_indent, lines, out);
+                            continue;
+                        }
                     };
                     let col = p.start.column.saturating_sub(1);
                     let s = p.start.line.saturating_sub(1);
@@ -1725,10 +1748,11 @@ fn walk_escaped_code_patterns(
                         .get(s)
                         .map(|ln| list_marker_width(ln.trim_start()))
                         .unwrap_or(2);
-                    let new_indent = ancestor_indent + col + w;
-                    for sub in &li.children {
-                        walk_escaped_code_patterns(sub, new_indent, lines, out);
-                    }
+                    // Absolute column: markdown-rs positions already bake in
+                    // every ancestor's indent, so `col + w` is the correct
+                    // continuation column at any depth.
+                    let new_indent = col + w;
+                    walk_escaped_code_patterns(item, new_indent, lines, out);
                 }
             }
             _ => walk_escaped_code_patterns(child, ancestor_indent, lines, out),
@@ -1849,16 +1873,23 @@ fn collect_table_recovery_ops(
     }
 
     // Recurse so nested list items that themselves contain the pattern are
-    // handled. When we descend into a ListItem, accumulate its continuation
-    // indent so child-level recoveries know how far to shift.
+    // handled. Visit each ListItem directly (not just its children) so that
+    // `[List, Table, List]` triples living inside an item — i.e. a depth-N
+    // escape with N ≥ 1 — get their own top-level pattern scan. Bump
+    // `ancestor_indent` to the item's absolute continuation column so
+    // `try_emit_table_recovery` compares against the right escape column.
     match node {
         Node::List(list) => {
             for child in &list.children {
                 if let Node::ListItem(item) = child {
                     let item_indent = list_item_continuation_indent(item, lines, ancestor_indent);
-                    for sub in &item.children {
-                        collect_table_recovery_ops(sub, lines, item_indent, aggressive, operations);
-                    }
+                    collect_table_recovery_ops(
+                        child,
+                        lines,
+                        item_indent,
+                        aggressive,
+                        operations,
+                    );
                 }
             }
         }
@@ -1870,9 +1901,13 @@ fn collect_table_recovery_ops(
     }
 }
 
-/// Compute the cumulative continuation indent for a list item (the column
-/// where its children / continuation lines begin), given the enclosing
-/// ancestor indent.
+/// Compute the absolute continuation-indent column for a list item (the column
+/// where its children / continuation lines begin). `markdown-rs` source
+/// positions are absolute, so `marker_column + marker_width` already reflects
+/// every ancestor's indent — no accumulation needed. The `ancestor_indent`
+/// parameter is kept for call-site API stability (pre-#86 callers passed a
+/// running sum) but is no longer added to the result; it falls back into the
+/// return when the item has no position.
 fn list_item_continuation_indent(
     item: &markdown::mdast::ListItem,
     lines: &[&str],
@@ -1887,7 +1922,7 @@ fn list_item_continuation_indent(
         .get(start_line)
         .map(|ln| list_marker_width(ln.trim_start()))
         .unwrap_or(2);
-    ancestor_indent + marker_column + marker_width
+    marker_column + marker_width
 }
 
 /// Attempt to build a recovery op for a candidate `[List, Table, List]` trio.
@@ -5200,6 +5235,188 @@ Capital continuation line.
             out_default, out_explicit,
             "default settings must match explicit heuristic; default=\n{out_default}\nexplicit=\n{out_explicit}"
         );
+    }
+
+    // ── Recursive-application-to-nested-sublists tests (issue #86) ──
+    //
+    // These tests verify that the list-normalize rules from #82 (tighten) and
+    // #83 (recover escaped code) fire correctly inside nested sublists — not
+    // only at top-level lists. #85 (recover escaped paragraphs) is also
+    // exercised via the idempotency test below. Correctness at depth hinges
+    // on:
+    //   (a) the detection pass traversing the full list tree and reporting
+    //       shapes for every item regardless of nesting, and
+    //   (b) the apply-side walkers (recover-code / recover-tables) scanning
+    //       `item.children` at every list-item level, not just at the root.
+    //
+    // Prior to this test module the apply walkers skipped the list-item
+    // level: they descended from `List → ListItem.children` and re-scanned
+    // each sub individually, so a `[List, Code, List]` triple sitting *as*
+    // `item.children` was never checked. Fixing that turned out to also
+    // require correcting the `continuation_indent` formula (markdown-rs
+    // positions are source-absolute, so summing `ancestor_indent` on top
+    // over-counted at depth ≥ 1).
+
+    #[test]
+    fn recursion_tighten_fires_at_depth_2() {
+        // Depth-2 bullet list. The inner item's two paragraph children are
+        // separated by a blank line; #82's heuristic tighten rule should
+        // collapse that blank — just as it does at depth 0.
+        let input = "\
+- outer intro
+  - inner first line, which is long and continues
+
+    with more prose.
+  - inner two
+";
+        let expected = "\
+- outer intro
+  - inner first line, which is long and continues
+    with more prose.
+  - inner two
+";
+        let out = format(input, &FormatterSettings::default());
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn recursion_recover_code_fires_at_depth_2() {
+        // Numbered outer / numbered inner list. The fence sits at col 3 —
+        // flush to the outer item's continuation but dedented below the inner
+        // item's continuation (col 6), so the parser splits the inner list
+        // into two siblings with the fence between. Safe-mode recovery (both
+        // sides ordered) re-indents the fence into the inner list.
+        let input = "\
+1. outer
+
+   1. inner one
+
+   ```js
+   const x = 1;
+   ```
+
+   2. inner two
+";
+        let expected = "\
+1. outer
+
+   1. inner one
+
+      ```js
+      const x = 1;
+      ```
+
+   2. inner two
+";
+        let out = format(input, &FormatterSettings::default());
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn recursion_depth_3_tighten_deepest() {
+        // Mixed depth-3 nesting: bullet > numbered > bullet. The deepest item
+        // has a blank-gap paragraph continuation; #82 must still fire at the
+        // innermost level.
+        let input = "\
+- outer bullet
+  1. middle numbered
+     - deepest item one, which continues lowercase
+
+       with more prose.
+     - deepest item two
+";
+        let expected = "\
+- outer bullet
+  1. middle numbered
+     - deepest item one, which continues lowercase
+       with more prose.
+     - deepest item two
+";
+        let out = format(input, &FormatterSettings::default());
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn recursion_depth_3_idempotent() {
+        // Two passes over a depth-3 mixed structure must produce byte-identical
+        // output. The test content mixes a tighten trigger (depth-2) with a
+        // recover-code trigger (depth-1) so several rules have to agree on a
+        // steady state.
+        let input = "\
+1. top
+
+   1. middle-a
+
+   ```js
+   const x = 1;
+   ```
+
+   2. middle-b
+      - deepest one, which continues lowercase
+
+        with more prose.
+      - deepest two
+";
+        let settings = FormatterSettings::default();
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        let thrice = format(&twice, &settings);
+        assert_eq!(once, twice, "first→second pass flipped:\n--- once\n{once}--- twice\n{twice}");
+        assert_eq!(twice, thrice, "second→third pass flipped:\n--- twice\n{twice}--- thrice\n{thrice}");
+    }
+
+    #[test]
+    fn recursion_detection_traverses_full_tree() {
+        // Depth-2 nested bullet list with five items distributed across three
+        // depth levels (2 + 2 + 1). `collect_list_item_shapes` must report
+        // every item, or downstream rules will silently skip work at depth.
+        let input = "\
+- l0a
+  - l1a
+    - l2a
+  - l1b
+- l0b
+";
+        let shapes = shapes_for(input);
+        assert_eq!(shapes.len(), 5, "expected 5 list items across all depths, got {}: {:?}", shapes.len(), shapes);
+
+        let by_depth = |d: usize| shapes.iter().filter(|s| s.depth == d).count();
+        assert_eq!(by_depth(0), 2, "depth-0 count: {:?}", shapes);
+        assert_eq!(by_depth(1), 2, "depth-1 count: {:?}", shapes);
+        assert_eq!(by_depth(2), 1, "depth-2 count: {:?}", shapes);
+
+        // Continuation indents are absolute (source-derived) and cumulative
+        // across markdown's own indentation; no double-counting.
+        let d0 = shapes.iter().find(|s| s.depth == 0).unwrap();
+        let d1 = shapes.iter().find(|s| s.depth == 1).unwrap();
+        let d2 = shapes.iter().find(|s| s.depth == 2).unwrap();
+        assert_eq!(d0.continuation_indent, 2);
+        assert_eq!(d1.continuation_indent, 4);
+        assert_eq!(d2.continuation_indent, 6);
+
+        // `collect_escaped_block_candidates` must also descend into nested
+        // lists. Construct a depth-1 gap: an indented fenced code block that
+        // sits between two sibling inner items at col 4. The walker has to
+        // reach inside the outer item to see the inner list at all.
+        let with_nested_gap = "\
+- outer
+  - inner one
+
+    ```js
+    x;
+    ```
+
+  - inner two
+";
+        let cands = candidates_for(with_nested_gap);
+        // If the walker never descended past the outer list, no candidates
+        // at depth ≥ 1 would be emitted. We may or may not get a candidate
+        // here (markdown-rs often absorbs correctly-indented fences as
+        // children), but the call must not panic and any candidate surfaced
+        // for this shape must carry its correct enclosing depth.
+        for c in &cands {
+            assert!(c.depth >= 1, "nested candidate depth should be ≥1, got {}", c.depth);
+        }
     }
 
     #[test]
