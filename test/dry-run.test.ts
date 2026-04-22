@@ -53,9 +53,10 @@ describe('dryRunReport library API', () => {
   it('returns a non-empty report for content with normalizations', () => {
     const entries = dryRunReport(FIXTURE_WITH_CHANGES);
     expect(entries.length).toBeGreaterThan(0);
-    // At least one of the four list-normalize rules must have fired.
+    // At least one of the five list-normalize rules must have fired.
     const ruleNames = new Set(entries.map((e) => e.rule));
     const known = [
+      'tighten-list-item-spacing',
       'recover-escaped-code-in-lists',
       'recover-escaped-tables-in-lists',
       'recover-escaped-paragraphs-in-lists',

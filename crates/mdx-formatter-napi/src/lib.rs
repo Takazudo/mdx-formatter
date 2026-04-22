@@ -7,7 +7,7 @@ fn resolve_settings(settings_json: Option<String>) -> napi::Result<FormatterSett
         let partial: serde_json::Value = serde_json::from_str(&json)
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
         // The TS loader ships an already-merged blob that may include the
-        // four list-normalize top-level kebab-case keys. `from_public_json`
+        // five list-normalize top-level kebab-case keys. `from_public_json`
         // lifts those into `settings.list_normalize` before deserializing
         // the rest via the camelCase serde path. Calling
         // `from_partial_json` directly here silently dropped the keys (see

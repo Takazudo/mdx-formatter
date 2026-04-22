@@ -1,7 +1,7 @@
 //! Integration tests for the `--dry-run` CLI flag.
 //!
 //! Covers the three acceptance-criterion scenarios from issue #87:
-//!   (a) a file containing all four list-normalize pattern classes
+//!   (a) a file containing all five list-normalize pattern classes
 //!       produces a non-empty report, exits 0, and leaves the file
 //!       byte-identical on disk;
 //!   (b) a file with no normalizations produces an empty report and
@@ -51,8 +51,8 @@ fn write_file(path: &Path, content: &str) {
 }
 
 /// Fixture: has a recover-escaped-code case (#83) AND a tighten (#82)
-/// continuation — enough to exercise two of the four list-normalize rules
-/// through the same report. We don't try to exercise all four in one file
+/// continuation — enough to exercise two of the five list-normalize rules
+/// through the same report. We don't try to exercise all five in one file
 /// because their triggers interact (see rule ordering docs in core). Two is
 /// sufficient to prove the sink/flag machinery works end-to-end.
 const FIXTURE_WITH_CHANGES: &str = "1. first item with a long first sentence.

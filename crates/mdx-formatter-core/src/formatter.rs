@@ -51,10 +51,6 @@ static YAML_BLOCK_SCALAR_KEY_RE: LazyLock<Regex> =
 static SPECIAL_START_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[!&*%@`]").unwrap());
 
-// Compile once at startup, not on every format call
-static MULTIPLE_NEWLINES_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
-
 // ============================================================================
 // ReportSink — audit / dry-run mechanism
 // ============================================================================
@@ -261,8 +257,7 @@ fn format_once(content: &str, settings: &FormatterSettings, sink: &mut dyn Repor
     // ── list-normalize pipeline (issue #81: detect; #82-#85: rule bodies) ──
     // Order inside the convergence loop:
     //   detect → recover-escaped (#83/#84/#85) → tighten-continuation (#82)
-    //          → wrap-markdown (existing)
-    // Rule bodies are empty stubs here; they are filled in by #82-#85.
+    //          → tighten-item-spacing (#90) → wrap-markdown (existing)
     let list_item_shapes = collect_list_item_shapes(&ast);
     let escaped_block_candidates = collect_escaped_block_candidates(&ast, &lines);
     apply_recover_escaped_code_in_lists(
@@ -293,6 +288,14 @@ fn format_once(content: &str, settings: &FormatterSettings, sink: &mut dyn Repor
         sink,
     );
     apply_tighten_list_continuations(
+        settings,
+        &list_item_shapes,
+        &ast,
+        &lines,
+        &mut operations,
+        sink,
+    );
+    apply_tighten_list_item_spacing(
         settings,
         &list_item_shapes,
         &ast,
@@ -2642,6 +2645,147 @@ fn second_paragraph_looks_like_continuation(lines: &[&str], p_start_0: usize) ->
     )
 }
 
+/// Collapse blank lines *between* adjacent sibling list items in the same
+/// list, leaving intentional double-blank separators alone.
+fn apply_tighten_list_item_spacing(
+    settings: &FormatterSettings,
+    shapes: &[ListItemDetection],
+    ast: &Node,
+    lines: &[&str],
+    operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
+) {
+    use crate::types::TightenListItemSpacingMode;
+    use std::collections::HashMap;
+
+    let mode = settings.list_normalize.tighten_list_item_spacing;
+    if matches!(mode, TightenListItemSpacingMode::Off) {
+        return;
+    }
+
+    let detection_by_span: HashMap<(usize, usize), &ListItemDetection> = shapes
+        .iter()
+        .map(|s| ((s.start_line, s.end_line), s))
+        .collect();
+
+    walk_for_tighten_list_item_spacing(
+        ast,
+        lines,
+        &detection_by_span,
+        mode,
+        operations,
+        sink,
+    );
+}
+
+fn walk_for_tighten_list_item_spacing(
+    node: &Node,
+    lines: &[&str],
+    detection_by_span: &std::collections::HashMap<(usize, usize), &ListItemDetection>,
+    mode: crate::types::TightenListItemSpacingMode,
+    operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
+) {
+    use crate::types::{ListItemShape, TightenListItemSpacingMode};
+
+    if let Node::List(list) = node {
+        let items: Vec<_> = list
+            .children
+            .iter()
+            .filter_map(|child| match child {
+                Node::ListItem(item) => Some(item),
+                _ => None,
+            })
+            .collect();
+        if items.len() >= 2 {
+            let heuristic_ok = matches!(mode, TightenListItemSpacingMode::Aggressive)
+                || items.iter().all(|item| {
+                    let Some(pos) = &item.position else {
+                        return false;
+                    };
+                    let span = (
+                        pos.start.line.saturating_sub(1),
+                        pos.end.line.saturating_sub(1),
+                    );
+                    matches!(
+                        detection_by_span.get(&span).map(|d| d.shape),
+                        Some(ListItemShape::ParagraphsOnly)
+                    )
+                });
+            if heuristic_ok {
+                emit_tighten_item_spacing_ops_for_list(
+                    items.as_slice(),
+                    detection_by_span,
+                    lines,
+                    operations,
+                    sink,
+                );
+            }
+        }
+    }
+
+    for child in get_children(node) {
+        walk_for_tighten_list_item_spacing(
+            child,
+            lines,
+            detection_by_span,
+            mode,
+            operations,
+            sink,
+        );
+    }
+}
+
+fn emit_tighten_item_spacing_ops_for_list(
+    items: &[&markdown::mdast::ListItem],
+    detection_by_span: &std::collections::HashMap<(usize, usize), &ListItemDetection>,
+    lines: &[&str],
+    operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
+) {
+    for window in items.windows(2) {
+        let (Some(pos1), Some(pos2)) = (&window[0].position, &window[1].position) else {
+            continue;
+        };
+        let span1 = (
+            pos1.start.line.saturating_sub(1),
+            pos1.end.line.saturating_sub(1),
+        );
+        let span2 = (
+            pos2.start.line.saturating_sub(1),
+            pos2.end.line.saturating_sub(1),
+        );
+        let (Some(det1), Some(det2)) = (detection_by_span.get(&span1), detection_by_span.get(&span2))
+        else {
+            continue;
+        };
+        let item1_end_0 = det1.last_child_line.unwrap_or(det1.end_line);
+        let item2_start_0 = det2.start_line;
+
+        // Exactly one blank line between siblings: keep double-blanks intact.
+        if item2_start_0 != item1_end_0 + 2 {
+            continue;
+        }
+        let blank_idx = item1_end_0 + 1;
+        if blank_idx >= lines.len() || !lines[blank_idx].trim().is_empty() {
+            continue;
+        }
+
+        sink.emit(ReportEntry {
+            rule: "tighten-list-item-spacing",
+            start_line: blank_idx,
+            end_line: blank_idx,
+            before: snippet_from_lines(lines, blank_idx, blank_idx),
+            after: Vec::new(),
+        });
+        operations.push(FormatterOperation::ReplaceLines {
+            start_line: blank_idx,
+            end_line: blank_idx,
+            lines: Vec::new(),
+        });
+    }
+}
+
 // ============================================================================
 // HTML Block Formatting
 // ============================================================================
@@ -3499,9 +3643,80 @@ fn leading_space_count(line: &str) -> usize {
     line.len() - line.trim_start_matches(' ').len()
 }
 
-/// Normalize consecutive empty lines to at most one empty line.
+/// Normalize consecutive empty lines to at most one empty line, except for
+/// intentional double separators between adjacent list items.
 fn normalize_empty_lines(content: &str) -> String {
-    MULTIPLE_NEWLINES_RE.replace_all(content, "\n\n").to_string()
+    let had_trailing_newline = content.ends_with('\n');
+    let lines: Vec<&str> = content.split('\n').collect();
+    let mut out: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut i = 0;
+
+    while i < lines.len() {
+        if !lines[i].trim().is_empty() {
+            out.push(lines[i]);
+            i += 1;
+            continue;
+        }
+
+        let start = i;
+        while i < lines.len() && lines[i].trim().is_empty() {
+            i += 1;
+        }
+        let run_len = i - start;
+        let prev_nonblank = (0..start).rev().find(|idx| !lines[*idx].trim().is_empty());
+        let next_nonblank = (i..lines.len()).find(|idx| !lines[*idx].trim().is_empty());
+
+        let blanks_to_keep = if run_len >= 2
+            && matches!(
+                (prev_nonblank, next_nonblank),
+                (Some(prev), Some(next))
+                    if preserves_list_item_double_blank(lines.as_slice(), prev, next)
+            ) {
+            2
+        } else {
+            1
+        };
+
+        out.extend(std::iter::repeat_n("", blanks_to_keep));
+    }
+
+    let mut normalized = out.join("\n");
+    if had_trailing_newline && !normalized.ends_with('\n') {
+        normalized.push('\n');
+    }
+    normalized
+}
+
+fn preserves_list_item_double_blank(lines: &[&str], prev_nonblank: usize, next_nonblank: usize) -> bool {
+    let Some(next_indent) = list_marker_indent(lines[next_nonblank]) else {
+        return false;
+    };
+    if let Some(prev_indent) = list_marker_indent(lines[prev_nonblank]) {
+        return prev_indent == next_indent;
+    }
+    leading_space_count(lines[prev_nonblank]) > next_indent
+}
+
+fn list_marker_indent(line: &str) -> Option<usize> {
+    let indent = leading_space_count(line);
+    let trimmed = &line[indent..];
+    let mut chars = trimmed.chars();
+    match chars.next()? {
+        '-' | '+' | '*' => chars.next().filter(|c| c.is_whitespace()).map(|_| indent),
+        c if c.is_ascii_digit() => {
+            let digits = trimmed
+                .chars()
+                .take_while(|ch| ch.is_ascii_digit())
+                .count();
+            let rest = &trimmed[digits..];
+            let mut rest_chars = rest.chars();
+            match (rest_chars.next(), rest_chars.next()) {
+                (Some('.' | ')'), Some(ws)) if ws.is_whitespace() => Some(indent),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -4208,7 +4423,6 @@ also continues the first
 1. first item
 
    also continues the first
-
 2. second item
 ";
         let settings = settings_with_recover_paragraphs_mode(
@@ -4233,7 +4447,6 @@ also continues the first
 1. first item
 
    `foo` is shorthand for the item above
-
 2. second item
 ";
         let settings = settings_with_recover_paragraphs_mode(
@@ -4294,7 +4507,6 @@ Capital start but numbering resumes so aggressive fires
 1. first item
 
    Capital start but numbering resumes so aggressive fires
-
 2. second item
 ";
         let settings = settings_with_recover_paragraphs_mode(
@@ -4319,7 +4531,6 @@ continues the bullet above
 - first bullet
 
   continues the bullet above
-
 - second bullet
 ";
         let settings = settings_with_recover_paragraphs_mode(
@@ -5239,6 +5450,14 @@ Capital continuation line.
         s
     }
 
+    fn settings_with_tighten_item_spacing(
+        mode: crate::types::TightenListItemSpacingMode,
+    ) -> FormatterSettings {
+        let mut s = FormatterSettings::default();
+        s.list_normalize.tighten_list_item_spacing = mode;
+        s
+    }
+
     #[test]
     fn tighten_heuristic_collapses_lowercase_continuation() {
         use crate::types::TightenListContinuationsMode;
@@ -5410,6 +5629,150 @@ Capital continuation line.
         let out_explicit = format(
             input,
             &settings_with_tighten(crate::types::TightenListContinuationsMode::Heuristic),
+        );
+        assert_eq!(
+            out_default, out_explicit,
+            "default settings must match explicit heuristic; default=\n{out_default}\nexplicit=\n{out_explicit}"
+        );
+    }
+
+    // ── tighten-list-item-spacing (issue #90) tests ──
+
+    #[test]
+    fn tighten_item_spacing_heuristic_collapses_paragraphs_only_list() {
+        use crate::types::TightenListItemSpacingMode;
+        let input = "- first item\n\n- second item\n";
+        let out = format(
+            input,
+            &settings_with_tighten_item_spacing(TightenListItemSpacingMode::Heuristic),
+        );
+        assert!(
+            !out.contains("first item\n\n- second item"),
+            "heuristic should collapse inter-item blank gap; output:\n{out}"
+        );
+        assert!(
+            out.contains("- first item\n- second item"),
+            "both items must survive; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_item_spacing_heuristic_preserves_mixed_shape_list() {
+        use crate::types::TightenListItemSpacingMode;
+        let input = "\
+- first item
+
+- second item
+  - nested child
+
+- third item
+";
+        let out = format(
+            input,
+            &settings_with_tighten_item_spacing(TightenListItemSpacingMode::Heuristic),
+        );
+        assert!(
+            out.contains("first item\n\n- second item"),
+            "heuristic must preserve when any sibling item is non-ParagraphsOnly; output:\n{out}"
+        );
+        assert!(
+            out.contains("nested child\n\n- third item"),
+            "heuristic must preserve every inter-item gap in the mixed list; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_item_spacing_aggressive_ignores_shape_gate() {
+        use crate::types::TightenListItemSpacingMode;
+        let input = "\
+- first item
+
+- second item
+  
+  ```js
+  const x = 1;
+  ```
+
+- third item
+";
+        let out = format(
+            input,
+            &settings_with_tighten_item_spacing(TightenListItemSpacingMode::Aggressive),
+        );
+        assert!(
+            !out.contains("first item\n\n- second item"),
+            "aggressive should collapse first gap; output:\n{out}"
+        );
+        assert!(
+            !out.contains("```\n\n- third item"),
+            "aggressive should collapse second gap; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_item_spacing_preserves_double_blank_gap() {
+        use crate::types::TightenListItemSpacingMode;
+        let input = "- first item\n\n\n- second item\n";
+        let out = format(
+            input,
+            &settings_with_tighten_item_spacing(TightenListItemSpacingMode::Heuristic),
+        );
+        assert!(
+            out.contains("first item\n\n\n- second item"),
+            "double blank gap should be preserved by the rule; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_item_spacing_recurses_into_nested_sublists() {
+        use crate::types::TightenListItemSpacingMode;
+        let input = "\
+- outer item
+  - inner one
+
+  - inner two
+";
+        let expected = "\
+- outer item
+  - inner one
+  - inner two
+";
+        let out = format(
+            input,
+            &settings_with_tighten_item_spacing(TightenListItemSpacingMode::Heuristic),
+        );
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn tighten_item_spacing_real_content_three_item_fixture() {
+        let input = "\
+- No `candle`, `ort` / ONNX Runtime, `llama.cpp` / `llama-cpp-2`, `tch` / libtorch, or
+  `rust-bert` dependency in `tauri-app/Cargo.toml` or `tauri-app/core/Cargo.toml`.
+
+- No `gguf` / `.onnx` / `.safetensors` assets in the repo.
+
+- No `tokenizers` / `tantivy` / `lancedb` integration code checked in.
+";
+        let out = format(input, &FormatterSettings::default());
+        assert!(
+            !out.contains("Cargo.toml`.\n\n- No `gguf`"),
+            "first inter-item gap should collapse; output:\n{out}"
+        );
+        assert!(
+            !out.contains("repo.\n\n- No `tokenizers`"),
+            "second inter-item gap should collapse; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_item_spacing_default_matches_heuristic() {
+        use crate::types::TightenListItemSpacingMode;
+        let input = "- first item\n\n- second item\n";
+        let out_default = format(input, &FormatterSettings::default());
+        let out_explicit = format(
+            input,
+            &settings_with_tighten_item_spacing(TightenListItemSpacingMode::Heuristic),
         );
         assert_eq!(
             out_default, out_explicit,

@@ -14,6 +14,7 @@ use serde_json::Value;
 use crate::types::{
     FormatterSettings, ListNormalizeSettings, RecoverEscapedCodeMode,
     RecoverEscapedParagraphsMode, RecoverEscapedTablesMode, TightenListContinuationsMode,
+    TightenListItemSpacingMode,
 };
 
 /// Result of loading full config — settings plus CLI-level exclude patterns.
@@ -29,12 +30,13 @@ pub struct FullConfig {
 /// lifts them into `FormatterSettings::list_normalize` after the 3-layer merge.
 const LIST_NORMALIZE_TOP_KEYS: &[&str] = &[
     "tighten-list-continuations",
+    "tighten-list-item-spacing",
     "recover-escaped-code-in-lists",
     "recover-escaped-tables-in-lists",
     "recover-escaped-paragraphs-in-lists",
 ];
 
-/// Extract the 4 list-normalize top-level keys from a merged JSON object into
+/// Extract the 5 list-normalize top-level keys from a merged JSON object into
 /// a `ListNormalizeSettings`, falling back to per-field defaults. Missing keys
 /// keep defaults; unknown variants also fall back to defaults (permissive parse).
 pub(crate) fn extract_list_normalize(merged: &Value) -> ListNormalizeSettings {
@@ -47,6 +49,11 @@ pub(crate) fn extract_list_normalize(merged: &Value) -> ListNormalizeSettings {
     if let Some(v) = obj.get("tighten-list-continuations") {
         if let Ok(mode) = serde_json::from_value::<TightenListContinuationsMode>(v.clone()) {
             settings.tighten_list_continuations = mode;
+        }
+    }
+    if let Some(v) = obj.get("tighten-list-item-spacing") {
+        if let Ok(mode) = serde_json::from_value::<TightenListItemSpacingMode>(v.clone()) {
+            settings.tighten_list_item_spacing = mode;
         }
     }
     if let Some(v) = obj.get("recover-escaped-code-in-lists") {
@@ -184,7 +191,7 @@ pub fn load_full_config_from(
     // rest to FormatterSettings serde deserialization (which uses camelCase).
     let list_normalize = extract_list_normalize(&final_json);
 
-    // Strip the 4 keys so they do not trip the serde deserializer if it ever
+    // Strip the 5 keys so they do not trip the serde deserializer if it ever
     // moves to deny_unknown_fields. Also keeps the JSON round-trip clean.
     let mut settings_json = final_json.clone();
     if let Value::Object(ref mut map) = settings_json {
@@ -208,12 +215,12 @@ pub fn load_config(config_path: Option<&str>, programmatic: Option<&Value>) -> F
 }
 
 /// Build a `FormatterSettings` from a single already-merged JSON value that
-/// may include the four public `list-normalize` top-level kebab-case keys.
+/// may include the five public `list-normalize` top-level kebab-case keys.
 ///
 /// Call this from front-ends (napi, wasm, …) that accept a single blob of
 /// public settings JSON already produced by their own loader (e.g. the TS
 /// `loadConfig`). It:
-///   1. extracts the four list-normalize kebab-case keys into
+///   1. extracts the five list-normalize kebab-case keys into
 ///      `ListNormalizeSettings` via `extract_list_normalize`, then
 ///   2. strips those keys from a clone of the JSON before handing the rest
 ///      to `FormatterSettings::from_partial_json` (camelCase serde path), and
@@ -605,10 +612,15 @@ mod tests {
     fn load_config_list_normalize_defaults() {
         let dir = tempfile::tempdir().unwrap();
         let settings = load_full_config_from(dir.path(), None, None).settings;
-        // Defaults: tighten=heuristic, recover-code=safe, recover-tables=safe, recover-paragraphs=off
+        // Defaults: both tighten rules=heuristic, recover-code/tables=safe,
+        // recover-paragraphs=off
         assert_eq!(
             settings.list_normalize.tighten_list_continuations,
             TightenListContinuationsMode::Heuristic
+        );
+        assert_eq!(
+            settings.list_normalize.tighten_list_item_spacing,
+            TightenListItemSpacingMode::Heuristic
         );
         assert_eq!(
             settings.list_normalize.recover_escaped_code_in_lists,
@@ -632,6 +644,7 @@ mod tests {
             &config_path,
             r#"{
                 "tighten-list-continuations": "aggressive",
+                "tighten-list-item-spacing": "off",
                 "recover-escaped-code-in-lists": "off",
                 "recover-escaped-tables-in-lists": "aggressive",
                 "recover-escaped-paragraphs-in-lists": "heuristic"
@@ -645,6 +658,10 @@ mod tests {
         assert_eq!(
             settings.list_normalize.tighten_list_continuations,
             TightenListContinuationsMode::Aggressive
+        );
+        assert_eq!(
+            settings.list_normalize.tighten_list_item_spacing,
+            TightenListItemSpacingMode::Off
         );
         assert_eq!(
             settings.list_normalize.recover_escaped_code_in_lists,
@@ -703,6 +720,10 @@ mod tests {
         );
         // Other keys keep defaults
         assert_eq!(
+            settings.list_normalize.tighten_list_item_spacing,
+            TightenListItemSpacingMode::Heuristic
+        );
+        assert_eq!(
             settings.list_normalize.recover_escaped_code_in_lists,
             RecoverEscapedCodeMode::Safe
         );
@@ -735,7 +756,7 @@ mod tests {
     // ── from_public_json tests (issue #88) ──
     //
     // `from_public_json` is the one-shot settings builder the napi and wasm
-    // shims call. Regression guard against the #88 bug where the four
+    // shims call. Regression guard against the #88 bug where the five
     // list-normalize kebab-case keys were silently dropped (because
     // `FormatterSettings::list_normalize` is `#[serde(skip)]`), which caused
     // the TS "formatter is innocent" baseline test to fail even with all
@@ -745,6 +766,7 @@ mod tests {
     fn from_public_json_lifts_list_normalize_kebab_keys() {
         let json: Value = serde_json::json!({
             "tighten-list-continuations": "off",
+            "tighten-list-item-spacing": "aggressive",
             "recover-escaped-code-in-lists": "off",
             "recover-escaped-tables-in-lists": "aggressive",
             "recover-escaped-paragraphs-in-lists": "heuristic",
@@ -753,6 +775,10 @@ mod tests {
         assert_eq!(
             settings.list_normalize.tighten_list_continuations,
             TightenListContinuationsMode::Off
+        );
+        assert_eq!(
+            settings.list_normalize.tighten_list_item_spacing,
+            TightenListItemSpacingMode::Aggressive
         );
         assert_eq!(
             settings.list_normalize.recover_escaped_code_in_lists,
@@ -792,6 +818,11 @@ mod tests {
         assert_eq!(
             settings.list_normalize.tighten_list_continuations,
             TightenListContinuationsMode::Heuristic,
+            "default must be heuristic"
+        );
+        assert_eq!(
+            settings.list_normalize.tighten_list_item_spacing,
+            TightenListItemSpacingMode::Heuristic,
             "default must be heuristic"
         );
         assert_eq!(

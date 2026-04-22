@@ -60,12 +60,13 @@ console.log(formatted); // '# Hello\n\nWorld'
 
 ### List Normalize
 
-Four rules clean up AI-authored list-item content. They are exposed as flat
+Five rules clean up AI-authored list-item content. They are exposed as flat
 top-level kebab-case keys (not nested objects):
 
 | Key                                   | Default       | Purpose                                                                           |
 | ------------------------------------- | ------------- | --------------------------------------------------------------------------------- |
 | `tighten-list-continuations`          | `"heuristic"` | Collapse blank gaps inside list items whose children are continuation paragraphs. |
+| `tighten-list-item-spacing`           | `"heuristic"` | Collapse single blank gaps between adjacent sibling list items when safe.         |
 | `recover-escaped-code-in-lists`       | `"safe"`      | Re-indent fenced code blocks that escaped to column 0 between list items.         |
 | `recover-escaped-tables-in-lists`     | `"safe"`      | Re-indent GFM tables that escaped to column 0 between list items.                 |
 | `recover-escaped-paragraphs-in-lists` | `"off"`       | Re-indent continuation paragraphs that escaped to column 0 (opt-in).              |
