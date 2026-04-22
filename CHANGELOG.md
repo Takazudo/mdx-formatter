@@ -8,6 +8,44 @@ Dated release entries mirror the per-version pages under
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-04-23
+
+### Fixed
+
+- **List-item continuation blank injection** (upstream issue #66) — blank lines
+  were injected between a list-item marker line and its continuation paragraph
+  when a paragraph wrapped in the middle of a list item. Regression tests:
+  `test/fixtures/regression-list-continuation-blank.md` (unordered) and
+  `regression-list-continuation-blank-ordered.md` (ordered).
+- **Fenced code block interior blank injection** (upstream issue #68) — blank
+  lines were injected immediately inside the opening fence and immediately
+  before the closing fence, including tilde fences (`~~~`) and nested
+  4-backtick fences wrapping a triple-backtick block. Regression tests:
+  `test/fixtures/regression-fenced-code-interior-blank.md`,
+  `regression-fenced-code-tilde.md`,
+  `regression-fenced-code-nested-4backtick.md`.
+- Both bugs reproduced **with every rule disabled** — they lived in
+  unconditional post-processing passes, not any user-configurable rule. The
+  new regression suite pins a tight invariant: _"all rules off ⇒ byte-identical
+  output for these repros."_
+
+### Release-notes addendum — stale napi binary in v1.2.0
+
+The underlying Rust fix shipped in the core engine back at commit `54f61a4`,
+well before v1.2.0 was tagged. However, the prebuilt napi binary published to
+npm as `@takazudo/mdx-formatter` v1.2.0 (and its `@takazudo/mdx-formatter-*`
+platform sub-packages at `1.0.0`) was built from a checkout that predated that
+commit. Consumers who upgraded to v1.2.0 therefore still observed both bugs
+at runtime, even though `crates/` in the repo was already fixed.
+
+**v1.2.1 republishes the napi binary** alongside the version bump so
+downstream consumers actually pick up the fix. If you are a contributor
+running tests against a local checkout, `pnpm build:rust` rebuilds the
+napi `.node` artifact from the current source and is preferred over the
+published platform package (see `src/rust-formatter.ts` loader order).
+
+## [1.2.0] — 2026-04-23
+
 ### Added — List Normalize rule bundle (epic #80)
 
 Five rules that clean up AI-authored list-item content. Exposed as flat
