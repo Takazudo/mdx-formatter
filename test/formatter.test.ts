@@ -1025,6 +1025,56 @@ This paragraph follows an image.
       expect(result).toBe(input);
     });
 
+    // ── Regression: issue #97 — blank injection inside list-item continuation ──
+    //
+    // A list item whose first line soft-wraps to indented continuation lines
+    // previously got a blank line inserted between the first line and the
+    // continuation (turning tight lists into loose lists and breaking
+    // byte-identical round-trips). Both the bulleted and ordered variants
+    // must round-trip byte-identically under default settings AND under an
+    // "every list-normalize rule off" baseline.
+    it('regression #97 (bulleted): list-item continuation round-trips under default settings', async () => {
+      const input = await readFixture('regression-list-continuation-blank.md');
+      const expected = await readFixture('regression-list-continuation-blank.expected.md');
+      const result = await format(input);
+      expect(result).toBe(expected);
+    });
+
+    it('regression #97 (bulleted): list-item continuation round-trips with rules=off', async () => {
+      const input = await readFixture('regression-list-continuation-blank.md');
+      const result = await format(input, {
+        settings: lnSettings({
+          'tighten-list-continuations': 'off',
+          'tighten-list-item-spacing': 'off',
+          'recover-escaped-code-in-lists': 'off',
+          'recover-escaped-tables-in-lists': 'off',
+          'recover-escaped-paragraphs-in-lists': 'off',
+        }),
+      });
+      expect(result).toBe(input);
+    });
+
+    it('regression #97 (ordered, upstream #66): list-item continuation round-trips under default settings', async () => {
+      const input = await readFixture('regression-list-continuation-blank-ordered.md');
+      const expected = await readFixture('regression-list-continuation-blank-ordered.expected.md');
+      const result = await format(input);
+      expect(result).toBe(expected);
+    });
+
+    it('regression #97 (ordered, upstream #66): list-item continuation round-trips with rules=off', async () => {
+      const input = await readFixture('regression-list-continuation-blank-ordered.md');
+      const result = await format(input, {
+        settings: lnSettings({
+          'tighten-list-continuations': 'off',
+          'tighten-list-item-spacing': 'off',
+          'recover-escaped-code-in-lists': 'off',
+          'recover-escaped-tables-in-lists': 'off',
+          'recover-escaped-paragraphs-in-lists': 'off',
+        }),
+      });
+      expect(result).toBe(input);
+    });
+
     // ── "Formatter is innocent" baseline (epic #80) ─────────────────────────
     // With all five list-normalize rules set to "off", the loose-shape
     // continuation-paragraph snippet round-trips byte-identically. This is

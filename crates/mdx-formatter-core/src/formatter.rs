@@ -5962,6 +5962,96 @@ Capital continuation line.
         }
     }
 
+    // ── Regression: blank injection inside list-item continuation (issue #97) ──
+    //
+    // A list item whose first line soft-wraps to one or more indented
+    // continuation lines must NOT have a blank inserted between the first line
+    // and the continuation. The CommonMark source remains parseable either
+    // way, but the blank turns tight lists into loose lists (so HTML becomes
+    // `<li><p>…</p></li>`) and the input no longer round-trips.
+    //
+    // The earlier regression was in `ensure_block_element_spacing` (and the
+    // upstream AST-based spacing collector), which mistook the indented
+    // continuation line for a sibling block at a different indent. Both
+    // fixtures below must round-trip byte-identically under default settings
+    // AND under an "every list-normalize rule off" baseline — the blank must
+    // not appear in the output unless it was in the input.
+
+    /// Every list-normalize rule explicitly disabled. Used to prove the fix
+    /// lives in the base spacing logic, not in one of the tighten rules.
+    fn settings_with_all_list_normalize_off() -> FormatterSettings {
+        use crate::types::{
+            RecoverEscapedCodeMode, RecoverEscapedParagraphsMode, RecoverEscapedTablesMode,
+            TightenListContinuationsMode, TightenListItemSpacingMode,
+        };
+        let mut s = FormatterSettings::default();
+        s.list_normalize.tighten_list_continuations = TightenListContinuationsMode::Off;
+        s.list_normalize.tighten_list_item_spacing = TightenListItemSpacingMode::Off;
+        s.list_normalize.recover_escaped_code_in_lists = RecoverEscapedCodeMode::Off;
+        s.list_normalize.recover_escaped_tables_in_lists = RecoverEscapedTablesMode::Off;
+        s.list_normalize.recover_escaped_paragraphs_in_lists = RecoverEscapedParagraphsMode::Off;
+        s
+    }
+
+    #[test]
+    fn regression_bulleted_continuation_no_blank_injection_defaults() {
+        let input = "- **Device Override** — settings can now be tailored per device on top of a\n  shared base settings file. Each install picks a local device name.\n";
+        let out = format(input, &FormatterSettings::default());
+        assert_eq!(out, input, "bulleted continuation round-trip broke under defaults; output:\n{out}");
+    }
+
+    #[test]
+    fn regression_bulleted_continuation_no_blank_injection_rules_off() {
+        let input = "- **Device Override** — settings can now be tailored per device on top of a\n  shared base settings file. Each install picks a local device name.\n";
+        let out = format(input, &settings_with_all_list_normalize_off());
+        assert_eq!(out, input, "bulleted continuation round-trip broke with all rules off; output:\n{out}");
+    }
+
+    #[test]
+    fn regression_ordered_continuation_no_blank_injection_defaults() {
+        let input = "1. **Confirm with the user**: Before doing anything, use `AskUserQuestion` to\n   confirm what the user wants to document and verify they intentionally\n   triggered update mode.\n2. **Understand the new info**: Ask the user what they learned or want to\n   document. The topic keyword (if provided) hints at the subject area.\n";
+        let out = format(input, &FormatterSettings::default());
+        assert_eq!(out, input, "ordered continuation round-trip broke under defaults; output:\n{out}");
+    }
+
+    #[test]
+    fn regression_ordered_continuation_no_blank_injection_rules_off() {
+        let input = "1. **Confirm with the user**: Before doing anything, use `AskUserQuestion` to\n   confirm what the user wants to document and verify they intentionally\n   triggered update mode.\n2. **Understand the new info**: Ask the user what they learned or want to\n   document. The topic keyword (if provided) hints at the subject area.\n";
+        let out = format(input, &settings_with_all_list_normalize_off());
+        assert_eq!(out, input, "ordered continuation round-trip broke with all rules off; output:\n{out}");
+    }
+
+    #[test]
+    fn regression_bulleted_continuation_post_processing_inserts_nothing() {
+        // Direct assertion on the post-processing pass: running it over the
+        // already-formatted lines must produce zero insertions for this
+        // input. This guards the specific `ensure_block_element_spacing`
+        // branch that previously fired on the paragraph-indented
+        // continuation line.
+        let input = "- **Device Override** — settings can now be tailored per device on top of a\n  shared base settings file. Each install picks a local device name.";
+        let mut lines: Vec<String> = input.split('\n').map(|s| s.to_string()).collect();
+        let before = lines.clone();
+        ensure_block_element_spacing(&mut lines);
+        assert_eq!(
+            lines, before,
+            "ensure_block_element_spacing must be a no-op for bulleted list-item continuation; before={:?}\nafter={:?}",
+            before, lines
+        );
+    }
+
+    #[test]
+    fn regression_ordered_continuation_post_processing_inserts_nothing() {
+        let input = "1. **Confirm with the user**: Before doing anything, use `AskUserQuestion` to\n   confirm what the user wants to document and verify they intentionally\n   triggered update mode.\n2. **Understand the new info**: Ask the user what they learned or want to\n   document. The topic keyword (if provided) hints at the subject area.";
+        let mut lines: Vec<String> = input.split('\n').map(|s| s.to_string()).collect();
+        let before = lines.clone();
+        ensure_block_element_spacing(&mut lines);
+        assert_eq!(
+            lines, before,
+            "ensure_block_element_spacing must be a no-op for ordered list-item continuation; before={:?}\nafter={:?}",
+            before, lines
+        );
+    }
+
     #[test]
     fn test_dotted_key_does_not_collide_with_nested_path() {
         // Regression guard: storing the preserved map keyed by a dotted
