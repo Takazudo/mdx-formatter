@@ -55,6 +55,91 @@ static SPECIAL_START_RE: LazyLock<Regex> =
 static MULTIPLE_NEWLINES_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
 
+// ============================================================================
+// ReportSink — audit / dry-run mechanism
+// ============================================================================
+//
+// The `ReportSink` trait lets rules emit structured change descriptions as
+// they run, without affecting the normal side effect of pushing
+// `FormatterOperation`s. The sink is threaded through
+// `format_with_sink` / `try_format_with_sink` and reaches each rule via a
+// shared mutable reference inside `format_once`.
+//
+// ## Emitting from a rule
+//
+// New rules should emit exactly one `ReportEntry` per logical change they
+// would make, immediately alongside the matching `operations.push(...)`.
+// Keep `rule` a short, stable kebab-case identifier (e.g.
+// `recover-escaped-code-in-lists`) so downstream tooling can filter/group.
+// Line numbers are 0-indexed, matching the line vector used throughout this
+// module; the CLI converts them to 1-based when printing. `before` is the
+// slice of original source lines `[start_line..=end_line]`; `after` is the
+// replacement the rule will apply. For single-line ops (`IndentLine`) use
+// `start_line == end_line` and single-entry vectors.
+//
+// To keep the report faithful to what the user wrote, emission happens
+// only on the FIRST pass of the convergence loop. Later iterations run
+// with `NullSink` because their "before" text is already post-edit and
+// would be confusing to report on.
+//
+// ## Concrete sinks
+//
+// - `NullSink` compiles to a no-op; used for regular non-audit runs.
+// - `VecSink` collects every entry into an in-memory Vec; used by the
+//   CLI `--dry-run` mode and by tests that want to assert on the report.
+//
+// The trait is object-safe so callers can pass any concrete sink behind
+// `&mut dyn ReportSink`.
+
+/// One structured change description emitted by a formatter rule.
+#[derive(Debug, Clone)]
+pub struct ReportEntry {
+    /// Stable kebab-case rule identifier.
+    pub rule: &'static str,
+    /// 0-indexed inclusive start line in the original source.
+    pub start_line: usize,
+    /// 0-indexed inclusive end line in the original source.
+    pub end_line: usize,
+    /// Verbatim source lines that would be replaced/indented.
+    pub before: Vec<String>,
+    /// Lines the rule would produce in place of `before`.
+    pub after: Vec<String>,
+}
+
+/// Sink that formatter rules emit `ReportEntry`s through. See module docs.
+pub trait ReportSink {
+    fn emit(&mut self, entry: ReportEntry);
+}
+
+/// Default no-op sink — used for non-audit formatting runs.
+pub struct NullSink;
+
+impl ReportSink for NullSink {
+    fn emit(&mut self, _entry: ReportEntry) {}
+}
+
+/// Collects every emitted entry into an in-memory `Vec`.
+#[derive(Default, Debug)]
+pub struct VecSink {
+    pub entries: Vec<ReportEntry>,
+}
+
+impl ReportSink for VecSink {
+    fn emit(&mut self, entry: ReportEntry) {
+        self.entries.push(entry);
+    }
+}
+
+/// Copy a slice `[s..=e]` out of `lines` as owned `String`s. Used by rules
+/// to build `before` snippets for `ReportEntry`.
+#[inline]
+fn snippet_from_lines(lines: &[&str], s: usize, e: usize) -> Vec<String> {
+    let end = e.min(lines.len().saturating_sub(1));
+    (s..=end)
+        .map(|i| lines.get(i).copied().unwrap_or("").to_string())
+        .collect()
+}
+
 /// Format markdown/MDX content using the hybrid AST + line-based approach.
 ///
 /// Runs the formatter in a convergence loop (up to 3 iterations) until
@@ -63,23 +148,26 @@ static MULTIPLE_NEWLINES_RE: LazyLock<Regex> =
 /// When `settings.error_handling.throw_on_error` is true, parse failures
 /// are propagated via `try_format()`. Otherwise, errors return the original content.
 pub fn format(content: &str, settings: &FormatterSettings) -> String {
+    let mut sink = NullSink;
+    format_with_sink(content, settings, &mut sink)
+}
+
+/// Like `format`, but also emits structured change descriptions through
+/// `sink`. Only the first convergence pass emits; subsequent passes use a
+/// local `NullSink` so the report always describes changes relative to the
+/// original input.
+pub fn format_with_sink(
+    content: &str,
+    settings: &FormatterSettings,
+    sink: &mut dyn ReportSink,
+) -> String {
     if settings.error_handling.throw_on_error {
-        match try_format(content, settings) {
+        match try_format_with_sink(content, settings, sink) {
             Ok(result) => result,
             Err(e) => panic!("mdx-formatter: {}", e),
         }
     } else {
-        let mut result = content.to_string();
-        const MAX_ITERATIONS: usize = 3;
-
-        for _ in 0..MAX_ITERATIONS {
-            let formatted = format_once(&result, settings);
-            if formatted == result {
-                break;
-            }
-            result = formatted;
-        }
-        result
+        run_convergence_loop(content, settings, sink)
     }
 }
 
@@ -88,25 +176,53 @@ pub fn format(content: &str, settings: &FormatterSettings) -> String {
 /// Same convergence loop as `format()`, but propagates parse errors instead
 /// of silently returning the original content.
 pub fn try_format(content: &str, settings: &FormatterSettings) -> Result<String, String> {
+    let mut sink = NullSink;
+    try_format_with_sink(content, settings, &mut sink)
+}
+
+/// Like `try_format`, but also emits structured change descriptions through
+/// `sink`. Only the first convergence pass emits; subsequent passes use a
+/// local `NullSink`.
+pub fn try_format_with_sink(
+    content: &str,
+    settings: &FormatterSettings,
+    sink: &mut dyn ReportSink,
+) -> Result<String, String> {
     // Validate parsability once upfront. format_once() uses parse() internally
     // which always succeeds via fallback, so no need to re-validate each iteration.
     parser::try_parse(content)?;
+    Ok(run_convergence_loop(content, settings, sink))
+}
 
+fn run_convergence_loop(
+    content: &str,
+    settings: &FormatterSettings,
+    sink: &mut dyn ReportSink,
+) -> String {
     let mut result = content.to_string();
     const MAX_ITERATIONS: usize = 3;
 
-    for _ in 0..MAX_ITERATIONS {
-        let formatted = format_once(&result, settings);
+    // First pass emits through the caller's sink. Subsequent passes use a
+    // throw-away NullSink so the report stays anchored to the ORIGINAL input.
+    let first = format_once(&result, settings, sink);
+    if first == result {
+        return result;
+    }
+    result = first;
+
+    let mut null = NullSink;
+    for _ in 1..MAX_ITERATIONS {
+        let formatted = format_once(&result, settings, &mut null);
         if formatted == result {
             break;
         }
         result = formatted;
     }
-    Ok(result)
+    result
 }
 
 /// Single formatting pass: parse AST, collect operations, apply them.
-fn format_once(content: &str, settings: &FormatterSettings) -> String {
+fn format_once(content: &str, settings: &FormatterSettings, sink: &mut dyn ReportSink) -> String {
     // 1. Parse AST
     let ast = parser::parse(content);
 
@@ -156,6 +272,7 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
         &ast,
         &lines,
         &mut operations,
+        sink,
     );
     apply_recover_escaped_tables_in_lists(
         settings,
@@ -164,6 +281,7 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
         &list_item_shapes,
         &escaped_block_candidates,
         &mut operations,
+        sink,
     );
     apply_recover_escaped_paragraphs_in_lists(
         settings,
@@ -172,6 +290,7 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
         &ast,
         &lines,
         &mut operations,
+        sink,
     );
     apply_tighten_list_continuations(
         settings,
@@ -179,6 +298,7 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
         &ast,
         &lines,
         &mut operations,
+        sink,
     );
 
     // HTML block formatting
@@ -1743,6 +1863,7 @@ fn apply_recover_escaped_code_in_lists(
     ast: &Node,
     lines: &[&str],
     operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
 ) {
     use crate::types::RecoverEscapedCodeMode;
     let mode = settings.list_normalize.recover_escaped_code_in_lists;
@@ -1787,6 +1908,14 @@ fn apply_recover_escaped_code_in_lists(
             }
         }
 
+        sink.emit(ReportEntry {
+            rule: "recover-escaped-code-in-lists",
+            start_line: p.fence_start_line,
+            end_line: p.fence_end_line,
+            before: snippet_from_lines(lines, p.fence_start_line, p.fence_end_line),
+            after: new_lines.clone(),
+        });
+
         operations.push(FormatterOperation::ReplaceLines {
             start_line: p.fence_start_line,
             end_line: p.fence_end_line,
@@ -1802,6 +1931,7 @@ fn apply_recover_escaped_tables_in_lists(
     _shapes: &[ListItemDetection],
     _candidates: &[EscapedBlockCandidate],
     operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
 ) {
     use crate::types::RecoverEscapedTablesMode;
     let mode = settings.list_normalize.recover_escaped_tables_in_lists;
@@ -1809,7 +1939,7 @@ fn apply_recover_escaped_tables_in_lists(
         return;
     }
     let aggressive = matches!(mode, RecoverEscapedTablesMode::Aggressive);
-    collect_table_recovery_ops(ast, lines, 0, aggressive, operations);
+    collect_table_recovery_ops(ast, lines, 0, aggressive, operations, sink);
 }
 
 /// Walk the AST looking for `[List, Table, List]` sibling patterns — the
@@ -1829,6 +1959,7 @@ fn collect_table_recovery_ops(
     ancestor_indent: usize,
     aggressive: bool,
     operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
 ) {
     // Scan direct children for the [List, Table, List] pattern.
     let children = get_children(node);
@@ -1841,6 +1972,15 @@ fn collect_table_recovery_ops(
                 if let Some(op) =
                     try_emit_table_recovery(list_a, table, list_c, lines, ancestor_indent, aggressive)
                 {
+                    if let FormatterOperation::ReplaceLines { start_line, end_line, lines: ref new_lines } = op {
+                        sink.emit(ReportEntry {
+                            rule: "recover-escaped-tables-in-lists",
+                            start_line,
+                            end_line,
+                            before: snippet_from_lines(lines, start_line, end_line),
+                            after: new_lines.clone(),
+                        });
+                    }
                     operations.push(op);
                 }
             }
@@ -1857,14 +1997,14 @@ fn collect_table_recovery_ops(
                 if let Node::ListItem(item) = child {
                     let item_indent = list_item_continuation_indent(item, lines, ancestor_indent);
                     for sub in &item.children {
-                        collect_table_recovery_ops(sub, lines, item_indent, aggressive, operations);
+                        collect_table_recovery_ops(sub, lines, item_indent, aggressive, operations, sink);
                     }
                 }
             }
         }
         _ => {
             for child in children {
-                collect_table_recovery_ops(child, lines, ancestor_indent, aggressive, operations);
+                collect_table_recovery_ops(child, lines, ancestor_indent, aggressive, operations, sink);
             }
         }
     }
@@ -2046,6 +2186,7 @@ fn apply_recover_escaped_paragraphs_in_lists(
     ast: &Node,
     lines: &[&str],
     operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
 ) {
     use crate::types::RecoverEscapedParagraphsMode;
     let mode = settings.list_normalize.recover_escaped_paragraphs_in_lists;
@@ -2060,7 +2201,7 @@ fn apply_recover_escaped_paragraphs_in_lists(
     // for the `List → Paragraph(s) → List` pattern and re-indent the paragraph
     // lines to the preceding list's `continuation_indent` when the heuristic
     // signals continuation.
-    collect_recover_paragraph_ops(ast, lines, mode, operations);
+    collect_recover_paragraph_ops(ast, lines, mode, operations, sink);
 }
 
 /// Walk the AST recursively looking for `List → Paragraph(s) → List` runs in
@@ -2070,6 +2211,7 @@ fn collect_recover_paragraph_ops(
     lines: &[&str],
     mode: crate::types::RecoverEscapedParagraphsMode,
     operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
 ) {
     let children = get_children(node);
     let n = children.len();
@@ -2090,6 +2232,7 @@ fn collect_recover_paragraph_ops(
                         lines,
                         mode,
                         operations,
+                        sink,
                     );
                 }
             }
@@ -2101,7 +2244,7 @@ fn collect_recover_paragraph_ops(
 
     // Recurse so nested containers (ListItem, Blockquote, etc.) are covered.
     for child in children {
-        collect_recover_paragraph_ops(child, lines, mode, operations);
+        collect_recover_paragraph_ops(child, lines, mode, operations, sink);
     }
 }
 
@@ -2153,6 +2296,7 @@ fn try_recover_paragraph_run(
     lines: &[&str],
     mode: crate::types::RecoverEscapedParagraphsMode,
     operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
 ) -> Option<()> {
     // 1. Same list variety (both ordered or both unordered).
     if list1.ordered != list2.ordered {
@@ -2237,7 +2381,32 @@ fn try_recover_paragraph_run(
     //    prepends the indent — safe because the paragraphs sit at col 0 and
     //    have no meaningful leading whitespace.
     let indent: String = " ".repeat(continuation_indent);
+    // Group the per-line ops per paragraph so the report shows one entry
+    // spanning the whole paragraph run rather than N single-line entries.
     for (s, e) in para_ranges {
+        let clamped_e = e.min(safe_upper.saturating_sub(1));
+        if s > clamped_e {
+            continue;
+        }
+        let before = snippet_from_lines(lines, s, clamped_e);
+        let after: Vec<String> = before
+            .iter()
+            .map(|ln| {
+                if ln.trim().is_empty() {
+                    ln.clone()
+                } else {
+                    format!("{}{}", indent, ln.trim_start())
+                }
+            })
+            .collect();
+        sink.emit(ReportEntry {
+            rule: "recover-escaped-paragraphs-in-lists",
+            start_line: s,
+            end_line: clamped_e,
+            before,
+            after,
+        });
+
         for ln in s..=e {
             if ln >= safe_upper {
                 break;
@@ -2289,6 +2458,7 @@ fn apply_tighten_list_continuations(
     ast: &Node,
     lines: &[&str],
     operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
 ) {
     use crate::types::TightenListContinuationsMode;
     let mode = settings.list_normalize.tighten_list_continuations;
@@ -2311,7 +2481,7 @@ fn apply_tighten_list_continuations(
         return;
     }
 
-    walk_for_tighten(ast, lines, &paragraphs_only, mode, operations);
+    walk_for_tighten(ast, lines, &paragraphs_only, mode, operations, sink);
 }
 
 fn walk_for_tighten(
@@ -2320,18 +2490,19 @@ fn walk_for_tighten(
     paragraphs_only: &std::collections::HashSet<(usize, usize)>,
     mode: crate::types::TightenListContinuationsMode,
     operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
 ) {
     if let Node::ListItem(item) = node {
         if let Some(pos) = &item.position {
             let s = pos.start.line.saturating_sub(1);
             let e = pos.end.line.saturating_sub(1);
             if paragraphs_only.contains(&(s, e)) {
-                emit_tighten_ops_for_item(item, lines, mode, operations);
+                emit_tighten_ops_for_item(item, lines, mode, operations, sink);
             }
         }
     }
     for child in get_children(node) {
-        walk_for_tighten(child, lines, paragraphs_only, mode, operations);
+        walk_for_tighten(child, lines, paragraphs_only, mode, operations, sink);
     }
 }
 
@@ -2342,6 +2513,7 @@ fn emit_tighten_ops_for_item(
     lines: &[&str],
     mode: crate::types::TightenListContinuationsMode,
     operations: &mut Vec<FormatterOperation>,
+    sink: &mut dyn ReportSink,
 ) {
     use crate::types::TightenListContinuationsMode;
 
@@ -2391,6 +2563,13 @@ fn emit_tighten_ops_for_item(
         // Delete the blank line by replacing [blank_idx..=blank_idx] with
         // an empty Vec. `normalize_empty_lines` in format_once will not
         // mind the result; adjacent paragraphs simply become adjacent.
+        sink.emit(ReportEntry {
+            rule: "tighten-list-continuations",
+            start_line: blank_idx,
+            end_line: blank_idx,
+            before: snippet_from_lines(lines, blank_idx, blank_idx),
+            after: Vec::new(),
+        });
         operations.push(FormatterOperation::ReplaceLines {
             start_line: blank_idx,
             end_line: blank_idx,
