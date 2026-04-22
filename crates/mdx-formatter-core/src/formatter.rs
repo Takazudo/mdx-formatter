@@ -157,6 +157,8 @@ fn format_once(content: &str, settings: &FormatterSettings) -> String {
     );
     apply_recover_escaped_tables_in_lists(
         settings,
+        &ast,
+        &lines,
         &list_item_shapes,
         &escaped_block_candidates,
         &mut operations,
@@ -1591,15 +1593,245 @@ fn apply_recover_escaped_code_in_lists(
 
 fn apply_recover_escaped_tables_in_lists(
     settings: &FormatterSettings,
+    ast: &Node,
+    lines: &[&str],
     _shapes: &[ListItemDetection],
     _candidates: &[EscapedBlockCandidate],
-    _operations: &mut Vec<FormatterOperation>,
+    operations: &mut Vec<FormatterOperation>,
 ) {
     use crate::types::RecoverEscapedTablesMode;
-    match settings.list_normalize.recover_escaped_tables_in_lists {
-        RecoverEscapedTablesMode::Off => {}
-        // #84 fills the Safe / Aggressive arms.
-        RecoverEscapedTablesMode::Safe | RecoverEscapedTablesMode::Aggressive => {}
+    let mode = settings.list_normalize.recover_escaped_tables_in_lists;
+    if matches!(mode, RecoverEscapedTablesMode::Off) {
+        return;
+    }
+    let aggressive = matches!(mode, RecoverEscapedTablesMode::Aggressive);
+    collect_table_recovery_ops(ast, lines, 0, aggressive, operations);
+}
+
+/// Walk the AST looking for `[List, Table, List]` sibling patterns — the
+/// signature markdown-rs produces when a GFM table at column 0 breaks a list
+/// into two neighboring Lists. When surrounding evidence suggests the table
+/// was intended to nest under the previous list item, emit a `ReplaceLines`
+/// operation that re-indents every row by the enclosing item's continuation
+/// indent.
+///
+/// `ancestor_indent` is the cumulative continuation indent contributed by
+/// enclosing list items (0 at the root). `aggressive` widens the evidence
+/// bar to also accept matching bullet markers; in `safe` mode only a
+/// contiguous numbering run across the gap qualifies.
+fn collect_table_recovery_ops(
+    node: &Node,
+    lines: &[&str],
+    ancestor_indent: usize,
+    aggressive: bool,
+    operations: &mut Vec<FormatterOperation>,
+) {
+    // Scan direct children for the [List, Table, List] pattern.
+    let children = get_children(node);
+    if children.len() >= 3 {
+        let mut i = 0;
+        while i + 2 < children.len() {
+            if let (Node::List(list_a), Node::Table(table), Node::List(list_c)) =
+                (&children[i], &children[i + 1], &children[i + 2])
+            {
+                if let Some(op) =
+                    try_emit_table_recovery(list_a, table, list_c, lines, ancestor_indent, aggressive)
+                {
+                    operations.push(op);
+                }
+            }
+            i += 1;
+        }
+    }
+
+    // Recurse so nested list items that themselves contain the pattern are
+    // handled. When we descend into a ListItem, accumulate its continuation
+    // indent so child-level recoveries know how far to shift.
+    match node {
+        Node::List(list) => {
+            for child in &list.children {
+                if let Node::ListItem(item) = child {
+                    let item_indent = list_item_continuation_indent(item, lines, ancestor_indent);
+                    for sub in &item.children {
+                        collect_table_recovery_ops(sub, lines, item_indent, aggressive, operations);
+                    }
+                }
+            }
+        }
+        _ => {
+            for child in children {
+                collect_table_recovery_ops(child, lines, ancestor_indent, aggressive, operations);
+            }
+        }
+    }
+}
+
+/// Compute the cumulative continuation indent for a list item (the column
+/// where its children / continuation lines begin), given the enclosing
+/// ancestor indent.
+fn list_item_continuation_indent(
+    item: &markdown::mdast::ListItem,
+    lines: &[&str],
+    ancestor_indent: usize,
+) -> usize {
+    let Some(pos) = &item.position else {
+        return ancestor_indent;
+    };
+    let start_line = pos.start.line.saturating_sub(1);
+    let marker_column = pos.start.column.saturating_sub(1);
+    let marker_width = lines
+        .get(start_line)
+        .map(|ln| list_marker_width(ln.trim_start()))
+        .unwrap_or(2);
+    ancestor_indent + marker_column + marker_width
+}
+
+/// Attempt to build a recovery op for a candidate `[List, Table, List]` trio.
+/// Returns `Some(op)` only when all guardrails pass:
+///   - the table sits flush to the ancestor column (i.e. it is escaped,
+///     not already nested inside the preceding item);
+///   - evidence of intended nesting is present (numbering run for safe,
+///     marker match for aggressive);
+///   - every source line of the table row range still exists and is not
+///     blank — we preserve byte-for-byte and only prepend indent.
+fn try_emit_table_recovery(
+    list_a: &markdown::mdast::List,
+    table: &markdown::mdast::Table,
+    list_c: &markdown::mdast::List,
+    lines: &[&str],
+    ancestor_indent: usize,
+    aggressive: bool,
+) -> Option<FormatterOperation> {
+    let tpos = table.position.as_ref()?;
+    let t_start = tpos.start.line.saturating_sub(1);
+    let t_end = tpos.end.line.saturating_sub(1);
+    let t_col = tpos.start.column.saturating_sub(1);
+
+    // The escaped table must sit at the ancestor indent column. A table that
+    // is already nested under an item will sit further right and is off-limits.
+    if t_col != ancestor_indent {
+        return None;
+    }
+
+    // Bounds check.
+    if t_end >= lines.len() || t_start > t_end {
+        return None;
+    }
+
+    // Derive the continuation indent from the LAST item of `list_a` (this is
+    // the item the recovered table would nest under). Falls back to the list's
+    // first item if position is missing.
+    let ref_item = list_a
+        .children
+        .last()
+        .or_else(|| list_a.children.first())?;
+    let Node::ListItem(ref_list_item) = ref_item else {
+        return None;
+    };
+    let target_indent = list_item_continuation_indent(ref_list_item, lines, ancestor_indent);
+    // Recovery must actually shift the table (strictly rightward).
+    if target_indent <= t_col {
+        return None;
+    }
+
+    // Evidence check: ordered = numbering continuation; bullet = marker match
+    // (aggressive only).
+    if !has_recovery_evidence(list_a, list_c, lines, aggressive) {
+        return None;
+    }
+
+    // Final guardrail: every non-blank source line in the table range must
+    // already sit at `t_col`. Blank lines inside a table shouldn't occur
+    // (markdown-rs wouldn't parse them as one table), but reject just in case.
+    for idx in t_start..=t_end {
+        let line = lines.get(idx).copied().unwrap_or("");
+        if line.trim().is_empty() {
+            return None;
+        }
+        let actual_col = leading_space_count(line);
+        if actual_col != t_col {
+            return None;
+        }
+    }
+
+    // Build re-indented rows — prepend `shift` spaces to each, preserving
+    // alignment colons and every other byte.
+    let shift = target_indent - t_col;
+    let prefix = " ".repeat(shift);
+    let new_lines: Vec<String> = (t_start..=t_end)
+        .map(|i| format!("{}{}", prefix, lines[i]))
+        .collect();
+
+    Some(FormatterOperation::ReplaceLines {
+        start_line: t_start,
+        end_line: t_end,
+        lines: new_lines,
+    })
+}
+
+/// Decide whether the neighboring lists provide enough evidence that the
+/// table between them was intended to nest under `list_a`.
+///
+///   safe       → ordered lists only, numbering continues across the gap.
+///   aggressive → same-marker bullet lists also qualify.
+fn has_recovery_evidence(
+    list_a: &markdown::mdast::List,
+    list_c: &markdown::mdast::List,
+    lines: &[&str],
+    aggressive: bool,
+) -> bool {
+    // Both lists must be top-aligned at the same column; diverging column
+    // means they were never one list to begin with.
+    let col_a = list_a
+        .children
+        .first()
+        .and_then(|c| c.position())
+        .map(|p| p.start.column)
+        .unwrap_or(0);
+    let col_c = list_c
+        .children
+        .first()
+        .and_then(|c| c.position())
+        .map(|p| p.start.column)
+        .unwrap_or(0);
+    if col_a == 0 || col_a != col_c {
+        return false;
+    }
+
+    match (list_a.ordered, list_c.ordered) {
+        (true, true) => {
+            // Strong evidence: list_c's first number = list_a.start + len(a).
+            let Some(start_a) = list_a.start else { return false; };
+            let Some(start_c) = list_c.start else { return false; };
+            let expected = start_a as u64 + list_a.children.len() as u64;
+            start_c as u64 == expected
+        }
+        (false, false) => {
+            if !aggressive {
+                return false;
+            }
+            // Weak evidence: both lists use the same bullet marker char.
+            bullet_marker_char(list_a, lines) == bullet_marker_char(list_c, lines)
+                && bullet_marker_char(list_a, lines).is_some()
+        }
+        _ => false, // ordered/unordered mix → no evidence
+    }
+}
+
+/// Return the `-` / `*` / `+` marker of the first item in a bullet list,
+/// by inspecting the source line.
+fn bullet_marker_char(list: &markdown::mdast::List, lines: &[&str]) -> Option<char> {
+    let first = list.children.first()?;
+    let pos = first.position()?;
+    let line_idx = pos.start.line.saturating_sub(1);
+    let col = pos.start.column.saturating_sub(1);
+    let line = lines.get(line_idx).copied()?;
+    let trimmed = line.get(col..)?;
+    let c = trimmed.chars().next()?;
+    if matches!(c, '-' | '*' | '+') {
+        Some(c)
+    } else {
+        None
     }
 }
 
@@ -2727,6 +2959,179 @@ escaped();
         // bodies empty, defaults must not alter a well-formed input.
         let input = "- a\n- b\n- c\n";
         let settings = FormatterSettings::default();
+        let result = format(input, &settings);
+        assert_eq!(result, input);
+    }
+
+    // ── recover-escaped-tables-in-lists tests (issue #84) ──
+
+    fn settings_with_table_mode(
+        mode: crate::types::RecoverEscapedTablesMode,
+    ) -> FormatterSettings {
+        let mut s = FormatterSettings::default();
+        s.list_normalize.recover_escaped_tables_in_lists = mode;
+        s
+    }
+
+    #[test]
+    fn recover_table_ordered_numbering_run_in_safe() {
+        // Numbered-list escape: `1. … | table | 2. …` is strong evidence.
+        // In safe mode the table is re-indented to the item's continuation
+        // column (3 spaces for `1. `).
+        let input = "\
+1. before
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+2. after
+";
+        let expected = "\
+1. before
+
+   | a | b |
+   | - | - |
+   | 1 | 2 |
+
+2. after
+";
+        let settings =
+            settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Safe);
+        let result = format(input, &settings);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn recover_table_bullet_only_in_aggressive() {
+        // Bullet-list escape: weaker evidence. Safe mode must leave it alone;
+        // aggressive mode recovers it.
+        let input = "\
+- before
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+- after
+";
+        let safe = format(
+            input,
+            &settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Safe),
+        );
+        assert_eq!(safe, input, "safe mode must not touch bullet-list escapes");
+
+        let expected = "\
+- before
+
+  | a | b |
+  | - | - |
+  | 1 | 2 |
+
+- after
+";
+        let aggressive = format(
+            input,
+            &settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Aggressive),
+        );
+        assert_eq!(aggressive, expected);
+    }
+
+    #[test]
+    fn recover_table_leaves_top_level_table_untouched() {
+        // Legitimate top-level table with no enclosing list must be untouched
+        // in every mode.
+        let input = "\
+| a | b |
+| - | - |
+| 1 | 2 |
+";
+        for mode in [
+            crate::types::RecoverEscapedTablesMode::Off,
+            crate::types::RecoverEscapedTablesMode::Safe,
+            crate::types::RecoverEscapedTablesMode::Aggressive,
+        ] {
+            let result = format(input, &settings_with_table_mode(mode));
+            assert_eq!(result, input, "top-level table modified under {:?}", mode);
+        }
+    }
+
+    #[test]
+    fn recover_table_preserves_alignment_colons_byte_exactly() {
+        // Alignment colons in the separator row must survive the re-indent
+        // verbatim: we only prepend spaces, never rewrite cell content.
+        let input = "\
+1. before
+
+| left | middle | right |
+| :--- | :----: | ----: |
+| a    | b      | c     |
+
+2. after
+";
+        let settings =
+            settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Safe);
+        let result = format(input, &settings);
+        // The separator row line must appear verbatim with only the 3-space
+        // prefix added.
+        assert!(
+            result.contains("   | :--- | :----: | ----: |\n"),
+            "alignment row not preserved byte-exactly; got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn recover_table_idempotent() {
+        let input = "\
+1. before
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+2. after
+";
+        let settings =
+            settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Safe);
+        let once = format(input, &settings);
+        let twice = format(&once, &settings);
+        assert_eq!(once, twice, "recovery must be idempotent");
+    }
+
+    #[test]
+    fn recover_table_skipped_when_numbering_restarts() {
+        // `1. …` then another `1. …` (not `2.`) means the user deliberately
+        // restarted numbering; the table between them is not evidence of
+        // nesting and must be left alone.
+        let input = "\
+1. before
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+1. after
+";
+        let settings =
+            settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Safe);
+        let result = format(input, &settings);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn recover_table_off_mode_leaves_escape_alone() {
+        let input = "\
+1. before
+
+| a | b |
+| - | - |
+| 1 | 2 |
+
+2. after
+";
+        let settings =
+            settings_with_table_mode(crate::types::RecoverEscapedTablesMode::Off);
         let result = format(input, &settings);
         assert_eq!(result, input);
     }
