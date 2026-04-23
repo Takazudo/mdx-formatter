@@ -20,12 +20,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const PLATFORMS = [
-  'darwin-arm64',
-  'darwin-x64',
-  'linux-x64-gnu',
-  'win32-x64-msvc',
-];
+const PLATFORMS = ['darwin-arm64', 'darwin-x64', 'linux-x64-gnu', 'win32-x64-msvc'];
 
 const OPTIONAL_DEP_PREFIX = '@takazudo/mdx-formatter-';
 
@@ -78,9 +73,7 @@ function main() {
     if (nextRaw !== raw) {
       writeFileSync(pkgPath, nextRaw);
     }
-    process.stdout.write(
-      `  npm/${platform}/package.json: ${previousVersion} -> ${rootVersion}\n`,
-    );
+    process.stdout.write(`  npm/${platform}/package.json: ${previousVersion} -> ${rootVersion}\n`);
   }
 
   // 2. Rewrite root optionalDependencies entries matching the prefix.
@@ -94,9 +87,7 @@ function main() {
       if (!key.startsWith(OPTIONAL_DEP_PREFIX)) continue;
       const previousValue = optionalDeps[key];
       optionalDeps[key] = rootVersion;
-      process.stdout.write(
-        `    ${key}: ${previousValue} -> ${rootVersion}\n`,
-      );
+      process.stdout.write(`    ${key}: ${previousValue} -> ${rootVersion}\n`);
     }
   }
 
