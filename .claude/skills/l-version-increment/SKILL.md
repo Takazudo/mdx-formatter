@@ -9,6 +9,8 @@ argument-description: 'Optional: major, minor, or patch to skip the proposal ste
 
 Bump the version of `@takazudo/mdx-formatter`, generate a changelog doc page, commit, tag, and publish to npm.
 
+The version bump must update the four `npm/*/package.json` platform sub-packages and root `optionalDependencies` in lockstep with root `version`, so that consumers of the published package always resolve a prebuilt napi binary whose version matches the root package. The `pnpm sync:napi-versions` script does this mechanically — always run it as part of the bump and commit all five `package.json` files atomically.
+
 ## Preconditions
 
 Before doing anything else, verify ALL of the following. If any check fails, stop and tell the user.
@@ -121,12 +123,26 @@ git commit -m "docs: Add changelog for v{VERSION}"
 
 ## Bump version in package.json
 
-Update the `version` field in `package.json` to the new version (without the `v` prefix).
+1. Update the `version` field in root `package.json` to the new version (without the `v` prefix).
 
-```bash
-git add package.json
-git commit -m "chore: Bump version to v{VERSION}"
-```
+2. Run the sync helper to propagate the new version to all four `npm/*/package.json` files and root `optionalDependencies`:
+
+   ```bash
+   pnpm sync:napi-versions
+   ```
+
+3. Regenerate `pnpm-lock.yaml` so the bumped `optionalDependencies` specifiers are recorded. This MUST be done before the commit — CI runs `pnpm install --frozen-lockfile` and will fail if the lockfile lags behind `package.json`.
+
+   ```bash
+   pnpm install
+   ```
+
+4. Stage and commit all five `package.json` files plus the regenerated lockfile atomically:
+
+   ```bash
+   git add package.json npm/*/package.json pnpm-lock.yaml
+   git commit -m "chore: Bump version to v{VERSION}"
+   ```
 
 ## Build and test
 
