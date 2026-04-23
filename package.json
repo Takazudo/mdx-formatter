@@ -90,10 +90,10 @@
     "vitest": "^4.0.17"
   },
   "optionalDependencies": {
-    "@takazudo/mdx-formatter-darwin-arm64": "1.2.1",
-    "@takazudo/mdx-formatter-darwin-x64": "1.2.1",
-    "@takazudo/mdx-formatter-linux-x64-gnu": "1.2.1",
-    "@takazudo/mdx-formatter-win32-x64-msvc": "1.2.1"
+    "@takazudo/mdx-formatter-darwin-arm64": "1.0.0",
+    "@takazudo/mdx-formatter-darwin-x64": "1.0.0",
+    "@takazudo/mdx-formatter-linux-x64-gnu": "1.0.0",
+    "@takazudo/mdx-formatter-win32-x64-msvc": "1.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

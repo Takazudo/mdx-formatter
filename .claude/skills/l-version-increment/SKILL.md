@@ -131,10 +131,16 @@ git commit -m "docs: Add changelog for v{VERSION}"
     pnpm sync:napi-versions
     ```
 
-3. Stage and commit all five `package.json` files atomically:
+3. Regenerate `pnpm-lock.yaml` so the bumped `optionalDependencies` specifiers are recorded. This MUST be done before the commit — CI runs `pnpm install --frozen-lockfile` and will fail if the lockfile lags behind `package.json`.
 
     ```bash
-    git add package.json npm/*/package.json
+    pnpm install
+    ```
+
+4. Stage and commit all five `package.json` files plus the regenerated lockfile atomically:
+
+    ```bash
+    git add package.json npm/*/package.json pnpm-lock.yaml
     git commit -m "chore: Bump version to v{VERSION}"
     ```
 
