@@ -1,0 +1,24 @@
+---
+title: 'v1.2.1'
+sidebar_position: 1201
+---
+
+# v1.2.1
+
+Released: 2026-04-23
+
+## Bug Fixes
+
+- [formatter] Add regression tests for fenced-code interior blank injection (cbb0647)
+- [formatter] Add regression tests for list-continuation blank injection (f6a969c)
+- Republish napi binary so consumers actually receive fixes that shipped in the Rust core but lagged in the prebuilt `.node` published as v1.2.0
+
+## Other Changes
+
+- [misc] Release prep v1.2.1: CHANGELOG + patch bump (636de31)
+- [formatter] Add sync-napi-versions.mjs script (dc01972)
+- [claude] Wire sync-napi-versions into /l-version-increment (734d9ab)
+- [misc] Sync napi.yml platform versions on tag and fail loud (9a1c3d4)
+- [misc] Regenerate pnpm-lock.yaml for optionalDependencies 1.0.0 -> 1.2.1 (73c92cf)
+- [misc] Revert premature platform version bumps and add lockfile step to skill (8d4aca4)
+- [misc] Apply prettier formatting to sync-napi-versions.mjs and SKILL.md (cdf38e0)
