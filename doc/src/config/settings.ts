@@ -29,7 +29,7 @@ export const settings = {
   trailingSlash: false as boolean,
   noindex: false as boolean,
   editUrl: false as string | false,
-  siteUrl: '' as string,
+  siteUrl: 'https://takazudomodular.com' as string,
   docsDir: 'src/content/docs',
   locales: {} as Record<string, LocaleConfig>,
   mermaid: true,
