@@ -2487,8 +2487,20 @@ fn try_recover_paragraph_run(
 ///      a backtick, or an opening-punctuation character (`(`, `[`, `"`,
 ///      `'`, en-dash, em-dash, comma).
 ///
-/// Aggressive mode drops condition (c): any single-blank gap between two
-/// paragraph children of a `ParagraphsOnly` list item collapses.
+/// Heuristic-mode exception (guard before condition c, issue #107):
+///   If the second paragraph's first line looks like `key: value` —
+///   matching `[\w][\w.-]*:\s+\S+` — the blank line is preserved even
+///   though condition (c) would otherwise fire on a lowercase key.
+///   This protects metadata-style paragraphs (e.g. `priority: urgent`)
+///   that are intentional content, not soft-wrapped prose. `Note: ...`-
+///   style prose also matches and is preserved (documented tradeoff).
+///   A bare `key:` with no value does NOT match (non-empty value required)
+///   and still collapses under condition (c). Bare URLs (`https://...`)
+///   do NOT match because they have no whitespace after the colon.
+///
+/// Aggressive mode drops condition (c) AND the key:value guard: any
+/// single-blank gap between two paragraph children of a `ParagraphsOnly`
+/// list item collapses.
 ///
 /// Off mode is a no-op (matches pre-rule behavior byte-for-byte).
 fn apply_tighten_list_continuations(
@@ -2593,6 +2605,18 @@ fn emit_tighten_ops_for_item(
             continue;
         }
 
+        // Heuristic-mode key:value guard (issue #107): if the second
+        // paragraph's first line looks like `key: value`, preserve the
+        // blank line even though condition (c) would fire on a lowercase
+        // key. This guard must come BEFORE the continuation check below
+        // because the lowercase-start branch of that check returns true
+        // for keys like `priority:` and would collapse intentional metadata.
+        if matches!(mode, TightenListContinuationsMode::Heuristic)
+            && second_paragraph_looks_like_key_value(lines, p2_start_0)
+        {
+            continue;
+        }
+
         if matches!(mode, TightenListContinuationsMode::Heuristic)
             && !second_paragraph_looks_like_continuation(lines, p2_start_0)
         {
@@ -2615,6 +2639,26 @@ fn emit_tighten_ops_for_item(
             lines: Vec::new(),
         });
     }
+}
+
+/// Returns true when the second paragraph's first line looks like a
+/// `key: value` metadata line — matching `[\w][\w.-]*:\s+\S+`.
+///
+/// This uses the same shape as `YAML_MAPPING_RE` (formatter.rs:34-36).
+/// Required whitespace after the colon naturally excludes bare URLs
+/// (`https://...`). A bare `key:` with no value does NOT match because
+/// the regex requires at least one non-whitespace character after the
+/// colon-plus-space sequence.
+///
+/// Capitalised forms (`Note: see below`) also match — this is a
+/// documented tradeoff: preserving a potential false-positive (a true
+/// continuation that happens to look like `Key: value`) is safer than
+/// collapsing intentional metadata.
+fn second_paragraph_looks_like_key_value(lines: &[&str], p_start_0: usize) -> bool {
+    let Some(line) = lines.get(p_start_0) else {
+        return false;
+    };
+    YAML_MAPPING_RE.is_match(line.trim_start())
 }
 
 /// Heuristic (c): the second paragraph's first inline character suggests
@@ -5633,6 +5677,123 @@ Capital continuation line.
         assert_eq!(
             out_default, out_explicit,
             "default settings must match explicit heuristic; default=\n{out_default}\nexplicit=\n{out_explicit}"
+        );
+    }
+
+    // ── tighten-list-continuations key:value guard (issue #107) tests ──
+
+    #[test]
+    fn tighten_heuristic_preserves_key_value_second_paragraph() {
+        // The #107 repro: metadata-style paragraphs must round-trip unchanged
+        // in heuristic mode. `priority: urgent` starts with lowercase `p`,
+        // which would normally trigger the continuation heuristic — the
+        // key:value guard must fire first and preserve the blank line.
+        use crate::types::TightenListContinuationsMode;
+        let input = "\
+- [ ] Fix critical crash #dev
+
+  priority: urgent
+  App crashes on launch for iOS 17 users.
+- [ ] Security patch #dev
+
+  priority: high
+  Update authentication tokens before expiry.
+";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert_eq!(out, input, "heuristic mode must round-trip key:value items unchanged");
+    }
+
+    #[test]
+    fn tighten_aggressive_collapses_key_value() {
+        // Aggressive mode ignores the key:value guard — gaps always collapse.
+        use crate::types::TightenListContinuationsMode;
+        let input = "\
+- [ ] Fix critical crash #dev
+
+  priority: urgent
+  App crashes on launch for iOS 17 users.
+";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Aggressive));
+        assert!(
+            !out.contains("crash #dev\n\n  priority:"),
+            "aggressive mode must collapse key:value gap; output:\n{out}"
+        );
+        assert!(
+            out.contains("priority: urgent"),
+            "key:value content must survive; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_key_value_is_idempotent() {
+        // After preserving the blank line, a second pass must also preserve it.
+        use crate::types::TightenListContinuationsMode;
+        let input = "\
+- [ ] Fix critical crash #dev
+
+  priority: urgent
+  App crashes on launch for iOS 17 users.
+";
+        let once = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        let twice = format(&once, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert_eq!(once, twice, "key:value preservation must be idempotent");
+    }
+
+    #[test]
+    fn tighten_heuristic_bare_url_still_collapses() {
+        // A URL has no whitespace after the colon (`https://...`), so the
+        // key:value regex does NOT match — the continuation heuristic fires
+        // normally (lowercase `h`) and collapses the gap.
+        use crate::types::TightenListContinuationsMode;
+        let input = "- intro sentence that wraps\n\n  https://example.com\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            !out.contains("wraps\n\n  https://"),
+            "bare URL (no space after colon) must still collapse; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_note_prose_preserved() {
+        // `Note: see below` matches the key:value shape (capital `N`, colon,
+        // space, non-empty value) — preserved as a documented tradeoff.
+        use crate::types::TightenListContinuationsMode;
+        let input = "- intro paragraph\n\n  Note: see below for details.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            out.contains("intro paragraph\n\n  Note:"),
+            "Note:-style prose must be preserved (key:value guard); output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_bare_key_no_value_still_collapses() {
+        // `key:` alone (no value after the colon) does NOT match the key:value
+        // regex (non-empty value required). The continuation heuristic fires
+        // on the lowercase `k` and collapses the gap.
+        use crate::types::TightenListContinuationsMode;
+        let input = "- intro paragraph\n\n  key:\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            !out.contains("intro paragraph\n\n  key:"),
+            "bare `key:` with no value must still collapse; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_true_prose_continuation_still_collapses() {
+        // A soft-wrapped lowercase sentence without key:value shape must still
+        // collapse — the key:value guard must not over-fire.
+        use crate::types::TightenListContinuationsMode;
+        let input = "- first line of the item, which is long and continues\n\n  with more prose here.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            !out.contains("continues\n\n  with more prose"),
+            "true prose continuation must still collapse; output:\n{out}"
+        );
+        assert!(
+            out.contains("with more prose here."),
+            "prose content must survive; output:\n{out}"
         );
     }
 
