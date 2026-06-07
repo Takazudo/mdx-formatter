@@ -2957,7 +2957,9 @@ fn second_paragraph_looks_like_key_value(lines: &[&str], p_start_0: usize) -> bo
     let Some(line) = lines.get(p_start_0) else {
         return false;
     };
-    YAML_MAPPING_RE.is_match(line.trim_start())
+    // trim_end: `key:   ` (trailing whitespace only) must NOT count as a
+    // value — YAML_MAPPING_RE's `(.+)` would otherwise match the spaces.
+    YAML_MAPPING_RE.is_match(line.trim())
 }
 
 /// Heuristic (c): the second paragraph's first inline character suggests
@@ -6076,6 +6078,20 @@ Capital continuation line.
         assert!(
             !out.contains("intro paragraph\n\n  key:"),
             "bare `key:` with no value must still collapse; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_key_with_trailing_whitespace_only_still_collapses() {
+        // `key:   ` (colon followed by only whitespace) is the same as bare
+        // `key:` — there is no value, so the key:value guard must not fire
+        // (codex review: `(.+)` would otherwise match the trailing spaces).
+        use crate::types::TightenListContinuationsMode;
+        let input = "- intro paragraph\n\n  key:   \n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            !out.contains("intro paragraph\n\n  key:"),
+            "`key:` with trailing-whitespace-only value must still collapse; output:\n{out}"
         );
     }
 
