@@ -272,8 +272,17 @@ Fix, commit, push, re-invoke `/watch-ci`. Do not tag until green.
 ### release.yml fails (Step 9)
 
 - Transient → `gh run rerun <id> --failed` (once).
-- Real failure after a partial publish (e.g. platform packages live, root missing) → fix the cause, then re-run via `gh workflow run release.yml` from the tag's commit or `gh run rerun` — the idempotency guards skip what is already live.
-- `E404 Not Found - PUT` or 2FA errors → the NPM_TOKEN secret lacks scope/automation type. Fix at npmjs.com, then re-run the workflow.
+- Real failure after a partial publish (e.g. platform packages live, root missing) → fix the cause, then re-run via `gh workflow run release.yml --ref main` or `gh run rerun` — the idempotency guards skip what is already live.
+
+#### `E404 Not Found - PUT` on publish = invalid/expired NPM_TOKEN (NOT provenance, NOT workflow config)
+
+A `404 Not Found - PUT .../@takazudo%2f...` when publishing a package that **already exists** on npm is npm's scope-mask for a **401/403 authorization failure** — almost always a dead `NPM_TOKEN`. The publish job's **"Verify npm auth" step (`npm whoami`) catches this up front**: if it prints a username, the token authenticates; if it 401s, the token is invalid/expired.
+
+This was a real incident: a token that published fine when freshly created later E404'd every publish ~6 weeks on — it had **expired**. Provenance and workflow config were red herrings (both a provenance run and a plain-publish run failed identically; the cause was the token). GitHub secrets are **per-repository**, so "the same token works in another repo" does not mean this repo's `NPM_TOKEN` secret holds a valid value.
+
+**Fix:** generate a fresh **Automation** token on npmjs.com (Access Tokens → Generate → Classic → Automation; Automation tokens bypass the 2FA-for-writes gate that blocks CI), then `gh secret set NPM_TOKEN` (or via the repo Settings UI). Re-run the workflow — the idempotency guards make re-runs safe. If `npm whoami` succeeds but publish still 403s, the token authenticates but lacks **write** access to the scope/packages — fix the token's package permissions on npmjs.com.
+
+- 2FA/OTP errors (`EOTP`) → same fix: use an Automation token (they are exempt from interactive OTP).
 
 ### Rolling back before the tag was pushed
 
