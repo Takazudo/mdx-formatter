@@ -780,6 +780,24 @@ fn needs_jsx_formatting(
     false
 }
 
+/// Classify whether a JSX element is self-closing (`<X ... />`) vs paired
+/// (`<X ...>...</X>`), using the element's precise source span.
+///
+/// `element_span` is the text sliced from the node's AST position
+/// (start..end), so its trailing characters ARE the actual tag boundary —
+/// no body scanning required. markdown-rs reports `children: []` for both
+/// `<X/>` and `<X></X>`, so emptiness alone would silently collapse the
+/// paired form; we additionally require the span to end with `/>`.
+///
+/// Fragments (`name` empty, `<>...</>`) are never self-closing even though
+/// `</>` ends with `/>`.
+fn is_self_closing_element(name: &str, element_span: &str, children: &[Node]) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    children.is_empty() && element_span.trim_end().ends_with("/>")
+}
+
 /// Format a JSX element into properly indented lines.
 fn format_jsx_element(
     name: &str,
@@ -794,10 +812,15 @@ fn format_jsx_element(
     let props_threshold = settings.expand_single_line_jsx.props_threshold;
     let preserve_template_literal = settings.format_multi_line_jsx.preserve_template_literal_indent;
 
-    let has_closing_tag = original_text.contains(&format!("</{}>", name));
-    let is_inline_with_content =
-        original_text.contains(">{") || (original_text.contains('>') && has_closing_tag);
-    let self_closing = !has_closing_tag && !is_inline_with_content && children.is_empty();
+    // AST-derived self-closing classification (issue #109/#112).
+    //
+    // markdown-rs gives `children: []` for BOTH `<X .../>` and `<X ...></X>`, and
+    // it has no self-closing field on MdxJsxFlowElement, so emptiness alone is not
+    // enough — the discriminator is the actual tag boundary of the precise element
+    // span (`original_text`, sliced from position.start..position.end). Earlier code
+    // substring-scanned the whole body for `>{` / `</name>`, which matched markup
+    // inside backtick template literals and corrupted genuinely self-closing tags.
+    let self_closing = is_self_closing_element(name, original_text, children);
 
     let should_expand = (settings.expand_single_line_jsx.enabled
         && attributes.len() >= props_threshold)
@@ -822,8 +845,17 @@ fn format_jsx_element(
         // Multi-line format
         lines.push(format!("<{}", name));
 
+        // Track whether the LAST attribute rendered as multi-line (e.g. a
+        // multi-line template literal). When it does, a self-closing `/>` must
+        // go on its own line rather than collapsing onto the attribute's final
+        // line — collapsing would alter the byte-for-byte source of a template
+        // literal whose closing `\`}` sits on its own line (issue #109).
+        let mut last_attr_multi_line = false;
+
         for attr in attributes {
             let attr_str = get_attribute_string(attr, original_text, preserve_template_literal);
+
+            last_attr_multi_line = attr_str.contains('\n');
 
             if attr_str.contains('\n') {
                 let attr_lines: Vec<&str> = attr_str.split('\n').collect();
@@ -848,7 +880,9 @@ fn format_jsx_element(
 
         // Close the opening tag
         if self_closing {
-            if let Some(last) = lines.last_mut() {
+            if last_attr_multi_line {
+                lines.push("/>".to_string());
+            } else if let Some(last) = lines.last_mut() {
                 last.push_str(" />");
             }
         } else {
