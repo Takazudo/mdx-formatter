@@ -39,9 +39,8 @@ pnpm check:fix      # Prettier + ESLint autofix
 
 ## Package Publishing
 
-- Scoped package: `@takazudo/mdx-formatter`
+- Scoped package: `@takazudo/mdx-formatter` + 4 platform binary packages (`npm/*`, pnpm workspace members pinned as `workspace:X.Y.Z` optionalDependencies)
 - `files` field limits published content to: `dist/`, `format-stdin.js`, `README.md`, `LICENSE`
 - `prepublishOnly` runs `tsc && vitest run` automatically
-- Use `/l-version-increment` for stable releases
-- Use `/l-version-next` for prerelease (`@next` dist-tag)
-- Use `/l-version-promote` to promote a next version to stable
+- Use `/l-make-release` for ALL releases (stable, prerelease, promotion) — one-call autonomous: bump, changelog, CI wait, tag; the tag triggers `release.yml` which auto-publishes all 5 packages via the repo `NPM_TOKEN`. Pass `--confirm` for interactive vetting
+- Never run `npm publish` / `pnpm publish` locally — publishing happens only in `release.yml` (the root package MUST go through `pnpm publish` there, which rewrites the `workspace:` specifiers)
