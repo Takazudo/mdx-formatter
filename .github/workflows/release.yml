@@ -89,16 +89,17 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      # OIDC token for npm publish provenance attestation.
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - name: Sync platform package versions with root
         shell: bash
         run: node scripts/sync-napi-versions.mjs
+      # pnpm version comes from the root package.json "packageManager" field
+      # (pinned exactly there so publish behavior — workspace: specifier
+      # rewriting — does not drift with the latest pnpm 10.x).
       - uses: pnpm/action-setup@v4
-        with:
-          # Pinned exactly: publish behavior (workspace: specifier rewriting)
-          # must not drift with whatever the latest pnpm 10.x happens to be.
-          version: 10.34.1
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -148,7 +149,7 @@ jobs:
               continue
             fi
             echo "Publishing ${PKG}@${VERSION} (--tag ${DIST_TAG})..."
-            if ! (cd "$dir" && npm publish --access public --tag "$DIST_TAG"); then
+            if ! (cd "$dir" && npm publish --access public --tag "$DIST_TAG" --provenance); then
               # Race tolerance: another run may have published it between the
               # check and the publish. "Now exists" counts as success.
               if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
@@ -183,7 +184,7 @@ jobs:
           echo "Publishing ${PKG}@${VERSION} (--tag ${DIST_TAG})..."
           # pnpm publish (NOT npm publish): rewrites the workspace:X.Y.Z
           # optionalDependencies to exact versions in the packed tarball.
-          if ! pnpm publish --access public --tag "$DIST_TAG" --no-git-checks; then
+          if ! pnpm publish --access public --tag "$DIST_TAG" --no-git-checks --provenance; then
             if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
               echo "${PKG}@${VERSION} appeared during publish — treating as success"
             else
