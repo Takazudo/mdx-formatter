@@ -89,12 +89,8 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      # NOTE: npm provenance (--provenance + id-token: write) was reverted —
-      # it correlated with an E404 at the registry PUT on the first automated
-      # release (the provenance statement signed fine via OIDC, but the package
-      # upload was rejected). Likely needs a trusted-publisher configured on
-      # npmjs.com for all 5 packages. Tracked in #121 — re-enable once that
-      # account-side setup is done. Plain token auth is the proven path.
+      # OIDC token for npm publish provenance attestation.
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - name: Sync platform package versions with root
@@ -169,7 +165,7 @@ jobs:
               continue
             fi
             echo "Publishing ${PKG}@${VERSION} (--tag ${DIST_TAG})..."
-            if ! (cd "$dir" && npm publish --access public --tag "$DIST_TAG"); then
+            if ! (cd "$dir" && npm publish --access public --tag "$DIST_TAG" --provenance); then
               # Race tolerance: another run may have published it between the
               # check and the publish. "Now exists" counts as success.
               if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
@@ -204,7 +200,7 @@ jobs:
           echo "Publishing ${PKG}@${VERSION} (--tag ${DIST_TAG})..."
           # pnpm publish (NOT npm publish): rewrites the workspace:X.Y.Z
           # optionalDependencies to exact versions in the packed tarball.
-          if ! pnpm publish --access public --tag "$DIST_TAG" --no-git-checks; then
+          if ! pnpm publish --access public --tag "$DIST_TAG" --no-git-checks --provenance; then
             if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
               echo "${PKG}@${VERSION} appeared during publish — treating as success"
             else
