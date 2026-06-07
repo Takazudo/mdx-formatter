@@ -15,7 +15,7 @@
  * global ~/.cargo/config.toml on developer machines).
  *
  * Supports macOS (darwin) and Linux only. Windows release binaries are
- * produced by the CI cross-build workflow (napi.yml), not this script.
+ * produced by the CI cross-build workflow (release.yml), not this script.
  *
  * Uses only Node stdlib. Requires Node >= 18.
  */

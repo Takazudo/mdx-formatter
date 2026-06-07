@@ -1,2 +1,8 @@
 packages:
   - doc
+  # npm/* — per-platform napi binary packages. Workspace membership makes the
+  # root's pinned workspace:X.Y.Z optionalDependencies locally resolvable at
+  # version-bump time, before the new versions exist on the registry
+  # (otherwise `pnpm install` drops them from the lockfile and CI's
+  # frozen-lockfile install fails with ERR_PNPM_OUTDATED_LOCKFILE).
+  - npm/*

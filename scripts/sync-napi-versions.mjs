@@ -77,6 +77,9 @@ function main() {
   }
 
   // 2. Rewrite root optionalDependencies entries matching the prefix.
+  // Pinned workspace:X.Y.Z specifiers: resolvable from the local workspace at
+  // bump time (the registry versions don't exist yet), rewritten to plain
+  // exact versions by `pnpm publish` when the root package is packed.
   // Re-read the root package.json to pick up any in-flight changes (defensive).
   const { raw: rootRaw, data: rootPkg2 } = readJson(rootPkgPath);
   const optionalDeps = rootPkg2.optionalDependencies;
@@ -86,8 +89,8 @@ function main() {
     for (const key of Object.keys(optionalDeps)) {
       if (!key.startsWith(OPTIONAL_DEP_PREFIX)) continue;
       const previousValue = optionalDeps[key];
-      optionalDeps[key] = rootVersion;
-      process.stdout.write(`    ${key}: ${previousValue} -> ${rootVersion}\n`);
+      optionalDeps[key] = `workspace:${rootVersion}`;
+      process.stdout.write(`    ${key}: ${previousValue} -> workspace:${rootVersion}\n`);
     }
   }
 
