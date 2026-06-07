@@ -179,6 +179,16 @@ pub fn try_format(content: &str, settings: &FormatterSettings) -> Result<String,
 /// Like `try_format`, but also emits structured change descriptions through
 /// `sink`. Only the first convergence pass emits; subsequent passes use a
 /// local `NullSink`.
+///
+/// # Divergence contract
+///
+/// If the convergence loop exhausts `MAX_ITERATIONS` without the output
+/// stabilizing (output ≠ previous), this function **returns the original
+/// input unchanged** (fail-safe: an unformatted file is strictly better than
+/// a corrupted one). The caller-supplied `sink` is left empty on divergence —
+/// its first-pass entries are buffered internally and are only replayed when
+/// convergence is confirmed, so the report never promises changes that won't
+/// be applied.
 pub fn try_format_with_sink(
     content: &str,
     settings: &FormatterSettings,
@@ -190,31 +200,98 @@ pub fn try_format_with_sink(
     Ok(run_convergence_loop(content, settings, sink))
 }
 
+/// Run the formatting convergence loop, returning the original content if the
+/// output does not stabilize within `MAX_ITERATIONS`.
+///
+/// Delegates to `converge_to_fixpoint` so the sink-buffer/replay and the
+/// fail-safe branch live in one testable place.
 fn run_convergence_loop(
     content: &str,
     settings: &FormatterSettings,
     sink: &mut dyn ReportSink,
 ) -> String {
-    let mut result = content.to_string();
     const MAX_ITERATIONS: usize = 3;
 
-    // First pass emits through the caller's sink. Subsequent passes use a
-    // throw-away NullSink so the report stays anchored to the ORIGINAL input.
-    let first = format_once(&result, settings, sink);
-    if first == result {
-        return result;
-    }
-    result = first;
+    let step = |s: &str, snk: &mut dyn ReportSink| format_once(s, settings, snk);
 
-    let mut null = NullSink;
-    for _ in 1..MAX_ITERATIONS {
-        let formatted = format_once(&result, settings, &mut null);
-        if formatted == result {
-            break;
+    match converge_to_fixpoint(content, MAX_ITERATIONS, sink, step) {
+        Some(fixed) => fixed,
+        None => {
+            // The loop exhausted MAX_ITERATIONS without output == previous.
+            // Fail-safe: return the original input unchanged so we never emit
+            // corrupted content. A future formatting bug may diverge; returning
+            // the original is strictly safer than the last-iteration output.
+            //
+            // (Historical note: before the JSX fix in #112 the #109 repro
+            // triggered this path — template-literal props caused triplication.
+            // The fix in #112 resolved that specific case; this guard handles
+            // any future divergence.)
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "mdx-formatter [debug]: convergence fail-safe triggered after {} iterations; \
+                 returning original input unchanged",
+                MAX_ITERATIONS
+            );
+            content.to_string()
         }
-        result = formatted;
     }
-    result
+}
+
+/// Drive a formatting `step` closure until the output stabilizes, up to
+/// `max_iterations` total passes.
+///
+/// The first pass emits into a local `VecSink` buffer; subsequent passes use a
+/// `NullSink`. If convergence is reached (any pass produces `output == previous`),
+/// the buffered first-pass entries are replayed into `sink` and `Some(fixpoint)`
+/// is returned. If the loop exhausts `max_iterations` without stabilizing,
+/// `sink` is left empty (the first-pass entries are discarded) and `None` is
+/// returned — the caller should return the original input unchanged.
+///
+/// This design ensures the sink never promises changes that will not be applied.
+pub(crate) fn converge_to_fixpoint<F>(
+    content: &str,
+    max_iterations: usize,
+    sink: &mut dyn ReportSink,
+    mut step: F,
+) -> Option<String>
+where
+    F: FnMut(&str, &mut dyn ReportSink) -> String,
+{
+    let original = content;
+    let mut current = content.to_string();
+
+    // First pass: buffer entries rather than emitting directly, so we can
+    // discard them on divergence.
+    let mut buf = VecSink::default();
+    let first = step(&current, &mut buf as &mut dyn ReportSink);
+
+    // Fast path: already a fixpoint after the first pass.
+    if first == current {
+        for entry in buf.entries {
+            sink.emit(entry);
+        }
+        return Some(current);
+    }
+    current = first;
+
+    // Remaining passes use NullSink — report stays anchored to the ORIGINAL.
+    let mut null = NullSink;
+    for _ in 1..max_iterations {
+        let next = step(&current, &mut null as &mut dyn ReportSink);
+        if next == current {
+            // Converged. Replay the first-pass entries now that we know the
+            // changes will actually be applied.
+            for entry in buf.entries {
+                sink.emit(entry);
+            }
+            return Some(current);
+        }
+        current = next;
+    }
+
+    // Loop exhausted without fixpoint.
+    let _ = original; // retain borrow for clarity; actual return is from caller
+    None
 }
 
 /// Single formatting pass: parse AST, collect operations, apply them.
@@ -531,17 +608,211 @@ fn extract_node_text(lines: &[&str], start_line: usize, start_col: usize, end_li
     result.join("\n")
 }
 
-/// Extract an attribute expression value from original text by brace-matching.
+// ============================================================================
+// Template-literal-aware JSX scanner (issue #109/#112)
+//
+// One state machine drives every raw-text scan over a JSX element so that
+// `>`, `{`, `}`, `<`, `/>`, and `</Name>` appearing INSIDE backtick template
+// literals or quoted attribute values are treated as inert text — never as
+// JSX structure. Naive substring / brace-count scanners corrupted self-closing
+// components whose template-literal props embedded such characters.
+// ============================================================================
+
+/// Lexical state of the JSX scanner at a given character boundary.
+///
+/// Models the three nestable contexts where JSX structure characters are inert:
+/// quoted attribute values, backtick template literals, and `{...}` expressions
+/// (which include `${...}` interpolations inside templates). A stack records, in
+/// order, which kind of brace-context each open `{`/`${` belongs to so the
+/// matching `}` restores the correct enclosing context.
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct ScanState {
+    /// Inside a double- or single-quoted attribute value (holds the quote char).
+    quote: Option<char>,
+    /// Number of currently-open backtick template literals at THIS context level
+    /// (i.e. not separated from us by an open brace). >0 with no open brace means
+    /// we are in raw template-literal text where JSX markup is inert.
+    template_depth: usize,
+    /// One entry per open `{` (plain JSX expression) or `${` (template interp),
+    /// each remembering the `template_depth` to restore when its `}` closes.
+    brace_stack: Vec<usize>,
+    /// Previous char was a backslash inside template text (escape pending).
+    escaped: bool,
+    /// Previous char was `$` inside template text (possible `${` interp start).
+    pending_dollar: bool,
+}
+
+impl ScanState {
+    fn new() -> Self {
+        ScanState {
+            quote: None,
+            template_depth: 0,
+            brace_stack: Vec::new(),
+            escaped: false,
+            pending_dollar: false,
+        }
+    }
+
+    /// True when we are inside backtick template-literal text and NOT inside a
+    /// `${...}` interpolation — i.e. raw template body where JSX markup is inert.
+    fn in_template_text(&self) -> bool {
+        self.template_depth > 0
+    }
+
+    /// True at "top level": not in a quote, not in template text, no open braces.
+    /// Only here do `>` / `<` / `/>` count as JSX tag structure.
+    fn at_structure_level(&self) -> bool {
+        self.quote.is_none() && self.template_depth == 0 && self.brace_stack.is_empty()
+    }
+}
+
+/// Advance the scanner by one character, returning the updated state.
+///
+/// Handles, per the strict scanner contract:
+/// - escaped backticks (`` \` ``) inside template literals,
+/// - `${...}` interpolation (which may itself contain braces/backticks/nested
+///   templates) via a context stack,
+/// - nested JSX-expression braces,
+/// - `>` / `<` inside quoted attribute values and template literals (inert).
+fn scan_step(state: ScanState, ch: char) -> ScanState {
+    let mut s = state;
+
+    // Inside a quoted attribute value: everything is inert until the matching
+    // quote (MDX attribute string values do not honour backslash escapes).
+    if let Some(q) = s.quote {
+        if ch == q {
+            s.quote = None;
+        }
+        return s;
+    }
+
+    // Inside raw template-literal text (not within an open `${...}`).
+    if s.in_template_text() {
+        if s.escaped {
+            s.escaped = false;
+            s.pending_dollar = false;
+            return s;
+        }
+        if s.pending_dollar && ch == '{' {
+            // `${` opens an interpolation: push a brace context that, when its
+            // matching `}` is found, restores the current template_depth.
+            s.pending_dollar = false;
+            s.brace_stack.push(s.template_depth);
+            s.template_depth = 0;
+            return s;
+        }
+        s.pending_dollar = false;
+        match ch {
+            '\\' => s.escaped = true,
+            '`' => s.template_depth -= 1,
+            '$' => s.pending_dollar = true,
+            _ => {}
+        }
+        return s;
+    }
+
+    // At structure level or inside an expression / `${...}` interpolation.
+    match ch {
+        '`' => s.template_depth += 1,
+        '"' | '\'' => s.quote = Some(ch),
+        '{' => {
+            // Plain JSX expression brace: no template to suspend.
+            s.brace_stack.push(0);
+        }
+        '}' => {
+            // Close the innermost brace context, restoring any template we were
+            // interpolating within (`${...}` close → back into template text).
+            if let Some(restored) = s.brace_stack.pop() {
+                s.template_depth = restored;
+            }
+        }
+        _ => {}
+    }
+    s
+}
+
+/// Find the structural `>` that ends a JSX element's opening tag, returning
+/// `(line_index, byte_column)` (both 0-indexed; column is the byte offset of the
+/// `>` within its line).
+///
+/// Scans character-by-character with the template-literal-aware state machine,
+/// so a `>` inside a backtick template literal, a quoted attribute value, or a
+/// `{...}` expression is ignored. Returns `None` if no structural tag-close is
+/// found (degenerate input).
+fn find_opening_tag_end(original_text: &str) -> Option<(usize, usize)> {
+    let mut state = ScanState::new();
+    for (line_idx, line) in original_text.split('\n').enumerate() {
+        let mut byte_col = 0;
+        for ch in line.chars() {
+            if state.at_structure_level() && ch == '>' {
+                return Some((line_idx, byte_col));
+            }
+            state = scan_step(state, ch);
+            byte_col += ch.len_utf8();
+        }
+    }
+    None
+}
+
+/// Convenience: the 0-indexed line on which the opening tag closes.
+fn find_opening_tag_end_line(original_text: &str) -> Option<usize> {
+    find_opening_tag_end(original_text).map(|(line, _)| line)
+}
+
+/// True if `attr_name` appears at byte offset `pos` in `text` on an identifier
+/// boundary — i.e. the preceding char is not part of a longer attribute name.
+/// Prevents `html={` from matching the `html` inside `data-html={` (the old
+/// `str::find` substring lookup had exactly this bug).
+fn attr_name_on_boundary(text: &str, pos: usize) -> bool {
+    if pos == 0 {
+        return true;
+    }
+    // Walk back to the char immediately before the match.
+    match text[..pos].chars().next_back() {
+        Some(prev) => {
+            !(prev.is_ascii_alphanumeric() || prev == '_' || prev == '-' || prev == '$')
+        }
+        None => true,
+    }
+}
+
+/// Extract an attribute expression value (`attrName={...}`) from original text.
 /// Returns the full `attrName={...}` string if found.
+///
+/// Uses plain brace-counting deliberately: markdown-rs itself brace-counts
+/// attribute boundaries (a `}` inside a backtick template literal terminates the
+/// attribute value in its AST). Matching that here keeps this extraction
+/// consistent with the parsed attribute list — a template-literal-aware scan
+/// would OVERSHOOT markdown-rs's split and re-emit the remainder as bogus extra
+/// attributes (the #109 duplication). The only added safety over the previous
+/// implementation is identifier-boundary anchoring so `html={` never matches the
+/// `html` inside `data-html={`.
 fn extract_attribute_expression(attr_name: &str, original_text: &str) -> Option<String> {
     let text_lines: Vec<&str> = original_text.split('\n').collect();
     let needle = format!("{}={{", attr_name);
 
     for (line_idx, line) in text_lines.iter().enumerate() {
-        let needle_pos = match line.find(&needle) {
-            Some(pos) => pos,
-            None => continue,
+        // Find an identifier-anchored occurrence of `attrName={` on this line.
+        let mut search_from = 0;
+        let needle_pos = loop {
+            match line[search_from..].find(&needle) {
+                Some(rel) => {
+                    let pos = search_from + rel;
+                    if attr_name_on_boundary(line, pos) {
+                        break pos;
+                    }
+                    // Advance past the matched char on a UTF-8 boundary (a bare
+                    // `pos + 1` could split a multibyte identifier char and
+                    // panic on the next slice — e.g. a `名` prop after `data-名`).
+                    let advance = line[pos..].chars().next().map_or(1, |c| c.len_utf8());
+                    search_from = pos + advance;
+                }
+                None => break usize::MAX,
+            }
         };
+        if needle_pos == usize::MAX {
+            continue;
+        }
 
         let after_open = needle_pos + needle.len();
 
@@ -618,7 +889,7 @@ fn get_attribute_string(attr: &AttributeContent, original_text: &str, preserve_t
                         if let Some(extracted) =
                             extract_attribute_expression(name, original_text)
                         {
-                            return extracted;
+                                            return extracted;
                         }
                         return format!("{}={{{}}}", name, expr_value);
                     }
@@ -645,14 +916,12 @@ fn get_attribute_string(attr: &AttributeContent, original_text: &str, preserve_t
 fn extract_children_text(name: &str, original_text: &str) -> String {
     let text_lines: Vec<&str> = original_text.split('\n').collect();
 
-    // Find where the opening tag ends
-    let mut opening_end_index: Option<usize> = None;
-    for (i, line) in text_lines.iter().enumerate() {
-        if line.contains('>') && !line.contains("/>") {
-            opening_end_index = Some(i);
-            break;
-        }
-    }
+    // Find where the opening tag ends, ignoring any `>` that lives inside a
+    // backtick template literal, a quoted attribute value, or a `{...}`
+    // expression (issue #109 — the old `line.contains('>')` scan mis-fired on
+    // `>` inside such props and slurped attribute lines as "children").
+    let opening_tag_end = find_opening_tag_end(original_text);
+    let opening_end_index = opening_tag_end.map(|(line, _)| line);
 
     // Find where the closing tag starts
     let closing_tag = format!("</{}", name);
@@ -668,10 +937,12 @@ fn extract_children_text(name: &str, original_text: &str) -> String {
         (Some(open_idx), Some(close_idx)) if close_idx > open_idx => {
             let mut content_lines: Vec<&str> = Vec::new();
 
-            // Handle content on same line as opening tag
+            // Handle content on same line as opening tag, using the structural
+            // `>` column from the template-aware scan rather than a naive
+            // `find('>')` that could land inside a quoted/template prop.
             let opening_line = text_lines[open_idx];
-            if let Some(pos) = opening_line.find('>') {
-                let after_opening = &opening_line[pos + 1..];
+            if let Some((_, gt_col)) = opening_tag_end {
+                let after_opening = &opening_line[gt_col + 1..];
                 if !after_opening.trim().is_empty() {
                     content_lines.push(after_opening);
                 }
@@ -722,23 +993,12 @@ fn needs_jsx_formatting(
         let text_lines: Vec<&str> = original_text.split('\n').collect();
         let indent_str = " ".repeat(settings.format_multi_line_jsx.indent_size);
 
-        // Find opening tag end line
-        let has_closing_tag = original_text.contains(&format!("</{}>", name));
-        let mut opening_tag_end_line = text_lines.len() - 1;
-        if has_closing_tag {
-            let mut brace_depth: i32 = 0;
-            for (i, line) in text_lines.iter().enumerate() {
-                for ch in line.chars() {
-                    if ch == '{' { brace_depth += 1; }
-                    if ch == '}' { brace_depth -= 1; }
-                }
-                let trimmed = line.trim();
-                if brace_depth == 0 && trimmed.ends_with('>') && !trimmed.ends_with("/>") {
-                    opening_tag_end_line = i;
-                    break;
-                }
-            }
-        }
+        // Find opening tag end line via the template-literal-aware scan, so a
+        // `>` / `{` / `}` inside a backtick template literal or quoted prop does
+        // not mis-locate the boundary (issue #109). Falls back to the last line
+        // when no structural tag-close is found.
+        let opening_tag_end_line =
+            find_opening_tag_end_line(original_text).unwrap_or(text_lines.len() - 1);
 
         // Check for attributes on the first line
         let first_line = text_lines[0];
@@ -780,6 +1040,24 @@ fn needs_jsx_formatting(
     false
 }
 
+/// Classify whether a JSX element is self-closing (`<X ... />`) vs paired
+/// (`<X ...>...</X>`), using the element's precise source span.
+///
+/// `element_span` is the text sliced from the node's AST position
+/// (start..end), so its trailing characters ARE the actual tag boundary —
+/// no body scanning required. markdown-rs reports `children: []` for both
+/// `<X/>` and `<X></X>`, so emptiness alone would silently collapse the
+/// paired form; we additionally require the span to end with `/>`.
+///
+/// Fragments (`name` empty, `<>...</>`) are never self-closing even though
+/// `</>` ends with `/>`.
+fn is_self_closing_element(name: &str, element_span: &str, children: &[Node]) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    children.is_empty() && element_span.trim_end().ends_with("/>")
+}
+
 /// Format a JSX element into properly indented lines.
 fn format_jsx_element(
     name: &str,
@@ -794,10 +1072,15 @@ fn format_jsx_element(
     let props_threshold = settings.expand_single_line_jsx.props_threshold;
     let preserve_template_literal = settings.format_multi_line_jsx.preserve_template_literal_indent;
 
-    let has_closing_tag = original_text.contains(&format!("</{}>", name));
-    let is_inline_with_content =
-        original_text.contains(">{") || (original_text.contains('>') && has_closing_tag);
-    let self_closing = !has_closing_tag && !is_inline_with_content && children.is_empty();
+    // AST-derived self-closing classification (issue #109/#112).
+    //
+    // markdown-rs gives `children: []` for BOTH `<X .../>` and `<X ...></X>`, and
+    // it has no self-closing field on MdxJsxFlowElement, so emptiness alone is not
+    // enough — the discriminator is the actual tag boundary of the precise element
+    // span (`original_text`, sliced from position.start..position.end). Earlier code
+    // substring-scanned the whole body for `>{` / `</name>`, which matched markup
+    // inside backtick template literals and corrupted genuinely self-closing tags.
+    let self_closing = is_self_closing_element(name, original_text, children);
 
     let should_expand = (settings.expand_single_line_jsx.enabled
         && attributes.len() >= props_threshold)
@@ -822,6 +1105,15 @@ fn format_jsx_element(
         // Multi-line format
         lines.push(format!("<{}", name));
 
+        // Track whether the LAST attribute rendered as a multi-line TEMPLATE
+        // LITERAL. Only then must a self-closing `/>` go on its own line rather
+        // than collapsing onto the attribute's final line — collapsing would
+        // alter the byte-for-byte source of a template literal whose closing
+        // `\`}` sits on its own line (issue #109). Other multi-line attributes
+        // (e.g. arrays/objects) are actively reformatted, so their `]} />`
+        // collapse is the established, correct behavior and must NOT change.
+        let mut last_attr_multi_line_template = false;
+
         for attr in attributes {
             let attr_str = get_attribute_string(attr, original_text, preserve_template_literal);
 
@@ -831,6 +1123,8 @@ fn format_jsx_element(
 
                 let is_template_literal =
                     preserve_template_literal && attr_lines[0].contains("={`");
+
+                last_attr_multi_line_template = is_template_literal;
 
                 for attr_line in &attr_lines[1..] {
                     if is_template_literal {
@@ -843,12 +1137,17 @@ fn format_jsx_element(
                 }
             } else {
                 lines.push(format!("{}{}", indent, attr_str));
+                last_attr_multi_line_template = false;
             }
         }
 
-        // Close the opening tag
+        // Close the opening tag. A multi-line template-literal last attribute
+        // keeps `/>` on its own line (byte-preservation, #109); everything else
+        // collapses `/>` onto the final attribute line as before.
         if self_closing {
-            if let Some(last) = lines.last_mut() {
+            if last_attr_multi_line_template {
+                lines.push("/>".to_string());
+            } else if let Some(last) = lines.last_mut() {
                 last.push_str(" />");
             }
         } else {
@@ -2487,8 +2786,20 @@ fn try_recover_paragraph_run(
 ///      a backtick, or an opening-punctuation character (`(`, `[`, `"`,
 ///      `'`, en-dash, em-dash, comma).
 ///
-/// Aggressive mode drops condition (c): any single-blank gap between two
-/// paragraph children of a `ParagraphsOnly` list item collapses.
+/// Heuristic-mode exception (guard before condition c, issue #107):
+///   If the second paragraph's first line looks like `key: value` —
+///   matching `[\w][\w.-]*:\s+\S+` — the blank line is preserved even
+///   though condition (c) would otherwise fire on a lowercase key.
+///   This protects metadata-style paragraphs (e.g. `priority: urgent`)
+///   that are intentional content, not soft-wrapped prose. `Note: ...`-
+///   style prose also matches and is preserved (documented tradeoff).
+///   A bare `key:` with no value does NOT match (non-empty value required)
+///   and still collapses under condition (c). Bare URLs (`https://...`)
+///   do NOT match because they have no whitespace after the colon.
+///
+/// Aggressive mode drops condition (c) AND the key:value guard: any
+/// single-blank gap between two paragraph children of a `ParagraphsOnly`
+/// list item collapses.
 ///
 /// Off mode is a no-op (matches pre-rule behavior byte-for-byte).
 fn apply_tighten_list_continuations(
@@ -2593,6 +2904,18 @@ fn emit_tighten_ops_for_item(
             continue;
         }
 
+        // Heuristic-mode key:value guard (issue #107): if the second
+        // paragraph's first line looks like `key: value`, preserve the
+        // blank line even though condition (c) would fire on a lowercase
+        // key. This guard must come BEFORE the continuation check below
+        // because the lowercase-start branch of that check returns true
+        // for keys like `priority:` and would collapse intentional metadata.
+        if matches!(mode, TightenListContinuationsMode::Heuristic)
+            && second_paragraph_looks_like_key_value(lines, p2_start_0)
+        {
+            continue;
+        }
+
         if matches!(mode, TightenListContinuationsMode::Heuristic)
             && !second_paragraph_looks_like_continuation(lines, p2_start_0)
         {
@@ -2615,6 +2938,28 @@ fn emit_tighten_ops_for_item(
             lines: Vec::new(),
         });
     }
+}
+
+/// Returns true when the second paragraph's first line looks like a
+/// `key: value` metadata line — matching `[\w][\w.-]*:\s+\S+`.
+///
+/// This uses the same shape as `YAML_MAPPING_RE` (formatter.rs:34-36).
+/// Required whitespace after the colon naturally excludes bare URLs
+/// (`https://...`). A bare `key:` with no value does NOT match because
+/// the regex requires at least one non-whitespace character after the
+/// colon-plus-space sequence.
+///
+/// Capitalised forms (`Note: see below`) also match — this is a
+/// documented tradeoff: preserving a potential false-positive (a true
+/// continuation that happens to look like `Key: value`) is safer than
+/// collapsing intentional metadata.
+fn second_paragraph_looks_like_key_value(lines: &[&str], p_start_0: usize) -> bool {
+    let Some(line) = lines.get(p_start_0) else {
+        return false;
+    };
+    // trim_end: `key:   ` (trailing whitespace only) must NOT count as a
+    // value — YAML_MAPPING_RE's `(.+)` would otherwise match the spaces.
+    YAML_MAPPING_RE.is_match(line.trim())
 }
 
 /// Heuristic (c): the second paragraph's first inline character suggests
@@ -5636,6 +5981,137 @@ Capital continuation line.
         );
     }
 
+    // ── tighten-list-continuations key:value guard (issue #107) tests ──
+
+    #[test]
+    fn tighten_heuristic_preserves_key_value_second_paragraph() {
+        // The #107 repro: metadata-style paragraphs must round-trip unchanged
+        // in heuristic mode. `priority: urgent` starts with lowercase `p`,
+        // which would normally trigger the continuation heuristic — the
+        // key:value guard must fire first and preserve the blank line.
+        use crate::types::TightenListContinuationsMode;
+        let input = "\
+- [ ] Fix critical crash #dev
+
+  priority: urgent
+  App crashes on launch for iOS 17 users.
+- [ ] Security patch #dev
+
+  priority: high
+  Update authentication tokens before expiry.
+";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert_eq!(out, input, "heuristic mode must round-trip key:value items unchanged");
+    }
+
+    #[test]
+    fn tighten_aggressive_collapses_key_value() {
+        // Aggressive mode ignores the key:value guard — gaps always collapse.
+        use crate::types::TightenListContinuationsMode;
+        let input = "\
+- [ ] Fix critical crash #dev
+
+  priority: urgent
+  App crashes on launch for iOS 17 users.
+";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Aggressive));
+        assert!(
+            !out.contains("crash #dev\n\n  priority:"),
+            "aggressive mode must collapse key:value gap; output:\n{out}"
+        );
+        assert!(
+            out.contains("priority: urgent"),
+            "key:value content must survive; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_key_value_is_idempotent() {
+        // After preserving the blank line, a second pass must also preserve it.
+        use crate::types::TightenListContinuationsMode;
+        let input = "\
+- [ ] Fix critical crash #dev
+
+  priority: urgent
+  App crashes on launch for iOS 17 users.
+";
+        let once = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        let twice = format(&once, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert_eq!(once, twice, "key:value preservation must be idempotent");
+    }
+
+    #[test]
+    fn tighten_heuristic_bare_url_still_collapses() {
+        // A URL has no whitespace after the colon (`https://...`), so the
+        // key:value regex does NOT match — the continuation heuristic fires
+        // normally (lowercase `h`) and collapses the gap.
+        use crate::types::TightenListContinuationsMode;
+        let input = "- intro sentence that wraps\n\n  https://example.com\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            !out.contains("wraps\n\n  https://"),
+            "bare URL (no space after colon) must still collapse; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_note_prose_preserved() {
+        // `Note: see below` matches the key:value shape (capital `N`, colon,
+        // space, non-empty value) — preserved as a documented tradeoff.
+        use crate::types::TightenListContinuationsMode;
+        let input = "- intro paragraph\n\n  Note: see below for details.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            out.contains("intro paragraph\n\n  Note:"),
+            "Note:-style prose must be preserved (key:value guard); output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_bare_key_no_value_still_collapses() {
+        // `key:` alone (no value after the colon) does NOT match the key:value
+        // regex (non-empty value required). The continuation heuristic fires
+        // on the lowercase `k` and collapses the gap.
+        use crate::types::TightenListContinuationsMode;
+        let input = "- intro paragraph\n\n  key:\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            !out.contains("intro paragraph\n\n  key:"),
+            "bare `key:` with no value must still collapse; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_key_with_trailing_whitespace_only_still_collapses() {
+        // `key:   ` (colon followed by only whitespace) is the same as bare
+        // `key:` — there is no value, so the key:value guard must not fire
+        // (codex review: `(.+)` would otherwise match the trailing spaces).
+        use crate::types::TightenListContinuationsMode;
+        let input = "- intro paragraph\n\n  key:   \n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            !out.contains("intro paragraph\n\n  key:"),
+            "`key:` with trailing-whitespace-only value must still collapse; output:\n{out}"
+        );
+    }
+
+    #[test]
+    fn tighten_heuristic_true_prose_continuation_still_collapses() {
+        // A soft-wrapped lowercase sentence without key:value shape must still
+        // collapse — the key:value guard must not over-fire.
+        use crate::types::TightenListContinuationsMode;
+        let input = "- first line of the item, which is long and continues\n\n  with more prose here.\n";
+        let out = format(input, &settings_with_tighten(TightenListContinuationsMode::Heuristic));
+        assert!(
+            !out.contains("continues\n\n  with more prose"),
+            "true prose continuation must still collapse; output:\n{out}"
+        );
+        assert!(
+            out.contains("with more prose here."),
+            "prose content must survive; output:\n{out}"
+        );
+    }
+
     // ── tighten-list-item-spacing (issue #90) tests ──
 
     #[test]
@@ -6270,4 +6746,206 @@ Capital continuation line.
             "dotted top-level key and nested a/b path must be preserved independently"
         );
     }
+
+    // ── issue #109 / #112: template-literal-aware JSX scanner + classifier ──
+    //
+    // These feed inputs the OLD naive scanners get wrong, so they prove the new
+    // behavior (a test that also passed against brace-counting / substring scans
+    // would not be testing the fix).
+
+    #[test]
+    fn self_closing_classifier_basic() {
+        // children empty + span ends with /> → self-closing.
+        assert!(is_self_closing_element("Demo", "<Demo a=\"b\" />", &[]));
+        // empty paired element: children empty but span ends with </Demo>.
+        assert!(!is_self_closing_element("Demo", "<Demo></Demo>", &[]));
+        // whitespace-only paired body.
+        assert!(!is_self_closing_element("Demo", "<Demo>\n</Demo>", &[]));
+        // fragment (name empty) whose </> ends with /> must NOT be self-closing.
+        assert!(!is_self_closing_element("", "<>\n  x\n</>", &[]));
+    }
+
+    #[test]
+    fn self_closing_classifier_ignores_inner_markup() {
+        // A genuinely self-closing element whose template-literal prop contains
+        // `>{` and `</code>` — the OLD substring logic mis-classified this as
+        // paired (the #109 root cause). Span ends with /> → self-closing.
+        let span = "<Demo\n  html={`<pre><code>{\"x\"}</code></pre>`}\n/>";
+        assert!(is_self_closing_element("Demo", span, &[]));
+    }
+
+    #[test]
+    fn opening_tag_end_ignores_gt_in_template_literal() {
+        // `>` inside the backtick template literal must not be read as the
+        // structural opening-tag close; the real `>` is on the line after.
+        let span = "<Container\n  label={`<a href=\"x\">link</a>`}\n>\n  Hello\n</Container>";
+        // Lines: 0:<Container 1:label=... 2:> 3:Hello 4:</Container>
+        assert_eq!(find_opening_tag_end_line(span), Some(2));
+    }
+
+    #[test]
+    fn opening_tag_end_ignores_gt_in_quoted_attr() {
+        // `>` inside a quoted attribute value (`alt="a > b"`) is inert.
+        let span = "<Img\n  alt=\"a > b\"\n>\n  child\n</Img>";
+        assert_eq!(find_opening_tag_end_line(span), Some(2));
+    }
+
+    #[test]
+    fn opening_tag_end_self_closing_is_last_line() {
+        let span = "<Demo\n  css={`.box { color: red; }\n  `}\n/>";
+        // Self-closing: the structural `>` is the one in `/>` on the last line.
+        assert_eq!(find_opening_tag_end_line(span), Some(3));
+    }
+
+    #[test]
+    fn scan_step_template_escaped_backtick_inert() {
+        // An escaped backtick \` inside a template literal does not close it,
+        // so a following `>` stays inert.
+        let mut state = ScanState::new();
+        for ch in "<X a={`\\`>".chars() {
+            state = scan_step(state, ch);
+        }
+        // Still inside the template literal (escaped backtick did not close it).
+        assert!(state.in_template_text());
+        assert!(!state.at_structure_level());
+    }
+
+    #[test]
+    fn scan_step_template_interpolation_tracks_braces() {
+        // `${...}` interpolation: braces inside it count; a `}` that belongs to
+        // the interpolation must not be mistaken for the template/expression end.
+        let mut state = ScanState::new();
+        // `a={` opens the JSX expression, backtick opens the template, `${`
+        // opens interpolation containing a brace-balanced object `{k:1}`. We
+        // stop right after that inner object closes (before the interpolation's
+        // own closing `}`).
+        for ch in "<X a={`${ {k:1} ".chars() {
+            state = scan_step(state, ch);
+        }
+        // Inside the `${...}` interpolation: not template text, not structure.
+        assert!(!state.at_structure_level());
+        assert!(!state.in_template_text());
+        // Closing the interpolation `}` returns us to raw template text.
+        state = scan_step(state, '}');
+        assert!(state.in_template_text());
+        assert!(!state.at_structure_level());
+        // Closing the template backtick and the JSX expression returns to top.
+        state = scan_step(state, '`');
+        state = scan_step(state, '}');
+        assert!(state.at_structure_level());
+    }
+
+    #[test]
+    fn extract_attr_identifier_boundary() {
+        // `html={` must not match the `html` inside `data-html={`.
+        let span = "<X\n  data-html={alpha}\n  html={beta}\n/>";
+        assert_eq!(
+            extract_attribute_expression("html", span),
+            Some("html={beta}".to_string())
+        );
+        assert_eq!(
+            extract_attribute_expression("data-html", span),
+            Some("data-html={alpha}".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_attr_multibyte_boundary_no_panic() {
+        // A `名` prop after a longer `data-名` prop: the first `名={` match is
+        // rejected by the boundary check, and the retry must advance on a UTF-8
+        // boundary (not `pos + 1`, which would split the 3-byte `名` and panic).
+        let span = "<X data-名={alpha} 名={beta} />";
+        assert_eq!(
+            extract_attribute_expression("名", span),
+            Some("名={beta}".to_string())
+        );
+        assert_eq!(
+            extract_attribute_expression("data-名", span),
+            Some("data-名={alpha}".to_string())
+        );
+    }
+
+    // ── converge_to_fixpoint unit tests (issue #114) ──
+    //
+    // These tests drive the helper directly with mock closures so the
+    // convergence/divergence behavior can be asserted independent of any
+    // real formatter rule.
+
+    /// A step that alternates A→B→A→... always diverges; the helper must return
+    /// `None` and leave the sink empty (no first-pass entries promised).
+    #[test]
+    fn converge_to_fixpoint_diverging_returns_none_and_empty_sink() {
+        let a = "version-A\n";
+        let b = "version-B\n";
+        let mut sink = VecSink::default();
+
+        // Step: A→B, B→A (oscillates forever).
+        let result = converge_to_fixpoint(a, 3, &mut sink, |s, _snk| {
+            if s == a {
+                b.to_string()
+            } else {
+                a.to_string()
+            }
+        });
+
+        assert!(
+            result.is_none(),
+            "diverging loop must return None; got: {:?}",
+            result
+        );
+        assert!(
+            sink.entries.is_empty(),
+            "sink must be empty on divergence; got {} entries",
+            sink.entries.len()
+        );
+    }
+
+    /// A step that changes once (A→B) then stabilizes (B→B) converges on the
+    /// second pass. The helper must return `Some(B)` and replay the first-pass
+    /// entry into the sink.
+    #[test]
+    fn converge_to_fixpoint_converges_second_pass_replays_sink() {
+        let a = "needs-formatting\n";
+        let b = "formatted\n";
+        let mut sink = VecSink::default();
+
+        let result = converge_to_fixpoint(a, 3, &mut sink, |s, snk| {
+            if s == a {
+                // First pass: emit a report entry and return the formatted form.
+                snk.emit(ReportEntry {
+                    rule: "test-rule",
+                    start_line: 0,
+                    end_line: 0,
+                    before: vec![a.trim().to_string()],
+                    after: vec![b.trim().to_string()],
+                });
+                b.to_string()
+            } else {
+                // Already stable — idempotent.
+                s.to_string()
+            }
+        });
+
+        assert_eq!(result, Some(b.to_string()), "converged result must equal B");
+        assert_eq!(
+            sink.entries.len(),
+            1,
+            "exactly one buffered entry must be replayed"
+        );
+        assert_eq!(sink.entries[0].rule, "test-rule");
+    }
+
+    /// A step that is already a fixpoint on the first pass (A→A) must return
+    /// `Some(A)` immediately without entering the loop body.
+    #[test]
+    fn converge_to_fixpoint_already_stable_returns_some() {
+        let a = "already-clean\n";
+        let mut sink = VecSink::default();
+
+        let result = converge_to_fixpoint(a, 3, &mut sink, |s, _snk| s.to_string());
+
+        assert_eq!(result, Some(a.to_string()));
+        assert!(sink.entries.is_empty(), "idempotent input emits no entries");
+    }
 }
+

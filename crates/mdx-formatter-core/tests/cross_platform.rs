@@ -44,6 +44,18 @@ fn settings_with_spacing_disabled() -> FormatterSettings {
     settings
 }
 
+/// The exact workaround config from issue #109: skip the affected component,
+/// disable HTML-block formatting and single-line JSX expansion. Pinned so the
+/// documented escape hatch keeps working after the real fix.
+fn settings_issue_109_workaround() -> FormatterSettings {
+    let mut settings = FormatterSettings::default();
+    settings.format_multi_line_jsx.ignore_components = vec!["Demo".to_string()];
+    settings.format_multi_line_jsx.preserve_template_literal_indent = true;
+    settings.format_html_blocks_in_mdx.enabled = false;
+    settings.expand_single_line_jsx.enabled = false;
+    settings
+}
+
 // ============================================================================
 // 1. Basic Markdown Formatting (from formatter.test.ts)
 // ============================================================================
@@ -317,6 +329,125 @@ fn jsx_self_closing_preserved() {
     let input = "<Youtube url=\"https://example.com\" />";
     let result = format(input, &default_settings());
     assert_eq!(result, input);
+}
+
+// ── issue #109 / #112: self-closing JSX with template-literal props ──
+//
+// A self-closing component whose multi-line template-literal prop contains
+// braces / markup was corrupted by --write (`/>` → `>`, prop block duplicated,
+// stray `</Name>` appended → invalid MDX). These pin the fix and its controls.
+
+/// (a) The exact #109 repro round-trips byte-identical under default settings.
+#[test]
+fn issue_109_full_repro_roundtrips() {
+    let input = "# Title\n\n<Demo\n  html={`    <div class=\"box\">\n      <pre><code>{\".box { color: red; }\"}</code></pre>\n    </div>`}\n  css={`    .box { color: red; }\n  `}\n/>\n\nDone.\n";
+    let result = format(input, &default_settings());
+    assert_eq!(result, input, "#109 repro must round-trip byte-identical");
+}
+
+/// (a') Same repro under the documented #109 workaround config must also be
+/// untouched (the escape hatch keeps working).
+#[test]
+fn issue_109_full_repro_roundtrips_with_workaround() {
+    let input = "# Title\n\n<Demo\n  html={`    <div class=\"box\">\n      <pre><code>{\".box { color: red; }\"}</code></pre>\n    </div>`}\n  css={`    .box { color: red; }\n  `}\n/>\n\nDone.\n";
+    let result = format(input, &settings_issue_109_workaround());
+    assert_eq!(result, input, "#109 workaround config must leave the file untouched");
+}
+
+/// (b) Minimal repro: self-closing component, template-literal prop with an
+/// inner expression, plus a trailing single-line attr. The template-literal
+/// prop forces multi-line; the LAST attr is single-line so `/>` collapses onto
+/// it (matches existing `preserve_jsx_multi_line` behavior). Must not corrupt.
+#[test]
+fn issue_109_minimal_repro_no_corruption() {
+    let input = "<Demo\n  html={`<span>{x}</span>`}\n  foo=\"bar\"\n/>\n";
+    let expected = "<Demo\n  html={`<span>{x}</span>`}\n  foo=\"bar\" />\n";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected);
+    // Idempotent on the formatted form.
+    let twice = format(&result, &default_settings());
+    assert_eq!(twice, result);
+}
+
+/// (c) Idempotency: format(format(x)) == format(x) for the full repro.
+#[test]
+fn issue_109_idempotent() {
+    let input = "# Title\n\n<Demo\n  html={`    <div class=\"box\">\n      <pre><code>{\".box { color: red; }\"}</code></pre>\n    </div>`}\n  css={`    .box { color: red; }\n  `}\n/>\n\nDone.\n";
+    let first = format(input, &default_settings());
+    let second = format(&first, &default_settings());
+    assert_eq!(first, second);
+}
+
+/// (d) Control cases that must NOT change behavior — no silent collapse of a
+/// paired element into self-closing.
+#[test]
+fn issue_109_control_paired_with_expression_child() {
+    // <Foo>{children}</Foo> — paired with an expression child, stays paired.
+    let input = "<Foo>{children}</Foo>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, input);
+}
+
+#[test]
+fn issue_109_control_empty_paired_not_collapsed() {
+    // <Demo></Demo> — empty paired element must NOT become <Demo />.
+    let input = "<Demo></Demo>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, input, "empty paired element must not collapse to self-closing");
+}
+
+#[test]
+fn issue_109_control_whitespace_only_paired_not_collapsed() {
+    // <Demo>\n</Demo> — whitespace-only body stays paired.
+    let input = "<Demo>\n</Demo>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, input, "whitespace-only paired element must stay paired");
+}
+
+/// (e) Works-today control: self-closing component with a multi-line
+/// template-literal prop containing NO inner braces. Round-trips unchanged;
+/// pinned so the scanners cannot widen their match and regress it.
+#[test]
+fn issue_109_control_brace_free_template_literal() {
+    let input = "<Demo\n  css={`    .box { color: red; }\n  `}\n/>\n";
+    // The css template literal DOES contain braces in its CSS text, but no JSX
+    // expression braces; this shape formats fine today and must stay identical.
+    let result = format(input, &default_settings());
+    assert_eq!(result, input);
+}
+
+#[test]
+fn issue_109_control_brace_free_template_literal_truly_no_braces() {
+    let input = "<Demo\n  css={`    plain css text no braces\n  `}\n/>\n";
+    let result = format(input, &default_settings());
+    assert_eq!(result, input);
+}
+
+/// Item-2 discriminator: a PAIRED element whose template-literal prop embeds a
+/// `>` (here HTML markup). The old children-scanner matched that `>` and slurped
+/// attribute lines as bogus children, corrupting the file. The
+/// template-literal-aware opening-tag scan fixes it.
+#[test]
+fn issue_109_paired_with_gt_in_template_prop() {
+    let input = "<Container\n  label={`<a href=\"x\">link</a>`}\n>\n  Hello\n</Container>";
+    let result = format(input, &default_settings());
+    assert_eq!(result, input, "`>` inside a template-literal prop must not be read as the opening-tag close");
+    let twice = format(&result, &default_settings());
+    assert_eq!(twice, result);
+}
+
+/// Guard against widening the `/>`-on-own-line rule: a self-closing element
+/// whose LAST attribute is a multi-line ARRAY/OBJECT (not a template literal)
+/// must keep collapsing `]} />` — the established behavior. Only multi-line
+/// template-literal last attributes get `/>` on their own line (issue #109).
+#[test]
+fn self_closing_multiline_array_attr_collapses_slash_gt() {
+    let input = "<Chart\n  data={[\n    1,\n    2,\n  ]}\n/>\n";
+    let expected = "<Chart\n  data={[\n    1,\n    2,\n  ]} />\n";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected, "multi-line array last attr must collapse the closer, not split it onto its own line");
+    let twice = format(&result, &default_settings());
+    assert_eq!(twice, result);
 }
 
 #[test]

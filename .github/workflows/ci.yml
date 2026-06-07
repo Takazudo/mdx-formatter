@@ -29,6 +29,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:rust
+      - run: cargo test
+        if: matrix.node-version == 20
       - run: pnpm prettier --check .
       - run: pnpm lint
       - run: pnpm build
