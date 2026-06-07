@@ -182,7 +182,13 @@ For a `stable` promotion, analyze ALL commits since the last **stable** tag (ski
 pnpm build:rust && pnpm build && pnpm test
 ```
 
-`pnpm build:rust` refreshes `crates/mdx-formatter-napi/mdx-formatter-napi.node` so the tests exercise the current Rust code, not a stale local binary. If anything fails, stop — nothing has been committed yet, so `git checkout -- . ` (plus deleting the new changelog file) resets cleanly.
+`pnpm build:rust` refreshes `crates/mdx-formatter-napi/mdx-formatter-napi.node` so the tests exercise the current Rust code, not a stale local binary. If anything fails, stop — nothing has been committed yet, so a full reset is:
+
+```bash
+git checkout -- . && git clean -f doc/src/content/docs/changelog/
+```
+
+(`git clean` removes the untracked changelog mdx written in Step 4d.)
 
 ## Step 6: Atomic Commit + Push
 
