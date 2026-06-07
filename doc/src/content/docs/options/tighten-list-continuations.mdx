@@ -11,7 +11,7 @@ Collapse the blank line between two adjacent paragraph children of a list item w
 | Value           | Default | Behavior                                                                                                                                                                                          |
 | --------------- | :-----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `"off"`         |         | Never collapse. Output is byte-identical to the input for this rule.                                                                                                                              |
-| `"heuristic"`   |    ✓    | Collapse only when (a) the item's children are paragraphs only, (b) they are separated by exactly one blank line at continuation indent, and (c) the second paragraph starts with a continuation signal (lowercase letter, backtick, `(`, `[`, `"`, `'`, `,`, en-dash, em-dash). |
+| `"heuristic"`   |    ✓    | Collapse only when (a) the item's children are paragraphs only, (b) they are separated by exactly one blank line at continuation indent, and (c) the second paragraph starts with a continuation signal (lowercase letter, backtick, `(`, `[`, `"`, `'`, `,`, en-dash, em-dash) — **except** when the second paragraph's first line matches the shape `key: value` (an identifier followed by a colon, required whitespace, and a non-empty value), in which case the blank line is always preserved regardless of signal (c). |
 | `"aggressive"`  |         | Drop trigger (c); collapse any paragraphs-only list item whose paragraphs are separated by exactly one blank line.                                                                                |
 
 ## Config
@@ -44,6 +44,48 @@ After (`"heuristic"` — default):
 ````
 
 The second paragraph starts with `` ` `` (inline code), which is a heuristic continuation signal — the blank gap is collapsed.
+
+### Key:value metadata paragraph is preserved
+
+A continuation paragraph whose first line matches the shape `identifier: value` is treated as metadata and is **always preserved** in `"heuristic"` mode, even though it starts with a lowercase letter.
+
+Before:
+
+````markdown
+- [ ] Fix critical crash #dev
+
+  priority: urgent
+  App crashes on launch for iOS 17 users.
+- [ ] Security patch #dev
+
+  priority: high
+  Update authentication tokens before expiry.
+````
+
+After (`"heuristic"` — default):
+
+````markdown
+- [ ] Fix critical crash #dev
+
+  priority: urgent
+  App crashes on launch for iOS 17 users.
+- [ ] Security patch #dev
+
+  priority: high
+  Update authentication tokens before expiry.
+````
+
+Output is byte-identical — the blank line before `priority: urgent` and `priority: high` is kept because those paragraphs start with a `key: value`-shaped line.
+
+In `"aggressive"` mode the blank gaps collapse regardless of the key:value shape.
+
+#### Tradeoffs and scope
+
+The key:value guard matches any line of the form `word: non-empty-value`, so it preserves some prose lines that happen to share that shape:
+
+- `Note: see below` — preserved (deliberate tradeoff; this shape is rare enough and the false-preserve is harmless).
+- `key:` with an empty value — **not** matched; the blank line is still collapsed (requires non-empty value after the colon).
+- `https://example.com` — **not** matched; the colon is immediately followed by `//` with no space, so the required-whitespace rule excludes URLs.
 
 ### Capital-initial continuation is left alone
 
