@@ -179,6 +179,16 @@ pub fn try_format(content: &str, settings: &FormatterSettings) -> Result<String,
 /// Like `try_format`, but also emits structured change descriptions through
 /// `sink`. Only the first convergence pass emits; subsequent passes use a
 /// local `NullSink`.
+///
+/// # Divergence contract
+///
+/// If the convergence loop exhausts `MAX_ITERATIONS` without the output
+/// stabilizing (output ≠ previous), this function **returns the original
+/// input unchanged** (fail-safe: an unformatted file is strictly better than
+/// a corrupted one). The caller-supplied `sink` is left empty on divergence —
+/// its first-pass entries are buffered internally and are only replayed when
+/// convergence is confirmed, so the report never promises changes that won't
+/// be applied.
 pub fn try_format_with_sink(
     content: &str,
     settings: &FormatterSettings,
@@ -190,31 +200,98 @@ pub fn try_format_with_sink(
     Ok(run_convergence_loop(content, settings, sink))
 }
 
+/// Run the formatting convergence loop, returning the original content if the
+/// output does not stabilize within `MAX_ITERATIONS`.
+///
+/// Delegates to `converge_to_fixpoint` so the sink-buffer/replay and the
+/// fail-safe branch live in one testable place.
 fn run_convergence_loop(
     content: &str,
     settings: &FormatterSettings,
     sink: &mut dyn ReportSink,
 ) -> String {
-    let mut result = content.to_string();
     const MAX_ITERATIONS: usize = 3;
 
-    // First pass emits through the caller's sink. Subsequent passes use a
-    // throw-away NullSink so the report stays anchored to the ORIGINAL input.
-    let first = format_once(&result, settings, sink);
-    if first == result {
-        return result;
-    }
-    result = first;
+    let step = |s: &str, snk: &mut dyn ReportSink| format_once(s, settings, snk);
 
-    let mut null = NullSink;
-    for _ in 1..MAX_ITERATIONS {
-        let formatted = format_once(&result, settings, &mut null);
-        if formatted == result {
-            break;
+    match converge_to_fixpoint(content, MAX_ITERATIONS, sink, step) {
+        Some(fixed) => fixed,
+        None => {
+            // The loop exhausted MAX_ITERATIONS without output == previous.
+            // Fail-safe: return the original input unchanged so we never emit
+            // corrupted content. A future formatting bug may diverge; returning
+            // the original is strictly safer than the last-iteration output.
+            //
+            // (Historical note: before the JSX fix in #112 the #109 repro
+            // triggered this path — template-literal props caused triplication.
+            // The fix in #112 resolved that specific case; this guard handles
+            // any future divergence.)
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "mdx-formatter [debug]: convergence fail-safe triggered after {} iterations; \
+                 returning original input unchanged",
+                MAX_ITERATIONS
+            );
+            content.to_string()
         }
-        result = formatted;
     }
-    result
+}
+
+/// Drive a formatting `step` closure until the output stabilizes, up to
+/// `max_iterations` total passes.
+///
+/// The first pass emits into a local `VecSink` buffer; subsequent passes use a
+/// `NullSink`. If convergence is reached (any pass produces `output == previous`),
+/// the buffered first-pass entries are replayed into `sink` and `Some(fixpoint)`
+/// is returned. If the loop exhausts `max_iterations` without stabilizing,
+/// `sink` is left empty (the first-pass entries are discarded) and `None` is
+/// returned — the caller should return the original input unchanged.
+///
+/// This design ensures the sink never promises changes that will not be applied.
+pub(crate) fn converge_to_fixpoint<F>(
+    content: &str,
+    max_iterations: usize,
+    sink: &mut dyn ReportSink,
+    mut step: F,
+) -> Option<String>
+where
+    F: FnMut(&str, &mut dyn ReportSink) -> String,
+{
+    let original = content;
+    let mut current = content.to_string();
+
+    // First pass: buffer entries rather than emitting directly, so we can
+    // discard them on divergence.
+    let mut buf = VecSink::default();
+    let first = step(&current, &mut buf as &mut dyn ReportSink);
+
+    // Fast path: already a fixpoint after the first pass.
+    if first == current {
+        for entry in buf.entries {
+            sink.emit(entry);
+        }
+        return Some(current);
+    }
+    current = first;
+
+    // Remaining passes use NullSink — report stays anchored to the ORIGINAL.
+    let mut null = NullSink;
+    for _ in 1..max_iterations {
+        let next = step(&current, &mut null as &mut dyn ReportSink);
+        if next == current {
+            // Converged. Replay the first-pass entries now that we know the
+            // changes will actually be applied.
+            for entry in buf.entries {
+                sink.emit(entry);
+            }
+            return Some(current);
+        }
+        current = next;
+    }
+
+    // Loop exhausted without fixpoint.
+    let _ = original; // retain borrow for clarity; actual return is from caller
+    None
 }
 
 /// Single formatting pass: parse AST, collect operations, apply them.
@@ -6770,6 +6847,89 @@ Capital continuation line.
             extract_attribute_expression("data-名", span),
             Some("data-名={alpha}".to_string())
         );
+    }
+
+    // ── converge_to_fixpoint unit tests (issue #114) ──
+    //
+    // These tests drive the helper directly with mock closures so the
+    // convergence/divergence behavior can be asserted independent of any
+    // real formatter rule.
+
+    /// A step that alternates A→B→A→... always diverges; the helper must return
+    /// `None` and leave the sink empty (no first-pass entries promised).
+    #[test]
+    fn converge_to_fixpoint_diverging_returns_none_and_empty_sink() {
+        let a = "version-A\n";
+        let b = "version-B\n";
+        let mut sink = VecSink::default();
+
+        // Step: A→B, B→A (oscillates forever).
+        let result = converge_to_fixpoint(a, 3, &mut sink, |s, _snk| {
+            if s == a {
+                b.to_string()
+            } else {
+                a.to_string()
+            }
+        });
+
+        assert!(
+            result.is_none(),
+            "diverging loop must return None; got: {:?}",
+            result
+        );
+        assert!(
+            sink.entries.is_empty(),
+            "sink must be empty on divergence; got {} entries",
+            sink.entries.len()
+        );
+    }
+
+    /// A step that changes once (A→B) then stabilizes (B→B) converges on the
+    /// second pass. The helper must return `Some(B)` and replay the first-pass
+    /// entry into the sink.
+    #[test]
+    fn converge_to_fixpoint_converges_second_pass_replays_sink() {
+        let a = "needs-formatting\n";
+        let b = "formatted\n";
+        let mut sink = VecSink::default();
+
+        let result = converge_to_fixpoint(a, 3, &mut sink, |s, snk| {
+            if s == a {
+                // First pass: emit a report entry and return the formatted form.
+                snk.emit(ReportEntry {
+                    rule: "test-rule",
+                    start_line: 0,
+                    end_line: 0,
+                    before: vec![a.trim().to_string()],
+                    after: vec![b.trim().to_string()],
+                });
+                b.to_string()
+            } else {
+                // Already stable — idempotent.
+                s.to_string()
+            }
+        });
+
+        assert_eq!(result, Some(b.to_string()), "converged result must equal B");
+        assert_eq!(
+            sink.entries.len(),
+            1,
+            "exactly one buffered entry must be replayed"
+        );
+        assert_eq!(sink.entries[0].rule, "test-rule");
+    }
+
+    /// A step that is already a fixpoint on the first pass (A→A) must return
+    /// `Some(A)` immediately without entering the loop body.
+    #[test]
+    fn converge_to_fixpoint_already_stable_returns_some() {
+        let a = "already-clean\n";
+        let mut sink = VecSink::default();
+
+        let result = converge_to_fixpoint(a, 3, &mut sink, |s, _snk| s.to_string());
+
+        assert_eq!(result, Some(a.to_string()));
+        assert!(sink.entries.is_empty(), "idempotent input emits no entries");
     }
 }
 

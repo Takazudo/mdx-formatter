@@ -7,6 +7,14 @@
 //!   (b) a file with no normalizations produces an empty report and
 //!       exits 0;
 //!   (c) the report goes to stderr and nothing lands on stdout.
+//!
+//! Covers the divergence fail-safe acceptance criteria from issue #114:
+//!   (d) sink-honesty: the formatter never promises changes it will not apply.
+//!       Tested at unit level in `formatter.rs` via `converge_to_fixpoint`.
+//!       At CLI level we verify the corollary: an already-formatted file
+//!       produces 0 dry-run entries (no first-pass ghost entries leaking out).
+//!       A truly diverging input is not constructible post-#112 on real MDX,
+//!       but the unit tests cover the divergence path directly with a mock step.
 
 use std::env;
 use std::io::Write;
@@ -178,6 +186,46 @@ fn dry_run_conflicts_with_check() {
         .output()
         .expect("run mdx-formatter");
     assert!(!out.status.success(), "--dry-run + --check must error");
+}
+
+/// Issue #114 — Sink-honesty corollary at the CLI level.
+///
+/// When `try_format_with_sink` returns the original content (because the
+/// input is already at a fixpoint OR because the convergence fail-safe kicked
+/// in), the `--dry-run` report must be empty.
+///
+/// We verify the fixpoint case here: a file that is already properly formatted
+/// must produce 0 dry-run entries. This ensures no "ghost" first-pass entries
+/// leak from a speculative pass that the fail-safe would later discard.
+#[test]
+fn dry_run_already_formatted_file_produces_no_entries() {
+    let dir = tmpdir();
+    let file = dir.join("idempotent.md");
+    // This content is already at a fixpoint — no rules should fire.
+    write_file(&file, FIXTURE_CLEAN);
+
+    let out = Command::new(cli_bin())
+        .arg("--dry-run")
+        .arg(&file)
+        .output()
+        .expect("run mdx-formatter");
+
+    assert!(out.status.success(), "--dry-run must exit 0");
+    assert!(out.stdout.is_empty(), "stdout must be empty");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // No rule entries must appear — no first-pass entries leaked from a
+    // speculative pass that the fail-safe would have discarded.
+    assert!(
+        !stderr.contains('['),
+        "no rule entries should appear for an already-formatted file; got:\n{}",
+        stderr
+    );
+    assert!(
+        stderr.contains("0 entries across 0 files"),
+        "empty summary expected; got:\n{}",
+        stderr
+    );
 }
 
 #[test]
