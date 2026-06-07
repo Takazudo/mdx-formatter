@@ -108,6 +108,22 @@ jobs:
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+
+      # Diagnostic probe: a 404-on-PUT when publishing an existing scoped
+      # package is npm's mask for a 403 authorization rejection. This step
+      # prints exactly what the token can do so an auth/permission failure
+      # surfaces clearly here instead of as an opaque E404 at publish time.
+      - name: Diagnose npm auth
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "=== npm whoami (who the token authenticates as) ==="
+          npm whoami || echo "::warning::npm whoami FAILED — token not recognized (invalid/expired)"
+          echo "=== npm access list packages (packages this token may WRITE) ==="
+          npm access list packages 2>&1 | grep -i "mdx-formatter" || echo "::warning::no mdx-formatter packages in this token's writable list"
+          echo "=== 2FA mode on the publishing account ==="
+          npm profile get "two-factor auth" 2>&1 || echo "profile get failed (token may lack profile scope)"
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
