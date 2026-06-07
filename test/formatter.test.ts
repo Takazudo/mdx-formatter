@@ -1174,5 +1174,20 @@ This paragraph follows an image.
       });
       expect(result).toBe(input);
     });
+
+    // ── Regression: issue #107 — key:value second paragraphs preserved ────────
+    //
+    // The tighten-list-continuations heuristic previously collapsed the blank
+    // line between a list-item title paragraph and a following `key: value`
+    // metadata paragraph (e.g. `priority: urgent`). The fix adds a negative
+    // guard in heuristic mode that recognises `key: value` shape and skips
+    // the blank-line-delete op. Aggressive mode still collapses.
+    it('regression #107: key:value second paragraph round-trips under default (heuristic) settings', async () => {
+      const input = await readFixture('regression-key-value-continuation.md');
+      const expected = await readFixture('regression-key-value-continuation.expected.md');
+      // Default settings fire tighten=heuristic; the expected file is byte-identical to input.
+      const result = await format(input);
+      expect(result).toBe(expected);
+    });
   });
 });

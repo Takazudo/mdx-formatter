@@ -90,6 +90,29 @@ describe('dryRunReport library API', () => {
       expect(formatted).toBe(FIXTURE_WITH_CHANGES);
     }
   });
+
+  // Regression #107: key:value second paragraphs must NOT trigger tighten-list-continuations.
+  // The fix adds a negative guard in heuristic mode that recognises `key: value`
+  // shape and skips the blank-line-delete op.
+  it('regression #107: key:value continuation paragraphs produce no tighten-list-continuations op', () => {
+    // The exact #107 repro: list items with key: value second paragraphs.
+    const input = `- [ ] Fix critical crash #dev
+
+  priority: urgent
+  App crashes on launch for iOS 17 users.
+- [ ] Security patch #dev
+
+  priority: high
+  Update authentication tokens before expiry.
+`;
+
+    const entries = dryRunReport(input);
+    const tightenEntries = entries.filter((e) => e.rule === 'tighten-list-continuations');
+    expect(
+      tightenEntries,
+      'tighten-list-continuations must NOT fire for key:value continuation paragraphs',
+    ).toHaveLength(0);
+  });
 });
 
 describe('CLI --dry-run flag', () => {
