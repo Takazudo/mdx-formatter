@@ -1630,4 +1630,45 @@ Some text
       expect((result.match(/<\/InfoBox>/g) || []).length).toBe(1);
     });
   });
+
+  // Regression #109: self-closing JSX with multi-line template-literal props
+  // containing inner braces must round-trip byte-identical under DEFAULT settings.
+  // (Previously />  became >, prop block was duplicated 3×, stray </Demo> appended.)
+  describe('Regression #109: self-closing JSX with template-literal braces (issue #109)', () => {
+    it('should round-trip unchanged: self-closing with template literal containing inner braces', async () => {
+      const input = `# Title
+
+<Demo
+  html={\`    <div class="box">
+      <pre><code>{".box { color: red; }"}</code></pre>
+    </div>\`}
+  css={\`    .box { color: red; }
+  \`}
+/>
+
+Done.`;
+
+      // format() with NO settings arg → default settings (never ignoreComponents)
+      const result = await format(input);
+      expect(result).toBe(input);
+    });
+
+    it('should be idempotent: format(format(x)) === format(x) for template-literal-braces input', async () => {
+      const input = `# Title
+
+<Demo
+  html={\`    <div class="box">
+      <pre><code>{".box { color: red; }"}</code></pre>
+    </div>\`}
+  css={\`    .box { color: red; }
+  \`}
+/>
+
+Done.`;
+
+      const once = await format(input);
+      const twice = await format(once);
+      expect(twice).toBe(once);
+    });
+  });
 });

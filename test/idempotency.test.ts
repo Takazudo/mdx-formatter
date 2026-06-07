@@ -111,4 +111,28 @@ describe('Idempotency — single-pass convergence', () => {
     const pass2 = await format(pass1, { settings: settingsWithBlockComponents });
     expect(pass2).toBe(pass1);
   });
+
+  // Regression #109: self-closing JSX with template-literal braces — idempotency
+  // (format is already tested in mdx-formatter.test.ts; this pins convergence here
+  // as well since both test files gate CI).
+  it('regression #109: self-closing JSX template-literal braces must be idempotent', async () => {
+    const input = `# Title
+
+<Demo
+  html={\`    <div class="box">
+      <pre><code>{".box { color: red; }"}</code></pre>
+    </div>\`}
+  css={\`    .box { color: red; }
+  \`}
+/>
+
+Done.`;
+
+    // Default settings — no ignoreComponents
+    const pass1 = await format(input);
+    const pass2 = await format(pass1);
+    expect(pass2).toBe(pass1);
+    // The fix makes the input stable: first pass must already equal input
+    expect(pass1).toBe(input);
+  });
 });

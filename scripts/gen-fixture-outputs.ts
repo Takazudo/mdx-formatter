@@ -43,6 +43,8 @@ const expectedProfiles: Record<string, Profile> = {
   'recover-escaped-paragraphs.md': {
     'recover-escaped-paragraphs-in-lists': 'heuristic',
   },
+  // #107 regression: key:value second paragraphs must be preserved under default (heuristic) settings
+  'regression-key-value-continuation.md': {},
 };
 
 async function main(): Promise<void> {
