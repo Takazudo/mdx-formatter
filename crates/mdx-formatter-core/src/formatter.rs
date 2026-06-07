@@ -724,7 +724,11 @@ fn extract_attribute_expression(attr_name: &str, original_text: &str) -> Option<
                     if attr_name_on_boundary(line, pos) {
                         break pos;
                     }
-                    search_from = pos + 1;
+                    // Advance past the matched char on a UTF-8 boundary (a bare
+                    // `pos + 1` could split a multibyte identifier char and
+                    // panic on the next slice — e.g. a `名` prop after `data-名`).
+                    let advance = line[pos..].chars().next().map_or(1, |c| c.len_utf8());
+                    search_from = pos + advance;
                 }
                 None => break usize::MAX,
             }
@@ -6588,6 +6592,22 @@ Capital continuation line.
         assert_eq!(
             extract_attribute_expression("data-html", span),
             Some("data-html={alpha}".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_attr_multibyte_boundary_no_panic() {
+        // A `名` prop after a longer `data-名` prop: the first `名={` match is
+        // rejected by the boundary check, and the retry must advance on a UTF-8
+        // boundary (not `pos + 1`, which would split the 3-byte `名` and panic).
+        let span = "<X data-名={alpha} 名={beta} />";
+        assert_eq!(
+            extract_attribute_expression("名", span),
+            Some("名={beta}".to_string())
+        );
+        assert_eq!(
+            extract_attribute_expression("data-名", span),
+            Some("data-名={alpha}".to_string())
         );
     }
 }
