@@ -8,6 +8,15 @@ Dated release entries mirror the per-version pages under
 
 ## [Unreleased]
 
+### Changed
+
+- **`tighten-list-continuations` heuristic: key:value paragraphs are now preserved** (issue #107) — this is a behavior change for all `"heuristic"` mode users. Any continuation paragraph whose first line matches the shape `identifier: value` (a word-character identifier followed by a colon, required whitespace, and a non-empty value) is no longer collapsed, even when it starts with a lowercase letter that would otherwise trigger the continuation signal. Example: a `priority: urgent` metadata paragraph following a task-list item now keeps its blank-line separator. Prose lines that share this shape — such as `Note: see below` — are preserved as a deliberate tradeoff. Bare `key:` (empty value) and URLs (`https://...`) do not match and continue to collapse. `"aggressive"` mode behavior is unchanged.
+
+### Fixed
+
+- **JSX self-closing corruption with template-literal props** (issue #109) — a self-closing MDX component whose attributes include a multi-line template-literal prop containing inner braces (e.g. `html={\`...<code>{x}</code>...\`}`) was corrupted on `--write`: the `/>` was replaced with `>`, the prop block was duplicated, and a stray closing tag was appended. Root cause: the line-based `/>` / `>{` scanner inside `format_jsx_element` matched brace characters inside the template-literal string, mis-classifying the element as paired. Fixed by reading self-closing status directly from the AST node's source span rather than substring-scanning the reconstructed text. (No option semantics changed.)
+- **Convergence divergence fail-safe** (issue #114) — when `run_convergence_loop` exhausted its iteration cap without reaching a fixpoint, it previously emitted the last (still-changing) iteration's output, which could corrupt files or cause `--check` and `--write` to disagree. The loop now returns the original input unchanged when it does not converge, so a formatter pass can never make a file worse than leaving it unformatted.
+
 ## [1.2.1] — 2026-04-23
 
 ### Fixed
