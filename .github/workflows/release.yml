@@ -1,0 +1,203 @@
+# release.yml (formerly napi.yml)
+#
+# Full npm release pipeline, triggered by pushing a v* tag (normally done by
+# the /l-make-release skill) or manually via workflow_dispatch for recovery
+# re-runs after a partial failure.
+#
+# 1. Cross-compiles the napi binary for 4 platforms.
+# 2. Publishes the 4 platform packages (npm/*) with npm publish.
+# 3. Publishes the root @takazudo/mdx-formatter package with pnpm publish
+#    (rewrites the pinned workspace:X.Y.Z optionalDependencies to exact
+#    versions in the packed tarball). prepublishOnly (tsc && vitest run)
+#    executes against the linux-x64 artifact copied into crates/, so the
+#    tests exercise the exact binary being shipped.
+#
+# Dist-tag policy: versions containing "-next." publish under --tag next
+# (all 5 packages); everything else publishes under latest.
+#
+# Idempotency: every publish is guarded by an npm-registry existence check
+# (skip when the exact version is already live, re-check after a failed
+# publish to tolerate races), so re-running this workflow after a partial
+# failure only publishes what is still missing.
+#
+# IMPORTANT: NPM_TOKEN must be an Automation-type (or granular) token with
+# publish access to the root package AND the four platform packages. npm
+# requires 2FA for publish otherwise, which cannot be satisfied in CI.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            build: |
+              cargo build -p mdx-formatter-napi --release --target aarch64-apple-darwin
+              mv target/aarch64-apple-darwin/release/libmdx_formatter_napi.dylib mdx-formatter-napi.darwin-arm64.node
+          - host: macos-latest
+            target: x86_64-apple-darwin
+            build: |
+              cargo build -p mdx-formatter-napi --release --target x86_64-apple-darwin
+              mv target/x86_64-apple-darwin/release/libmdx_formatter_napi.dylib mdx-formatter-napi.darwin-x64.node
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            build: |
+              cargo build -p mdx-formatter-napi --release --target x86_64-unknown-linux-gnu
+              mv target/x86_64-unknown-linux-gnu/release/libmdx_formatter_napi.so mdx-formatter-napi.linux-x64-gnu.node
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            build: |
+              cargo build -p mdx-formatter-napi --release --target x86_64-pc-windows-msvc
+              mv target/x86_64-pc-windows-msvc/release/mdx_formatter_napi.dll mdx-formatter-napi.win32-x64-msvc.node
+    runs-on: ${{ matrix.settings.host }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync platform package versions with root
+        shell: bash
+        run: node scripts/sync-napi-versions.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
+      - name: Build
+        shell: bash
+        run: ${{ matrix.settings.build }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: mdx-formatter-napi.*.node
+          if-no-files-found: error
+
+  publish:
+    # Invariant: platform package.json versions and the root's pinned
+    # workspace:X.Y.Z optionalDependencies are synced with the root version
+    # via scripts/sync-napi-versions.mjs before build and before publish, so
+    # each tag publishes all five packages at the tag's root version. On a
+    # properly tagged commit the sync is a no-op; on a mis-tagged commit it
+    # changes specifiers and the frozen-lockfile install below fails loud.
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync platform package versions with root
+        shell: bash
+        run: node scripts/sync-napi-versions.mjs
+      - uses: pnpm/action-setup@v4
+        with:
+          # Pinned exactly: publish behavior (workspace: specifier rewriting)
+          # must not drift with whatever the latest pnpm 10.x happens to be.
+          version: 10.34.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Determine version and dist-tag
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *-next.* ]]; then
+            DIST_TAG=next
+          else
+            DIST_TAG=latest
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dist_tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing v${VERSION} under dist-tag '${DIST_TAG}'"
+
+      - name: Copy binaries to platform packages
+        run: |
+          cp artifacts/bindings-aarch64-apple-darwin/mdx-formatter-napi.darwin-arm64.node npm/darwin-arm64/mdx-formatter-napi.node
+          cp artifacts/bindings-x86_64-apple-darwin/mdx-formatter-napi.darwin-x64.node npm/darwin-x64/mdx-formatter-napi.node
+          cp artifacts/bindings-x86_64-unknown-linux-gnu/mdx-formatter-napi.linux-x64-gnu.node npm/linux-x64-gnu/mdx-formatter-napi.node
+          cp artifacts/bindings-x86_64-pc-windows-msvc/mdx-formatter-napi.win32-x64-msvc.node npm/win32-x64-msvc/mdx-formatter-napi.node
+
+      - name: List artifacts
+        run: |
+          echo "=== Platform packages ==="
+          ls -lR npm/
+
+      # Strict ordering: all four platform packages must be live before the
+      # root package publishes, so a consumer can never resolve a root
+      # version whose exact-pinned binary packages are missing.
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          DIST_TAG="${{ steps.meta.outputs.dist_tag }}"
+          for dir in npm/darwin-arm64 npm/darwin-x64 npm/linux-x64-gnu npm/win32-x64-msvc; do
+            PKG=$(node -p "require('./$dir/package.json').name")
+            if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
+              echo "${PKG}@${VERSION} already published — skipping"
+              continue
+            fi
+            echo "Publishing ${PKG}@${VERSION} (--tag ${DIST_TAG})..."
+            if ! (cd "$dir" && npm publish --access public --tag "$DIST_TAG"); then
+              # Race tolerance: another run may have published it between the
+              # check and the publish. "Now exists" counts as success.
+              if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
+                echo "${PKG}@${VERSION} appeared during publish — treating as success"
+              else
+                echo "::error::Failed to publish ${PKG}@${VERSION}"
+                exit 1
+              fi
+            fi
+          done
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Place linux binary for prepublish tests
+        # src/rust-formatter.ts prefers crates/mdx-formatter-napi/mdx-formatter-napi.node,
+        # so prepublishOnly's vitest run exercises the exact artifact shipped
+        # in @takazudo/mdx-formatter-linux-x64-gnu.
+        run: cp artifacts/bindings-x86_64-unknown-linux-gnu/mdx-formatter-napi.linux-x64-gnu.node crates/mdx-formatter-napi/mdx-formatter-napi.node
+
+      - name: Publish root package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          DIST_TAG="${{ steps.meta.outputs.dist_tag }}"
+          PKG="@takazudo/mdx-formatter"
+          if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${PKG}@${VERSION} already published — skipping"
+            exit 0
+          fi
+          echo "Publishing ${PKG}@${VERSION} (--tag ${DIST_TAG})..."
+          # pnpm publish (NOT npm publish): rewrites the workspace:X.Y.Z
+          # optionalDependencies to exact versions in the packed tarball.
+          if ! pnpm publish --access public --tag "$DIST_TAG" --no-git-checks; then
+            if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
+              echo "${PKG}@${VERSION} appeared during publish — treating as success"
+            else
+              echo "::error::Failed to publish ${PKG}@${VERSION}"
+              exit 1
+            fi
+          fi
+
+      - name: Verify published versions
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          echo "=== dist-tags ==="
+          npm view @takazudo/mdx-formatter dist-tags
+          echo "=== published @ ${VERSION} ==="
+          for PKG in @takazudo/mdx-formatter @takazudo/mdx-formatter-darwin-arm64 @takazudo/mdx-formatter-darwin-x64 @takazudo/mdx-formatter-linux-x64-gnu @takazudo/mdx-formatter-win32-x64-msvc; do
+            npm view "${PKG}@${VERSION}" version
+          done
