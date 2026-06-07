@@ -436,6 +436,20 @@ fn issue_109_paired_with_gt_in_template_prop() {
     assert_eq!(twice, result);
 }
 
+/// Guard against widening the `/>`-on-own-line rule: a self-closing element
+/// whose LAST attribute is a multi-line ARRAY/OBJECT (not a template literal)
+/// must keep collapsing `]} />` — the established behavior. Only multi-line
+/// template-literal last attributes get `/>` on their own line (issue #109).
+#[test]
+fn self_closing_multiline_array_attr_collapses_slash_gt() {
+    let input = "<Chart\n  data={[\n    1,\n    2,\n  ]}\n/>\n";
+    let expected = "<Chart\n  data={[\n    1,\n    2,\n  ]} />\n";
+    let result = format(input, &default_settings());
+    assert_eq!(result, expected, "multi-line array last attr must collapse the closer, not split it onto its own line");
+    let twice = format(&result, &default_settings());
+    assert_eq!(twice, result);
+}
+
 #[test]
 fn mdx_import_preserved() {
     let input = "import { Component } from \"./component\";\n\n# Content";

@@ -1024,17 +1024,17 @@ fn format_jsx_element(
         // Multi-line format
         lines.push(format!("<{}", name));
 
-        // Track whether the LAST attribute rendered as multi-line (e.g. a
-        // multi-line template literal). When it does, a self-closing `/>` must
-        // go on its own line rather than collapsing onto the attribute's final
-        // line — collapsing would alter the byte-for-byte source of a template
-        // literal whose closing `\`}` sits on its own line (issue #109).
-        let mut last_attr_multi_line = false;
+        // Track whether the LAST attribute rendered as a multi-line TEMPLATE
+        // LITERAL. Only then must a self-closing `/>` go on its own line rather
+        // than collapsing onto the attribute's final line — collapsing would
+        // alter the byte-for-byte source of a template literal whose closing
+        // `\`}` sits on its own line (issue #109). Other multi-line attributes
+        // (e.g. arrays/objects) are actively reformatted, so their `]} />`
+        // collapse is the established, correct behavior and must NOT change.
+        let mut last_attr_multi_line_template = false;
 
         for attr in attributes {
             let attr_str = get_attribute_string(attr, original_text, preserve_template_literal);
-
-            last_attr_multi_line = attr_str.contains('\n');
 
             if attr_str.contains('\n') {
                 let attr_lines: Vec<&str> = attr_str.split('\n').collect();
@@ -1042,6 +1042,8 @@ fn format_jsx_element(
 
                 let is_template_literal =
                     preserve_template_literal && attr_lines[0].contains("={`");
+
+                last_attr_multi_line_template = is_template_literal;
 
                 for attr_line in &attr_lines[1..] {
                     if is_template_literal {
@@ -1054,12 +1056,15 @@ fn format_jsx_element(
                 }
             } else {
                 lines.push(format!("{}{}", indent, attr_str));
+                last_attr_multi_line_template = false;
             }
         }
 
-        // Close the opening tag
+        // Close the opening tag. A multi-line template-literal last attribute
+        // keeps `/>` on its own line (byte-preservation, #109); everything else
+        // collapses `/>` onto the final attribute line as before.
         if self_closing {
-            if last_attr_multi_line {
+            if last_attr_multi_line_template {
                 lines.push("/>".to_string());
             } else if let Some(last) = lines.last_mut() {
                 last.push_str(" />");
