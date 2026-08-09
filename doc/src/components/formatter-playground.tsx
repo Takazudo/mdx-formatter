@@ -1,4 +1,8 @@
-import { type ReactNode, useCallback, useState } from 'react';
+'use client';
+
+import type { ComponentChildren, JSX } from 'preact';
+import { useCallback, useState } from 'preact/hooks';
+import { DOC_BASE } from './formatter-playground-config';
 
 const SAMPLE_INPUT = `---
 title: Example Document
@@ -59,6 +63,7 @@ const defaultSettings: SettingsState = {
 };
 
 interface WasmModule {
+  default: (wasmUrl: string) => Promise<unknown>;
   format: (content: string, settingsJson: string | undefined) => string;
 }
 
@@ -67,15 +72,18 @@ let wasmPromise: Promise<WasmModule> | null = null;
 function loadWasm(): Promise<WasmModule> {
   if (wasmPromise) return wasmPromise;
   wasmPromise = (async () => {
-    // Import from public/wasm/ which is populated by build:wasm:doc.
-    // Uses BASE_URL for correct path resolution on the deployed site.
-    const wasmJsUrl = `${import.meta.env.BASE_URL}wasm/mdx_formatter_wasm.js`;
-    const mod = await import(/* @vite-ignore */ wasmJsUrl);
-    await mod.default(
-      `${import.meta.env.BASE_URL}wasm/mdx_formatter_wasm_bg.wasm`,
-    );
-    return mod as WasmModule;
-  })();
+    // Both files are copied into public/wasm by build:wasm:doc. Keep the
+    // deployment base explicit: unlike HTML URLs, runtime import()/fetch URLs
+    // are not passed through zfb's base-path rewriter.
+    const wasmJsUrl = `${DOC_BASE}wasm/mdx_formatter_wasm.js`;
+    const mod = (await import(/* @vite-ignore */ wasmJsUrl)) as WasmModule;
+    await mod.default(`${DOC_BASE}wasm/mdx_formatter_wasm_bg.wasm`);
+    return mod;
+  })().catch((error: unknown) => {
+    // Allow a later click to recover from a transient asset/network failure.
+    wasmPromise = null;
+    throw error;
+  });
   return wasmPromise;
 }
 
@@ -119,7 +127,7 @@ function SettingRow({
   label: string;
   enabled: boolean;
   onToggle: () => void;
-  children?: ReactNode;
+  children?: ComponentChildren;
 }) {
   return (
     <div className="flex flex-col gap-vsp-2xs">
@@ -130,10 +138,13 @@ function SettingRow({
           onChange={onToggle}
           className="accent-accent"
         />
-        <span className="text-caption font-mono text-fg">{label}</span>
+        <span className="break-all text-caption font-mono text-fg">{label}</span>
       </label>
       {children && (
-        <fieldset disabled={!enabled} className={`ml-5 flex items-center gap-hsp-xs ${!enabled ? 'opacity-40' : ''}`}>
+        <fieldset
+          disabled={!enabled}
+          className={`ml-5 flex min-w-0 flex-wrap items-center gap-hsp-xs ${!enabled ? 'opacity-40' : ''}`}
+        >
           {children}
         </fieldset>
       )}
@@ -141,7 +152,7 @@ function SettingRow({
   );
 }
 
-export default function FormatterPlayground(): ReactNode {
+export default function FormatterPlayground(): JSX.Element {
   const [input, setInput] = useState(SAMPLE_INPUT);
   const [output, setOutput] = useState('');
   const [isFormatting, setIsFormatting] = useState(false);
@@ -179,7 +190,7 @@ export default function FormatterPlayground(): ReactNode {
           onClick={() => setSettingsOpen((prev) => !prev)}
           aria-expanded={settingsOpen}
           aria-controls="pg-settings"
-          className="flex w-full items-center gap-hsp-xs p-hsp-md text-caption font-semibold text-muted hover:text-fg transition-colors"
+          className="flex w-full items-center gap-hsp-xs p-hsp-md text-caption font-semibold text-muted transition-colors hover:text-fg focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
         >
           <svg
             width="12"
@@ -220,9 +231,9 @@ export default function FormatterPlayground(): ReactNode {
                   min={1}
                   max={8}
                   value={settings.formatMultiLineJsx.indentSize}
-                  onChange={(e) =>
+                  onInput={(e) =>
                     updateSetting('formatMultiLineJsx', {
-                      indentSize: Math.max(1, Math.min(8, Number(e.target.value) || 2)),
+                      indentSize: Math.max(1, Math.min(8, Number(e.currentTarget.value) || 2)),
                     })
                   }
                   className="w-14 rounded border border-muted/30 bg-code-bg px-hsp-xs py-0.5 text-caption text-fg"
@@ -244,9 +255,9 @@ export default function FormatterPlayground(): ReactNode {
                   min={1}
                   max={10}
                   value={settings.expandSingleLineJsx.propsThreshold}
-                  onChange={(e) =>
+                  onInput={(e) =>
                     updateSetting('expandSingleLineJsx', {
-                      propsThreshold: Math.max(1, Math.min(10, Number(e.target.value) || 2)),
+                      propsThreshold: Math.max(1, Math.min(10, Number(e.currentTarget.value) || 2)),
                     })
                   }
                   className="w-14 rounded border border-muted/30 bg-code-bg px-hsp-xs py-0.5 text-caption text-fg"
@@ -299,9 +310,9 @@ export default function FormatterPlayground(): ReactNode {
                 <input
                   type="text"
                   value={settings.indentJsxContent.containerComponents}
-                  onChange={(e) =>
+                  onInput={(e) =>
                     updateSetting('indentJsxContent', {
-                      containerComponents: e.target.value,
+                      containerComponents: e.currentTarget.value,
                     })
                   }
                   placeholder="Comp1, Comp2"
@@ -322,9 +333,9 @@ export default function FormatterPlayground(): ReactNode {
                 <input
                   type="text"
                   value={settings.addEmptyLinesInBlockJsx.blockComponents}
-                  onChange={(e) =>
+                  onInput={(e) =>
                     updateSetting('addEmptyLinesInBlockJsx', {
-                      blockComponents: e.target.value,
+                      blockComponents: e.currentTarget.value,
                     })
                   }
                   placeholder="Comp1, Comp2"
@@ -345,8 +356,8 @@ export default function FormatterPlayground(): ReactNode {
           <textarea
             id="pg-input"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            spellCheck={false}
+            onInput={(e) => setInput(e.currentTarget.value)}
+            spellcheck={false}
             className={TEXTAREA_CLASS}
           />
         </div>
@@ -358,7 +369,7 @@ export default function FormatterPlayground(): ReactNode {
             id="pg-output"
             value={output}
             readOnly
-            spellCheck={false}
+            spellcheck={false}
             className={TEXTAREA_CLASS}
             placeholder="Click Format to see the result..."
           />
@@ -371,14 +382,20 @@ export default function FormatterPlayground(): ReactNode {
           type="button"
           onClick={handleFormat}
           disabled={isFormatting || !input.trim()}
-          className="rounded-lg bg-accent px-hsp-xl py-hsp-xs text-caption font-semibold text-bg transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-accent px-hsp-xl py-hsp-xs text-caption font-semibold text-bg transition-colors hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isFormatting ? 'Formatting...' : 'Format'}
         </button>
         {error && (
-          <span className="text-caption text-danger">{error}</span>
+          <span role="alert" className="min-w-0 break-words text-caption text-danger">
+            {error}
+          </span>
         )}
       </div>
     </div>
   );
 }
+
+// zfb derives the SSR marker from displayName before the function name. Pin it
+// so minification cannot desynchronise the marker from the island manifest.
+FormatterPlayground.displayName = 'FormatterPlayground';

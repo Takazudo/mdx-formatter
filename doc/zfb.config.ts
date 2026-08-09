@@ -1,11 +1,13 @@
 import { defineConfig } from "zfb/config";
 import { zudoDoc } from "@takazudo/zudo-doc/config";
+import { DOC_BASE } from "./src/components/formatter-playground-config";
 
 export default defineConfig(
   zudoDoc({
     siteName: "mdx-formatter",
     siteDescription: "AST-based markdown and MDX formatter",
-    base: "/pj/mdx-formatter/",
+    base: DOC_BASE,
+    chromeBindingsModule: "./src/chrome-bindings.tsx",
     siteUrl: "https://takazudomodular.com",
     githubUrl: "https://github.com/Takazudo/mdx-formatter",
     entryDocSlug: "overview",
