@@ -1,0 +1,3 @@
+/pj/mdx-formatter https://mdx-formatter.takazudomodular.com/ 301
+/pj/mdx-formatter/* https://mdx-formatter.takazudomodular.com/:splat 301
+/* https://mdx-formatter.takazudomodular.com/:splat 301

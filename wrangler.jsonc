@@ -1,18 +1,28 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "mdx-formatter",
+  "main": "./worker/index.js",
   "compatibility_date": "2026-08-01",
   "workers_dev": true,
   "preview_urls": true,
   "assets": {
     "directory": "./doc/dist",
+    "binding": "ASSETS",
     "not_found_handling": "404-page",
-    "run_worker_first": false,
+    "run_worker_first": ["/pj/mdx-formatter*"],
   },
   "routes": [
     {
       "pattern": "mdx-formatter.takazudomodular.com",
       "custom_domain": true,
     },
+    {
+      "pattern": "takazudomodular.com/pj/mdx-formatter*",
+      "zone_name": "takazudomodular.com",
+    },
   ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
 }
