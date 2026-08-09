@@ -2,8 +2,8 @@ import { defineConfig } from "zfb/config";
 import { zudoDoc } from "@takazudo/zudo-doc/config";
 import { DOC_BASE } from "./src/components/formatter-playground-config";
 
-export default defineConfig(
-  zudoDoc({
+export default defineConfig({
+  ...zudoDoc({
     siteName: "mdx-formatter",
     siteDescription: "AST-based markdown and MDX formatter",
     base: DOC_BASE,
@@ -90,6 +90,9 @@ export default defineConfig(
         label: "Playground",
         path: "/docs/playground",
         categoryMatch: "playground",
+        // The interactive playground is only available for the current WASM
+        // formatter, so archived-version navigation must stay on latest.
+        versioned: false,
       },
       {
         label: "Formatting",
@@ -115,6 +118,8 @@ export default defineConfig(
         label: "Claude",
         path: "/docs/claude",
         categoryMatch: "claude",
+        // Generated Claude resources describe the current repository only.
+        versioned: false,
       },
     ],
     headerRightItems: [
@@ -140,4 +145,6 @@ export default defineConfig(
       },
     ],
   }),
-);
+  // CI relocates all of dist/ into the configured base segment.
+  copyPublicWithBase: false,
+});

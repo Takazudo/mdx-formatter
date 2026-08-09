@@ -1,17 +1,6 @@
 {
   "extends": "@takazudo/zudo-doc/tsconfig.base.json",
   "include": ["src", "pages", "zfb.config.ts"],
-  "exclude": [
-    "src/components",
-    "src/config",
-    "src/content.config.ts",
-    "src/hooks",
-    "src/integrations",
-    "src/layouts",
-    "src/plugins",
-    "src/types",
-    "src/utils"
-  ],
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
