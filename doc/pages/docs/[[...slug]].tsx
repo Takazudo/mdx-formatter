@@ -4,16 +4,17 @@
 // REQUIRED because the injected DYNAMIC `/docs/[[...slug]]` route 404s in
 // `zfb dev` (real pre-existing gap in zfb's dev-mode dynamic-route rendering,
 // distinct from the `/`-injection gap zfb#1227; empirically confirmed on
-// #2653). This stub reconstructs the doc route from scratch using ONLY the
-// sanctioned package entrypoints — no `pages/lib`, no `@/config`:
+// #2653). This stub reconstructs the doc route from the sanctioned package
+// entrypoints plus one scanner-reachability project binding — no `pages/lib`,
+// no `@/config`:
 //   1. the `virtual:zudo-doc-route-context` virtual module (serializable
 //      settings/translations/tagVocabulary/colorSchemes payload),
 //   2. `@takazudo/zudo-doc/route-context` (`createRouteContext`),
 //   3. `@takazudo/zudo-doc/chrome` (`createChrome`), and
-//   4. `virtual:zudo-doc-chrome-bindings` (the host-callables channel).
-// The bindings import is unconditional: the routes plugin supplies an empty
-// object when `chromeBindingsModule` is unset, while configured projects get
-// their MDX/chrome bindings without editing this stub.
+//   4. the project's static `src/chrome-bindings` module.
+// This route intentionally replaces the generated virtual bindings import
+// with a static project import so zfb's island scanner can discover the
+// FormatterPlayground client component.
 // Makes `/docs/getting-started/` return 200 in BOTH `zfb dev` and `zfb build`
 // (see the "TM negative guard" case in route-injection-build.slow.test.ts for
 // the no-stub 404 proof this fixes).

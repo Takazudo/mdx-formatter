@@ -2,8 +2,7 @@
 
 import type { ComponentChildren, JSX } from 'preact';
 import { useCallback, useState } from 'preact/hooks';
-
-const DOC_BASE = '/pj/mdx-formatter/';
+import { DOC_BASE } from './formatter-playground-config';
 
 const SAMPLE_INPUT = `---
 title: Example Document

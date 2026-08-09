@@ -2,11 +2,10 @@
 /** @jsxImportSource preact */
 // Locked manifest (#2653 Decision 4, i18n addendum): the locale-prefixed
 // counterpart of pages/docs/[[...slug]].tsx — required for the same reason
-// (injected DYNAMIC routes 404 in `zfb dev`). Self-contained: only the
-// sanctioned package entrypoints — no `pages/lib`, no `@/config`. The
-// `virtual:zudo-doc-chrome-bindings` import is unconditional, just like the
-// default-locale stub: the routes plugin supplies `{}` when no host module is
-// configured. Mirrors
+// (injected DYNAMIC routes 404 in `zfb dev`). Self-contained apart from the
+// documented scanner-reachability project binding: no `pages/lib`, no
+// `@/config`. Like the default-locale stub, this route statically imports the
+// project bindings so zfb can discover FormatterPlayground. Mirrors
 // the package's own `routes/locale-docs-slug.tsx` shape, rebuilt from the
 // route-context payload instead of the package-internal `_context.js`.
 //
