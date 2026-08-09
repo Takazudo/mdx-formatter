@@ -74,6 +74,20 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      - name: Deploy legacy Pages redirects
+        run: |
+          WRANGLER_VERSION=$(node -p "require('./doc/package.json').devDependencies.wrangler")
+          npx "wrangler@${WRANGLER_VERSION}" pages deploy doc/legacy-pages \
+            --project-name=mdx-formatter \
+            --branch=main \
+            --commit-hash="${GITHUB_SHA}" \
+            --commit-message="Redirect legacy documentation URLs: ${GITHUB_SHA}"
+        env:
+          # Retaining the old pages.dev endpoint requires Pages: Edit in
+          # addition to the Workers and zone permissions used above.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
   notify:
     name: Deploy Notification
     needs: [build, deploy]
