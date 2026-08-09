@@ -23,8 +23,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build Astro site
-        uses: ./.github/actions/build-astro
+      - name: Build zfb documentation site
+        uses: ./.github/actions/build-zfb
         with:
           node-version: '22'
           working-directory: 'doc'
@@ -32,7 +32,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: astro-build-preview
+          name: zfb-build-preview
           path: doc/dist/
           include-hidden-files: true
           retention-days: 1
@@ -46,15 +46,14 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: astro-build-preview
+          name: zfb-build-preview
           path: dist-raw
 
       - name: Restructure build for base path
         run: |
           mkdir -p deploy-dir/pj/mdx-formatter
           cp -r dist-raw/* deploy-dir/pj/mdx-formatter/
-          # _redirects is already in the build output via public/_redirects
-          # but it ends up inside the base path — move it to root
+          # _redirects belongs at the deployment root, not inside the base path.
           if [ -f deploy-dir/pj/mdx-formatter/_redirects ]; then
             mv deploy-dir/pj/mdx-formatter/_redirects deploy-dir/_redirects
           fi

@@ -23,8 +23,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build Astro site
-        uses: ./.github/actions/build-astro
+      - name: Build zfb documentation site
+        uses: ./.github/actions/build-zfb
         with:
           node-version: '22'
           working-directory: 'doc'
@@ -32,7 +32,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: astro-build-production
+          name: zfb-build-production
           path: doc/dist/
           include-hidden-files: true
           retention-days: 1
@@ -46,7 +46,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: astro-build-production
+          name: zfb-build-production
           path: dist-raw
 
       - name: Restructure build for base path

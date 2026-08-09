@@ -1,5 +1,5 @@
-name: 'Build Astro Documentation Site'
-description: 'Setup environment and build the zudo-doc (Astro) documentation site'
+name: 'Build zfb Documentation Site'
+description: 'Set up the workspace and build the zudo-doc site with zfb'
 
 inputs:
   node-version:
@@ -7,7 +7,7 @@ inputs:
     required: false
     default: '22'
   working-directory:
-    description: 'Working directory containing the Astro project'
+    description: 'Working directory containing the zfb documentation project'
     required: false
     default: 'doc'
 
@@ -44,7 +44,12 @@ runs:
       run: pnpm build
       shell: bash
 
-    - name: Build Astro site
+    - name: Check zfb documentation site
+      run: pnpm check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - name: Build zfb documentation site
       run: pnpm build
       shell: bash
       working-directory: ${{ inputs.working-directory }}

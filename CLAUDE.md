@@ -10,7 +10,7 @@ AST-based markdown and MDX formatter powered by a Rust engine (via napi-rs). Pub
 - **Test framework**: vitest
 - **Linting**: ESLint (flat config) + Prettier + lefthook (pre-commit hooks)
 - **Build**: `tsc` (output to `dist/`)
-- **Doc site**: zudo-doc / Astro (workspace in `doc/`)
+- **Doc site**: zudo-doc 5.2.1 / zfb (workspace in `doc/`; Node.js >= 22)
 - **Rust implementation**: Production-ready Rust engine in `crates/` (markdown-rs + napi-rs + WASM)
 
 ## Commands
@@ -24,6 +24,10 @@ pnpm lint           # ESLint check
 pnpm lint:fix       # ESLint autofix
 pnpm check          # Prettier + ESLint check
 pnpm check:fix      # Prettier + ESLint autofix
+pnpm doc:start      # Run the zfb docs dev server (port 4321) plus doc-history (port 4322)
+pnpm --dir doc check # Run zfb's docs type/content checks
+pnpm --dir doc build # Build the static zfb docs site to doc/dist/
+pnpm --dir doc preview # Preview doc/dist/ with zfb
 ```
 
 ## Conventions
@@ -36,6 +40,7 @@ pnpm check:fix      # Prettier + ESLint autofix
 - **Unused vars**: Prefix with `_` (enforced by ESLint `argsIgnorePattern: '^_'`)
 - **Imports**: Always use `.js` extension in TypeScript imports (required for ESM with Node16 resolution)
 - **Console**: `no-console` is `warn` everywhere except `src/cli.ts` and `format-stdin.js`
+- **Docs**: zudo-doc owns the generated layout, chrome, routes, and default islands. Keep authored docs in `doc/src/content/`; add supported customization through zudo-doc's configuration and chrome bindings rather than altering generated framework internals.
 
 ## Package Publishing
 

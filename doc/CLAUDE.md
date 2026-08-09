@@ -1,6 +1,6 @@
 # My Docs
 
-Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) — a zfb-based documentation framework with MDX, Tailwind CSS v4, and Preact islands. This project is intentionally minimal: one config file (`zfb.config.ts`) plus markdown content — layout, chrome, and islands all ship from `@takazudo/zudo-doc` in `node_modules`.
+Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) 5.2.1 — a zfb-based documentation framework with MDX, Tailwind CSS v4, and Preact islands. This project is intentionally minimal: one config file (`zfb.config.ts`) plus markdown content — layout, chrome, and islands all ship from `@takazudo/zudo-doc` in `node_modules`. Node.js >= 22 is required.
 
 ## Tech Stack
 
@@ -17,9 +17,9 @@ Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) �
 - `pnpm dev:network` — same, but zfb binds `--host 0.0.0.0` for LAN access (`pnpm dev:zfb:network` individually); the doc-history server stays loopback-only and LAN clients reach it through zfb's `/doc-history/*` dev proxy
 - **Trusted networks only:** this also serves your git doc-history — including UNPUBLISHED local commits — to anyone on the LAN via the `/doc-history/*` proxy
 - `run-p` swallows trailing args, so other zfb flags don't forward through `pnpm dev` — pass them directly instead: `pnpm run dev:zfb -- <flags>`
-- `pnpm build` — static HTML export to `dist/`
-- `pnpm check` — TypeScript type checking
-- `pnpm preview` — serve the built `dist/`
+- `pnpm build` — runs `zfb build` for a static HTML export to `dist/`
+- `pnpm check` — runs `zfb check` for type and content checking
+- `pnpm preview` — runs `zfb preview` to serve the built `dist/`
 
 ## Key Directories
 
