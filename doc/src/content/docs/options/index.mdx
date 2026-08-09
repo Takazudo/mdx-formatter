@@ -5,7 +5,7 @@ sidebar_position: 1
 sidebar_label: Options
 ---
 
-Every option can be set via [config file](/docs/overview/configuration) or programmatic API. Each rule has an `enabled` flag that can be toggled independently.
+Every option can be set via [config file](../overview/configuration) or programmatic API. Each rule has an `enabled` flag that can be toggled independently.
 
 ## Full Configuration Example
 
@@ -86,4 +86,4 @@ Five rules that clean up AI-authored list-item content. Each accepts `"off"` to 
 | [`recover-escaped-tables-in-lists`](./recover-escaped-tables-in-lists)         | `"safe"`      | Re-indent a GFM table that escaped to column 0 between two list items.                                         |
 | [`recover-escaped-paragraphs-in-lists`](./recover-escaped-paragraphs-in-lists) | `"off"`       | Re-indent a paragraph that escaped to column 0 between two list items (opt-in — highest false-positive risk).  |
 
-Use [`--dry-run`](/docs/overview/usage#preview-changes-with---dry-run) to preview what each rule would change before committing.
+Use [`--dry-run`](../overview/usage#preview-changes-with---dry-run) to preview what each rule would change before committing.
