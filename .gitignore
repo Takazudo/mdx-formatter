@@ -21,8 +21,7 @@ __test-config.json
 tmp/
 temp/
 
-# Doc site (zudo-doc)
-doc/.astro/
+# Doc site (zudo-doc / zfb)
 doc/dist/
 doc/node_modules/
 
