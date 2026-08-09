@@ -33,7 +33,7 @@ import {
 import { createChrome } from "@takazudo/zudo-doc/chrome";
 import { DocHistory } from "@takazudo/zudo-doc/doc-history";
 import { defineChromeBindings } from "@takazudo/zudo-doc/chrome-bindings";
-import { chromeBindings } from "virtual:zudo-doc-chrome-bindings";
+import { chromeBindings } from "../../../src/chrome-bindings";
 
 const ctx = routeContext as unknown as RouteContextPayload;
 const routeCtx = createRouteContext(ctx);

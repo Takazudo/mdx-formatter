@@ -6,6 +6,7 @@ export default defineConfig(
     siteName: "mdx-formatter",
     siteDescription: "AST-based markdown and MDX formatter",
     base: "/pj/mdx-formatter/",
+    chromeBindingsModule: "./src/chrome-bindings.tsx",
     siteUrl: "https://takazudomodular.com",
     githubUrl: "https://github.com/Takazudo/mdx-formatter",
     entryDocSlug: "overview",
