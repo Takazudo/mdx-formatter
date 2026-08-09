@@ -38,34 +38,26 @@ jobs:
           retention-days: 1
 
   deploy:
-    name: Deploy to Cloudflare Pages
+    name: Deploy to Cloudflare Workers
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           name: zfb-build-production
-          path: dist-raw
+          path: doc/dist
 
-      - name: Restructure build for base path
+      - name: Deploy to Cloudflare Workers
         run: |
-          mkdir -p deploy-dir/pj/mdx-formatter
-          cp -r dist-raw/* deploy-dir/pj/mdx-formatter/
-          if [ -f deploy-dir/pj/mdx-formatter/_redirects ]; then
-            mv deploy-dir/pj/mdx-formatter/_redirects deploy-dir/_redirects
-          fi
-
-      - name: Deploy to Cloudflare Pages
-        run: |
+          WRANGLER_VERSION=$(node -p "require('./doc/package.json').devDependencies.wrangler")
           for attempt in 1 2 3; do
             echo "Deploy attempt $attempt/3..."
-            if npx wrangler@4 pages deploy deploy-dir \
-              --project-name=mdx-formatter \
-              --branch=main \
-              --commit-hash="${GITHUB_SHA}" \
-              --commit-message="Production deploy: ${GITHUB_SHA}"; then
+            if npx "wrangler@${WRANGLER_VERSION}" deploy; then
               echo "Deploy succeeded on attempt $attempt"
               exit 0
             fi
@@ -77,6 +69,8 @@ jobs:
           echo "Deploy failed after 3 attempts"
           exit 1
         env:
+          # The token needs Workers Scripts: Edit and permission to attach the
+          # custom domain in the takazudomodular.com zone.
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 

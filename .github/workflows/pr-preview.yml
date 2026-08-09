@@ -38,47 +38,37 @@ jobs:
           retention-days: 1
 
   deploy:
-    name: Deploy Preview
+    name: Deploy Workers Preview
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           name: zfb-build-preview
-          path: dist-raw
+          path: doc/dist
 
-      - name: Restructure build for base path
-        run: |
-          mkdir -p deploy-dir/pj/mdx-formatter
-          cp -r dist-raw/* deploy-dir/pj/mdx-formatter/
-          # _redirects belongs at the deployment root, not inside the base path.
-          if [ -f deploy-dir/pj/mdx-formatter/_redirects ]; then
-            mv deploy-dir/pj/mdx-formatter/_redirects deploy-dir/_redirects
-          fi
-
-      - name: Install wrangler
-        run: npm install -g wrangler@4
-
-      - name: Deploy to Cloudflare Pages
+      - name: Upload Cloudflare Workers preview
         id: deploy
         run: |
-          set +e
-          wrangler pages deploy deploy-dir \
-            --project-name=mdx-formatter \
-            --branch="pr-${{ github.event.pull_request.number }}" \
-            --commit-hash="${GITHUB_SHA}" \
-            --commit-message="PR #${{ github.event.pull_request.number }} preview"
-          WRANGLER_EXIT=$?
-          set -e
-          if [ $WRANGLER_EXIT -ne 0 ]; then
-            echo "::error::Wrangler deploy failed with exit code $WRANGLER_EXIT"
-            exit $WRANGLER_EXIT
-          fi
-          DEPLOY_URL="https://pr-${{ github.event.pull_request.number }}.mdx-formatter.pages.dev"
+          ALIAS="pr-${{ github.event.pull_request.number }}"
+          WRANGLER_VERSION=$(node -p "require('./doc/package.json').devDependencies.wrangler")
+          DEPLOY_LOG=$(mktemp)
+          npx "wrangler@${WRANGLER_VERSION}" versions upload \
+            --preview-alias "$ALIAS" \
+            2>&1 | tee "$DEPLOY_LOG"
+          DEPLOY_URL=$(grep -oE "https://${ALIAS}-[a-z0-9.-]+\.workers\.dev" "$DEPLOY_LOG" | head -1)
           echo "deploy-url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "::warning::Worker uploaded, but no preview URL was emitted. Enable the account workers.dev subdomain and rerun this workflow."
+          fi
         env:
+          # Worker previews require Workers Scripts: Edit; Pages: Edit alone
+          # is not sufficient for this deployment path.
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
@@ -90,15 +80,24 @@ jobs:
           script: |
             const deployUrl = process.env.DEPLOY_URL;
             const marker = '<!-- cf-preview-pr -->';
-            const body = [
-              marker,
-              `### Preview Deployment`,
-              ``,
-              `| | |`,
-              `|---|---|`,
-              `| **Preview URL** | ${deployUrl}/pj/mdx-formatter/ |`,
-              `| **Commit** | \`${context.sha.slice(0, 7)}\` |`,
-            ].join('\n');
+            const body = deployUrl
+              ? [
+                  marker,
+                  `### Cloudflare Workers Preview`,
+                  ``,
+                  `| | |`,
+                  `|---|---|`,
+                  `| **Preview URL** | ${deployUrl} |`,
+                  `| **Commit** | \`${context.sha.slice(0, 7)}\` |`,
+                ].join('\n')
+              : [
+                  marker,
+                  `### Cloudflare Workers Preview`,
+                  ``,
+                  `Worker upload succeeded, but the preview URL is pending workers.dev subdomain setup.`,
+                  ``,
+                  `| **Commit** | \`${context.sha.slice(0, 7)}\` |`,
+                ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,

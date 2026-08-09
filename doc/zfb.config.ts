@@ -8,7 +8,7 @@ export default defineConfig({
     siteDescription: "AST-based markdown and MDX formatter",
     base: DOC_BASE,
     chromeBindingsModule: "./src/chrome-bindings.tsx",
-    siteUrl: "https://takazudomodular.com",
+    siteUrl: "https://mdx-formatter.takazudomodular.com",
     githubUrl: "https://github.com/Takazudo/mdx-formatter",
     entryDocSlug: "overview",
     logo: "/img/logo.svg",
@@ -145,6 +145,4 @@ export default defineConfig({
       },
     ],
   }),
-  // CI relocates all of dist/ into the configured base segment.
-  copyPublicWithBase: false,
 });

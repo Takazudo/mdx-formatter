@@ -24,6 +24,7 @@ temp/
 # Doc site (zudo-doc / zfb)
 doc/dist/
 doc/node_modules/
+.wrangler/
 
 worktrees/
 

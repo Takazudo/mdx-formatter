@@ -74,7 +74,7 @@ top-level kebab-case keys (not nested objects):
 Each accepts `"off"` to disable, its default middle value (`"heuristic"` or
 `"safe"`) for the conservative trigger, or `"aggressive"` to drop the
 structural safeguards. See the
-[List Normalize options docs](https://takazudomodular.com/pj/mdx-formatter/docs/options/#list-normalize)
+[List Normalize options docs](https://mdx-formatter.takazudomodular.com/docs/options/#list-normalize)
 for per-rule before/after examples.
 
 ### Preview with `--dry-run`
@@ -102,21 +102,21 @@ await init();
 const formatted = format_with_defaults('# Hello\nWorld');
 ```
 
-See [Browser Usage](https://takazudomodular.com/pj/mdx-formatter/docs/overview/browser-usage) for details.
+See [Browser Usage](https://mdx-formatter.takazudomodular.com/docs/overview/browser-usage) for details.
 
 ## Documentation
 
-Full documentation at **[takazudomodular.com/pj/mdx-formatter](https://takazudomodular.com/pj/mdx-formatter/)**:
+Full documentation at **[mdx-formatter.takazudomodular.com](https://mdx-formatter.takazudomodular.com/)**:
 
-- [Overview](https://takazudomodular.com/pj/mdx-formatter/docs/overview) — Installation, usage, API, configuration
-- [Formatting Rules](https://takazudomodular.com/pj/mdx-formatter/docs/formatting) — How the formatter handles each construct
-- [Options](https://takazudomodular.com/pj/mdx-formatter/docs/options) — Per-rule configuration reference
-- [Architecture](https://takazudomodular.com/pj/mdx-formatter/docs/architecture) — Hybrid formatter approach, Rust rewrite strategy
-- [Changelog](https://takazudomodular.com/pj/mdx-formatter/docs/changelog) — Release history
+- [Overview](https://mdx-formatter.takazudomodular.com/docs/overview) — Installation, usage, API, configuration
+- [Formatting Rules](https://mdx-formatter.takazudomodular.com/docs/formatting) — How the formatter handles each construct
+- [Options](https://mdx-formatter.takazudomodular.com/docs/options) — Per-rule configuration reference
+- [Architecture](https://mdx-formatter.takazudomodular.com/docs/architecture) — Hybrid formatter approach, Rust rewrite strategy
+- [Changelog](https://mdx-formatter.takazudomodular.com/docs/changelog) — Release history
 
 ## Architecture
 
-The formatting engine is written in Rust using [markdown-rs](https://github.com/wooorm/markdown-rs) and [napi-rs](https://napi.rs/). The npm package loads the native Rust module at runtime. A standalone CLI binary and WASM build for browsers are also available. See [Architecture](https://takazudomodular.com/pj/mdx-formatter/docs/architecture) for details.
+The formatting engine is written in Rust using [markdown-rs](https://github.com/wooorm/markdown-rs) and [napi-rs](https://napi.rs/). The npm package loads the native Rust module at runtime. A standalone CLI binary and WASM build for browsers are also available. See [Architecture](https://mdx-formatter.takazudomodular.com/docs/architecture) for details.
 
 ## Development
 
