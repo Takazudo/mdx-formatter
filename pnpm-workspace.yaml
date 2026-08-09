@@ -6,3 +6,7 @@ packages:
   # (otherwise `pnpm install` drops them from the lockfile and CI's
   # frozen-lockfile install fails with ERR_PNPM_OUTDATED_LOCKFILE).
   - npm/*
+
+# pnpm 11 defaults minimumReleaseAge to 1440min; its exclude matcher can't match
+# this workspace's peer-nested lockfile keys, so disable the gate outright.
+minimumReleaseAge: 0
