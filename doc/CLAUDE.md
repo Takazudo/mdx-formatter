@@ -1,4 +1,4 @@
-# My Docs
+# mdx-formatter Documentation Site
 
 Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) 5.2.1 — a zfb-based documentation framework with MDX, Tailwind CSS v4, and Preact islands. This project is intentionally minimal: one config file (`zfb.config.ts`) plus markdown content — layout, chrome, and islands all ship from `@takazudo/zudo-doc` in `node_modules`. Node.js >= 22 is required.
 
@@ -21,6 +21,10 @@ Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) 5.
 - `pnpm check` — runs `zfb check` for type and content checking
 - `pnpm preview` — runs `zfb preview` to serve the built `dist/`
 
+The formatter playground loads project-owned WASM files from `public/wasm/`.
+From the repository root, run `pnpm build:wasm:doc` before using the playground
+locally. The docs CI action performs this step before `zfb build`.
+
 ## Key Directories
 
 ```
@@ -32,8 +36,9 @@ pages/
 src/
 ├── chrome-bindings.tsx   # optional typed primary chrome / named header / MDX bindings
 ├── content/
-│   └── docs/             # MDX content (this project's showcase docs)
-│   └── docs-ja/         # Japanese MDX content (mirrors docs/)
+│   ├── docs/             # mdx-formatter's default-locale MDX content
+│   ├── docs-ja/          # Japanese MDX content (partial; EN fallback fills gaps)
+│   └── docs-v-0x/        # archived TypeScript-engine documentation
 └── styles/
     └── global.css        # @import chain + a token-override slot — that's it
 ```
@@ -60,9 +65,9 @@ Do NOT use h1 (`#`) in doc content — the page title from frontmatter is render
 
 ### Built-in MDX components
 
-`@takazudo/zudo-doc` ships a few **globally-available MDX components** — usable in any `.mdx` file with **no import**. The seeded `getting-started/index.mdx` already uses one:
+`@takazudo/zudo-doc` ships a few **globally-available MDX components** — usable in any `.mdx` file with **no import**. The Japanese overview index uses one:
 
-- `<CategoryNav category="..." />` — a card-grid list of the pages in a docs category (this is the one seeded into `getting-started/index.mdx`).
+- `<CategoryNav category="..." />` — a card-grid list of the pages in a docs category (used by `src/content/docs-ja/overview/index.mdx`).
 - `<CategoryTreeNav category="..." />` — the same listing as a compact nested tree, better for deeper hierarchies.
 - `<SiteTreeNavDemo />` — a full-site documentation tree (the MDX-available wrapper of the `SiteTreeNav` island).
 

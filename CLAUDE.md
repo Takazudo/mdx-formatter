@@ -24,6 +24,7 @@ pnpm lint           # ESLint check
 pnpm lint:fix       # ESLint autofix
 pnpm check          # Prettier + ESLint check
 pnpm check:fix      # Prettier + ESLint autofix
+pnpm build:wasm:doc # Build/copy the WASM assets required by the docs playground
 pnpm doc:start      # Run the zfb docs dev server (port 4321) plus doc-history (port 4322)
 pnpm --dir doc check # Run zfb's docs type/content checks
 pnpm --dir doc build # Build the static zfb docs site to doc/dist/

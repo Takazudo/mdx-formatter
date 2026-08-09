@@ -63,7 +63,7 @@ const defaultSettings: SettingsState = {
 };
 
 interface WasmModule {
-  default: (wasmUrl: string) => Promise<unknown>;
+  default: (options: { module_or_path: string }) => Promise<unknown>;
   format: (content: string, settingsJson: string | undefined) => string;
 }
 
@@ -77,7 +77,9 @@ function loadWasm(): Promise<WasmModule> {
     // are not passed through zfb's base-path rewriter.
     const wasmJsUrl = `${DOC_BASE}wasm/mdx_formatter_wasm.js`;
     const mod = (await import(/* @vite-ignore */ wasmJsUrl)) as WasmModule;
-    await mod.default(`${DOC_BASE}wasm/mdx_formatter_wasm_bg.wasm`);
+    await mod.default({
+      module_or_path: `${DOC_BASE}wasm/mdx_formatter_wasm_bg.wasm`,
+    });
     return mod;
   })().catch((error: unknown) => {
     // Allow a later click to recover from a transient asset/network failure.
