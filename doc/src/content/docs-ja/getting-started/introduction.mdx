@@ -1,15 +1,16 @@
 ---
-title: はじめに
+title: mdx-formatter について
+description: Markdown と MDX を整形する mdx-formatter の概要
 sidebar_position: 1
 ---
 
-## My Docs とは？
+## mdx-formatter とは？
 
-My Docs は [zudo-doc](https://github.com/zudolab/zudo-doc) で構築されたドキュメントサイトです。zfb・MDX・Tailwind CSS を使ったミニマルなドキュメントフレームワークです。
+mdx-formatter は、Markdown と MDX のソースを整形する Node.js 向けのツールです。Rust エンジンを使用し、元のソースをできるだけ保ちながら、読みやすい形式に整えます。
 
 ## 主な機能
 
-- MDX によるリッチなコンポーネントサポート
-- zfb による高速な静的サイト生成
-- スタイリングには Tailwind CSS v4
-- i18n・検索などオプション機能も充実
+- Markdown・MDX・JSX 構文の整形
+- 日本語を含む CJK テキストの扱い
+- Docusaurus の admonition 構文と GFM テーブルの保持
+- CLI、Node.js API、ブラウザ向け WASM パッケージ

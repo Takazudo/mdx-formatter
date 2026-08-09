@@ -13,7 +13,7 @@ sidebar_position: 7
 | `--config <path>`     | Path to config file                                                                                   |
 | `--ignore <patterns>` | Comma-separated patterns to ignore (default: `node_modules/**,dist/**,build/**,.git/**,worktrees/**`) |
 
-The `--ignore` patterns are merged with [`exclude`](/docs/overview/configuration#excluding-files) patterns from the config file.
+The `--ignore` patterns are merged with [`exclude`](configuration#excluding-files) patterns from the config file.
 
 ## `format(content, options?)`
 
@@ -21,7 +21,7 @@ Format markdown/MDX content.
 
 - `content` (`string`) - Content to format
 - `options.config` (`string`) - Path to config file
-- `options.settings` (`object`) - Direct settings overrides (see [Options Reference](/docs/options))
+- `options.settings` (`object`) - Direct settings overrides (see [Options Reference](../options))
 - Returns `Promise<string>` - Formatted content (returns original on error)
 
 > The `exclude` config option is CLI-only. When using the programmatic API (`format`, `formatFile`, `checkFile`), handle file filtering in your own code.

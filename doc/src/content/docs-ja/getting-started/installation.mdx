@@ -1,27 +1,29 @@
 ---
 title: インストール
+description: "@takazudo/mdx-formatter をインストールして使い始める"
 sidebar_position: 2
 ---
 
-## 動作要件
-
-- Node.js 22 以降
-- pnpm（推奨）、npm、yarn、または bun
-
-## 新しいプロジェクトを作成する
-
-スキャフォールドツールを実行して新しいプロジェクトを作成します：
+## インストール
 
 ```sh
-pnpm create zudo-doc my-docs
+pnpm add -D @takazudo/mdx-formatter
 ```
 
-## 開発サーバーを起動する
+npm を使う場合は次のコマンドを実行します。
 
 ```sh
-cd my-docs
-pnpm install
-pnpm dev
+npm install --save-dev @takazudo/mdx-formatter
 ```
 
-[http://localhost:4321](http://localhost:4321) を開いてドキュメントを確認してください。
+## コマンドラインで使う
+
+```sh
+npx mdx-formatter --check "**/*.{md,mdx}"
+```
+
+ファイルを直接整形するには、`--write` を追加します。
+
+```sh
+npx mdx-formatter --write "**/*.{md,mdx}"
+```
