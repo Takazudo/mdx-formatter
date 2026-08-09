@@ -103,6 +103,6 @@ In `"aggressive"` mode the blank gap collapses regardless.
 
 ## Notes
 
-- The rule runs **before** `wrap-markdown` in the formatter pipeline, and after the three `recover-escaped-*` rules. See [rule ordering](/docs/architecture).
+- The rule runs **before** `wrap-markdown` in the formatter pipeline, and after the three `recover-escaped-*` rules. See [rule ordering](../architecture).
 - The rule is idempotent — running the formatter twice on the tightened output produces no further change.
 - Sublists and fenced code children disqualify an item from collapsing in both modes.

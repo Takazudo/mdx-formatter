@@ -1,39 +1,42 @@
 {
-  "name": "mdx-formatter-doc",
+  "name": "my-docs",
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev": "lsof -ti:3518 | xargs kill -9 2>/dev/null; astro dev --port 3518",
-    "dev:network": "lsof -ti:3518 | xargs kill -9 2>/dev/null; astro dev --host 0.0.0.0 --port 3518",
-    "build": "astro build",
-    "preview": "astro preview",
-    "check": "astro check"
+    "dev": "run-p dev:zfb dev:history",
+    "build": "zfb build",
+    "preview": "zfb preview",
+    "check": "zfb check",
+    "dev:zfb": "zfb dev",
+    "dev:zfb:network": "zfb dev --host 0.0.0.0",
+    "dev:network": "run-p dev:zfb:network dev:history",
+    "dev:history": "doc-history-server --port 4322 --content-dir src/content/docs --locale ja:src/content/docs-ja",
+    "setup:doc-skill": "bash scripts/setup-doc-skill.sh",
+    "setup:doc-skill-silent": "bash scripts/setup-doc-skill.sh --silent",
+    "setup:doc-skill:claude": "bash scripts/setup-doc-skill.sh --target claude",
+    "setup:doc-skill:codex": "bash scripts/setup-doc-skill.sh --target codex",
+    "setup:doc-skill:both": "bash scripts/setup-doc-skill.sh --target both"
   },
   "dependencies": {
-    "@astrojs/mdx": "^5.0.2",
-    "@astrojs/react": "^5.0.1",
-    "@shikijs/transformers": "^4.0.0",
-    "astro": "^6.0.8",
-    "clsx": "^2.1.0",
-    "diff": "^8.0.4",
-    "github-slugger": "^2.0.0",
-    "gray-matter": "^4.0.0",
-    "mermaid": "^11.13.0",
-    "minisearch": "^7.2.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "remark-directive": "^3.0.0",
-    "shiki": "^4.0.2",
-    "unist-util-visit": "^5.1.0"
+    "@takazudo/zfb": "2.2.0",
+    "@takazudo/zfb-runtime": "2.2.0",
+    "@takazudo/zfb-md-wasm": "2.2.0",
+    "@takazudo/zudo-doc": "^5.2.1",
+    "zod": "^4.3.6",
+    "preact": "^10.29.1",
+    "preact-render-to-string": "^6.6.6",
+    "katex": "^0.16.38",
+    "diff": "^8.0.3",
+    "@takazudo/zdtp": "0.4.9",
+    "@takazudo/zudo-doc-history-server": "^5.2.1"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.8",
-    "@tailwindcss/vite": "^4.2.0",
+    "typescript": "^5.9.0",
     "@types/node": "^22.0.0",
-    "@types/react": "^19.2.0",
-    "pagefind": "^1.4.0",
-    "tailwindcss": "^4.2.0",
-    "typescript": "^5.9.0"
+    "npm-run-all2": "^7.0.2"
   }
 }

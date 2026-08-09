@@ -1,0 +1,29 @@
+---
+title: インストール
+description: "@takazudo/mdx-formatter をインストールして使い始める"
+sidebar_position: 2
+---
+
+## インストール
+
+```sh
+pnpm add -D @takazudo/mdx-formatter
+```
+
+npm を使う場合は次のコマンドを実行します。
+
+```sh
+npm install --save-dev @takazudo/mdx-formatter
+```
+
+## コマンドラインで使う
+
+```sh
+npx mdx-formatter --check "**/*.{md,mdx}"
+```
+
+ファイルを直接整形するには、`--write` を追加します。
+
+```sh
+npx mdx-formatter --write "**/*.{md,mdx}"
+```
