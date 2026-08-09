@@ -1,17 +1,24 @@
 {
-  "extends": "astro/tsconfigs/strict",
+  "extends": "@takazudo/zudo-doc/tsconfig.base.json",
+  "include": ["src", "pages", "zfb.config.ts"],
+  "exclude": [
+    "src/components",
+    "src/config",
+    "src/content.config.ts",
+    "src/hooks",
+    "src/integrations",
+    "src/layouts",
+    "src/plugins",
+    "src/types",
+    "src/utils"
+  ],
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "react": ["./node_modules/preact/compat/"],
+      "react/jsx-runtime": ["./node_modules/preact/jsx-runtime"],
+      "react-dom": ["./node_modules/preact/compat/"]
     }
-  },
-  "exclude": [
-    "dist",
-    "e2e/fixtures",
-    "packages",
-    "worktrees",
-    "src/**/__tests__",
-    "vitest.config.ts"
-  ]
+  }
 }
