@@ -17,6 +17,9 @@ importers:
       glob:
         specifier: ^13.0.1
         version: 13.0.1
+      ignore:
+        specifier: ^7.0.5
+        version: 7.0.5
       js-yaml:
         specifier: ^4.1.1
         version: 4.1.1
