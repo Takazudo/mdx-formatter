@@ -3,12 +3,12 @@
 import { readFileSync } from 'fs';
 import { promises as fs } from 'fs';
 import { program } from 'commander';
-import { glob } from 'glob';
 import chalk from 'chalk';
 import { formatFile, checkFile, dryRunReport } from './index.js';
 import type { DryRunReportEntry } from './index.js';
 import { loadFullConfig } from './load-config.js';
 import type { FormatOptions } from './types.js';
+import { discoverFiles } from './discover.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8')) as {
   version: string;
@@ -93,18 +93,7 @@ async function main(
   const ignorePatterns = [...new Set([...cliIgnorePatterns, ...excludePatterns])];
   const formatOptions: FormatOptions = { settings };
 
-  // Find all matching files
-  const files: string[] = [];
-  for (const pattern of patterns) {
-    const matches = await glob(pattern, {
-      ignore: ignorePatterns,
-      nodir: true,
-    });
-    files.push(...matches);
-  }
-
-  // Remove duplicates
-  const uniqueFiles = [...new Set(files)];
+  const uniqueFiles = await discoverFiles(patterns, ignorePatterns);
 
   if (uniqueFiles.length === 0) {
     if (options.dryRun) {
