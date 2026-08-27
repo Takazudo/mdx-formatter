@@ -6,14 +6,46 @@ sidebar_position: 7
 
 ## CLI Options
 
-| Option                | Description                                                                                           |
-| --------------------- | ----------------------------------------------------------------------------------------------------- |
-| `-w, --write`         | Write formatted files in place                                                                        |
-| `-c, --check`         | Check if files need formatting (for CI)                                                               |
-| `--config <path>`     | Path to config file                                                                                   |
-| `--ignore <patterns>` | Comma-separated patterns to ignore (default: `node_modules/**,dist/**,build/**,.git/**,worktrees/**`) |
+| Option                   | Description                                                                                           |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `-w, --write`            | Write formatted files in place                                                                        |
+| `-c, --check`            | Check if files need formatting (for CI)                                                               |
+| `--config <path>`        | Path to config file                                                                                   |
+| `--ignore <patterns>`    | Comma-separated patterns to ignore (default: `node_modules/**,dist/**,build/**,.git/**,worktrees/**`) |
+| `--ignore-path <file>`   | Read `.gitignore`-style rules from a file; repeatable, with later files overriding earlier ones       |
+| `--no-gitignore`         | Disable automatic `.gitignore` discovery (enabled by default)                                         |
 
-The `--ignore` patterns are merged with [`exclude`](configuration#excluding-files) patterns from the config file.
+The `--ignore` patterns are merged with [`exclude`](configuration#excluding-files) patterns from the config file for glob matches. Explicit path
+arguments bypass `exclude` and automatically loaded `.gitignore` rules, but
+`--ignore` and `--ignore-path` still apply. See [`.gitignore` discovery](configuration#gitignore-discovery)
+for nested-rule and cwd details.
+
+### Ignore-file options
+
+Supply your own `.gitignore`-style rules with `--ignore-path`:
+
+```bash
+# .ci/mdx-ignore contains rules such as: generated/
+mdx-formatter --check "**/*.mdx" --ignore-path .ci/mdx-ignore
+
+# Multiple files are allowed; later files override earlier files.
+mdx-formatter --check "**/*.mdx" \
+  --ignore-path .ci/base-ignore \
+  --ignore-path .ci/local-ignore
+```
+
+To include files that automatic `.gitignore` discovery would skip, disable it
+for that invocation:
+
+```bash
+mdx-formatter --check "**/*.mdx" --no-gitignore
+```
+
+`--no-gitignore` affects only automatically discovered files; explicit
+`--ignore-path` files and `--ignore` patterns remain active. Quote glob
+operands: an unquoted shell glob such as `*.md` is expanded into explicit
+filenames before the CLI sees it, so `exclude` and automatic `.gitignore`
+rules do not apply to those paths.
 
 ## `format(content, options?)`
 
