@@ -97,8 +97,8 @@ For each candidate, rules are read from the current working directory down to
 the candidate's own directory. A nested `.gitignore` is anchored to the
 directory that contains it: for example, `generated/` in `docs/.gitignore`
 matches `docs/generated/`, not a similarly named directory elsewhere. Deeper
-The deeper `.gitignore` files are evaluated after shallower ones, so their rules (including
-`!` negations) take precedence.
+`.gitignore` files are evaluated after shallower ones, so their rules
+(including `!` negations) take precedence.
 
 Discovery does not consult `.gitignore` files above the current working
 directory. If you run the CLI from `packages/app`, a `.gitignore` in the

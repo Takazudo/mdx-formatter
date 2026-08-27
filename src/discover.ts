@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-import { escape, glob, hasMagic, Ignore as GlobIgnore } from 'glob';
+import { escape, glob, globIterate, hasMagic, Ignore as GlobIgnore } from 'glob';
 import ignore, { type Ignore } from 'ignore';
 
 export interface DiscoveryResult {
@@ -254,8 +254,11 @@ export async function discoverFiles(
       // file. Probe only in this zero-match case so an empty ignored directory
       // still reports "No files found" while a hidden candidate gets D4's
       // filtered message. This is an existence check, not a pre-filter count.
-      const unfilteredMatches = await glob(pattern, { cwd, nodir: true });
-      anyMatchedBeforeFilter ||= unfilteredMatches.length > 0;
+      for await (const firstMatch of globIterate(pattern, { cwd, nodir: true })) {
+        void firstMatch;
+        anyMatchedBeforeFilter = true;
+        break;
+      }
     }
 
     for (const match of matches) {
