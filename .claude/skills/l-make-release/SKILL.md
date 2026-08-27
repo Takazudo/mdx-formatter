@@ -1,12 +1,12 @@
 ---
-description: 'Release @takazudo/mdx-formatter — bump the version, sync platform packages, write the changelog, push, wait for CI, tag (which triggers the release.yml auto-publish of all 5 npm packages via the repo NPM_TOKEN), watch the publish run, and create the GitHub Release. Fully autonomous end-to-end by default (no confirmation prompts); pass --confirm to vet the proposal interactively and stop before tagging. Triggers on rough requests like "bump version", "cut a release", "release mdx-formatter", "make a release", "publish a new version".'
+description: 'Release @takazudo/mdx-formatter — bump the version, sync platform packages, write the changelog, push, wait for CI, tag (which triggers the release.yml auto-publish of all 5 npm packages via the repo NPM_TOKEN), point both latest and next to that edge release, watch the publish run, and create the GitHub Release. Fully autonomous end-to-end by default (no confirmation prompts); pass --confirm to vet the proposal interactively and stop before tagging. Triggers on rough requests like "bump version", "cut a release", "release mdx-formatter", "make a release", "publish a new version".'
 user-invocable: true
 argument-description: 'Optional: major, minor, patch — stable release with that bump. next — start or continue an X.Y.Z-next.N prerelease. stable — promote the current prerelease to stable. No argument: prerelease → increment N; stable → analyze commits and pick the bump autonomously. --confirm — interactive mode: present the bump proposal and wait, and stop before tagging instead of publishing.'
 ---
 
 # /l-make-release
 
-One-call orchestrator for releasing `@takazudo/mdx-formatter` and its four lockstep platform packages. Bumps the version, syncs the platform packages, writes a changelog doc (stable only), commits + pushes, waits for CI, pushes the `v*` tag — which triggers `.github/workflows/release.yml` to build the napi binaries and publish **all five npm packages** — watches that run to completion, then creates the GitHub Release (stable only).
+One-call orchestrator for releasing `@takazudo/mdx-formatter` and its four lockstep platform packages. Bumps the version, syncs the platform packages, writes a changelog doc (stable only), commits + pushes, waits for CI, pushes the `v*` tag — which triggers `.github/workflows/release.yml` to build the napi binaries, publish **all five npm packages**, and point both `latest` and `next` to the released edge version — watches that run to completion, then creates the GitHub Release (stable only).
 
 ## Invocation & autonomy
 
@@ -21,6 +21,7 @@ This skill is **model-invocable**: a rough natural-language request like "bump v
 - The four platform packages (`npm/darwin-arm64`, `npm/darwin-x64`, `npm/linux-x64-gnu`, `npm/win32-x64-msvc`) are **pnpm workspace members**, declared on the root as pinned `workspace:X.Y.Z` optionalDependencies. They resolve locally at bump time — before the new versions exist on the registry — so the lockfile stays consistent and bump-commit CI is green. (The pre-workspace flow could never have green CI on the bump commit: `ERR_PNPM_OUTDATED_LOCKFILE`, see v1.2.1 history.)
 - `scripts/sync-napi-versions.mjs` keeps all five `package.json` versions + the `workspace:` specifiers lockstep with the root version.
 - `release.yml` publishes the platform packages with `npm publish` and the root with `pnpm publish` (which rewrites `workspace:X.Y.Z` → exact `X.Y.Z` in the tarball). Every publish is idempotency-guarded, so re-running the workflow after a partial failure is safe.
+- After all five exact versions are live, `release.yml` points both npm dist-tags, `latest` and the legacy-compatible `next`, to the released version on every package. Prerelease and stable releases follow the same edge-tag rule.
 - The repo secret `NPM_TOKEN` is an automation token covering ALL `@takazudo` packages (root + platform). If a publish fails with `E404 Not Found - PUT` or a 2FA error, the token scope/type is the problem — fix it at npmjs.com → Access Tokens.
 
 ## Boundaries
@@ -225,7 +226,7 @@ git tag v{VERSION}
 git push origin v{VERSION}
 ```
 
-The tag push triggers `release.yml`: 4 platform binary builds → 4 platform package publishes → root package publish (prepublishOnly runs tsc + vitest against the shipped linux binary).
+The tag push triggers `release.yml`: 4 platform binary builds → 4 platform package publishes → root package publish (prepublishOnly runs tsc + vitest against the shipped linux binary) → synchronize both `latest` and `next` to the released version on all five packages.
 
 ## Step 9: Watch the Release Run
 
@@ -251,13 +252,14 @@ gh release create v{VERSION} --title "v{VERSION}" --notes "$NOTES"
 
 ```bash
 npm view @takazudo/mdx-formatter dist-tags
-npm view "@takazudo/mdx-formatter@{VERSION}" version
-npm view "@takazudo/mdx-formatter-linux-x64-gnu@{VERSION}" version
+for PKG in @takazudo/mdx-formatter @takazudo/mdx-formatter-darwin-arm64 @takazudo/mdx-formatter-darwin-x64 @takazudo/mdx-formatter-linux-x64-gnu @takazudo/mdx-formatter-win32-x64-msvc; do
+  npm view "${PKG}@{VERSION}" version
+  npm view "${PKG}@latest" version
+  npm view "${PKG}@next" version
+done
 ```
 
-Report: released version, dist-tag (`latest` or `next`), release.yml run URL, GitHub Release URL (stable), npm package page `https://www.npmjs.com/package/@takazudo/mdx-formatter`.
-
-Note for `stable` promotions: the `next` dist-tag stays pointing at the last prerelease (existing convention — `@next` users stay until they update). Mention it in the report.
+Verify all five exact package versions and confirm that both `@latest` and `@next` resolve to `{VERSION}` for every package. Report: released version, synchronized `latest` / `next` dist-tags, release.yml run URL, GitHub Release URL (stable), npm package page `https://www.npmjs.com/package/@takazudo/mdx-formatter`.
 
 ## Failure Recovery
 
@@ -273,6 +275,7 @@ Fix, commit, push, re-invoke `/watch-ci`. Do not tag until green.
 
 - Transient → `gh run rerun <id> --failed` (once).
 - Real failure after a partial publish (e.g. platform packages live, root missing) → fix the cause, then re-run via `gh workflow run release.yml --ref main` or `gh run rerun` — the idempotency guards skip what is already live.
+- Dist-tag synchronization failure after all packages publish → re-run the workflow. Exact-version guards skip publishing, then the idempotent dist-tag step retries both `latest` and `next` for all five packages.
 
 #### `E404 Not Found - PUT` on publish = invalid/expired NPM_TOKEN (NOT provenance, NOT workflow config)
 

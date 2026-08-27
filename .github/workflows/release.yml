@@ -11,9 +11,11 @@
 #    versions in the packed tarball). prepublishOnly (tsc && vitest run)
 #    executes against the linux-x64 artifact copied into crates/, so the
 #    tests exercise the exact binary being shipped.
+# 4. Moves both latest and next to that version for all 5 packages.
 #
-# Dist-tag policy: versions containing "-next." publish under --tag next
-# (all 5 packages); everything else publishes under latest.
+# Dist-tag policy: prereleases initially publish under next and stable versions
+# under latest. After all 5 packages are live, both latest and next are moved to
+# the released version so either install channel always resolves to the edge.
 #
 # Idempotency: every publish is guarded by an npm-registry existence check
 # (skip when the exact version is already live, re-check after a failed
@@ -86,7 +88,7 @@ jobs:
     # changes specifiers and the frozen-lockfile install below fails loud.
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: read
       # OIDC token for npm publish provenance attestation.
@@ -120,7 +122,7 @@ jobs:
         with:
           path: artifacts
 
-      - name: Determine version and dist-tag
+      - name: Determine version and initial dist-tag
         id: meta
         run: |
           VERSION=$(node -p "require('./package.json').version")
@@ -131,7 +133,7 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "dist_tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
-          echo "Releasing v${VERSION} under dist-tag '${DIST_TAG}'"
+          echo "Releasing v${VERSION} under initial dist-tag '${DIST_TAG}'"
 
       - name: Copy binaries to platform packages
         run: |
@@ -205,11 +207,33 @@ jobs:
             fi
           fi
 
+      # `next` existed before the project adopted one edge channel. Keep it as
+      # a compatibility alias, with both tags following every successful release.
+      - name: Point latest and next to released version
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          for PKG in @takazudo/mdx-formatter @takazudo/mdx-formatter-darwin-arm64 @takazudo/mdx-formatter-darwin-x64 @takazudo/mdx-formatter-linux-x64-gnu @takazudo/mdx-formatter-win32-x64-msvc; do
+            for DIST_TAG in latest next; do
+              for attempt in 1 2 3 4 5 6; do
+                if npm dist-tag add "${PKG}@${VERSION}" "$DIST_TAG"; then
+                  echo "${PKG}@${DIST_TAG} -> ${VERSION} ✓"
+                  break
+                fi
+                if [ "$attempt" = "6" ]; then
+                  echo "::error::Failed to point ${PKG}@${DIST_TAG} to ${VERSION} after retries"
+                  exit 1
+                fi
+                echo "${PKG}@${VERSION} not ready for dist-tag update (attempt ${attempt}/6) — waiting 10s..."
+                sleep 10
+              done
+            done
+          done
+
       - name: Verify published versions
         run: |
           VERSION="${{ steps.meta.outputs.version }}"
-          echo "=== dist-tags ==="
-          npm view @takazudo/mdx-formatter dist-tags || true
           echo "=== published @ ${VERSION} ==="
           for PKG in @takazudo/mdx-formatter @takazudo/mdx-formatter-darwin-arm64 @takazudo/mdx-formatter-darwin-x64 @takazudo/mdx-formatter-linux-x64-gnu @takazudo/mdx-formatter-win32-x64-msvc; do
             # The npm registry CDN can lag several seconds behind a fresh
@@ -227,5 +251,23 @@ jobs:
               fi
               echo "${PKG}@${VERSION} not yet visible (attempt ${attempt}/6) — waiting 10s for registry propagation..."
               sleep 10
+            done
+          done
+          echo "=== synchronized edge dist-tags ==="
+          for PKG in @takazudo/mdx-formatter @takazudo/mdx-formatter-darwin-arm64 @takazudo/mdx-formatter-darwin-x64 @takazudo/mdx-formatter-linux-x64-gnu @takazudo/mdx-formatter-win32-x64-msvc; do
+            for DIST_TAG in latest next; do
+              for attempt in 1 2 3 4 5 6; do
+                ACTUAL=$(npm view "${PKG}@${DIST_TAG}" version 2>/dev/null || true)
+                if [ "$ACTUAL" = "$VERSION" ]; then
+                  echo "${PKG}@${DIST_TAG} -> ${ACTUAL} ✓"
+                  break
+                fi
+                if [ "$attempt" = "6" ]; then
+                  echo "::error::${PKG}@${DIST_TAG} resolved to '${ACTUAL}', expected '${VERSION}'"
+                  exit 1
+                fi
+                echo "${PKG}@${DIST_TAG} not synchronized yet (attempt ${attempt}/6) — waiting 10s..."
+                sleep 10
+              done
             done
           done

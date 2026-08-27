@@ -49,4 +49,5 @@ pnpm --dir doc preview # Preview doc/dist/ with zfb
 - `files` field limits published content to: `dist/`, `format-stdin.js`, `README.md`, `LICENSE`
 - `prepublishOnly` runs `tsc && vitest run` automatically
 - Use `/l-make-release` for ALL releases (stable, prerelease, promotion) — one-call autonomous: bump, changelog, CI wait, tag; the tag triggers `release.yml` which auto-publishes all 5 packages via the repo `NPM_TOKEN`. Pass `--confirm` for interactive vetting
+- Every successful release points both npm dist-tags, `latest` and legacy-compatible `next`, to the released edge version for the root and all four platform packages
 - Never run `npm publish` / `pnpm publish` locally — publishing happens only in `release.yml` (the root package MUST go through `pnpm publish` there, which rewrites the `workspace:` specifiers)
