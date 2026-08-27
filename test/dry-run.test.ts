@@ -10,18 +10,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 import { dryRunReport, format } from '../src/index.js';
-
-const execFileP = promisify(execFile);
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const cliEntry = path.resolve(__dirname, '../src/cli.ts');
+import { runCli } from './test-helpers.js';
 
 async function mkTmp(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'mdx-dry-run-'));
@@ -116,22 +109,6 @@ describe('dryRunReport library API', () => {
 });
 
 describe('CLI --dry-run flag', () => {
-  async function runCli(args: string[]): Promise<{
-    stdout: string;
-    stderr: string;
-    code: number;
-  }> {
-    try {
-      const { stdout, stderr } = await execFileP('npx', ['tsx', cliEntry, ...args], {
-        cwd: path.resolve(__dirname, '..'),
-      });
-      return { stdout, stderr, code: 0 };
-    } catch (err) {
-      const e = err as { stdout?: string; stderr?: string; code?: number };
-      return { stdout: e.stdout ?? '', stderr: e.stderr ?? '', code: e.code ?? 1 };
-    }
-  }
-
   it('reports changes, leaves file byte-identical, exits 0', async () => {
     const dir = await mkTmp();
     const file = path.join(dir, 'sample.md');
