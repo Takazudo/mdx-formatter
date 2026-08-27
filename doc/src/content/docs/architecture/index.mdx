@@ -97,7 +97,7 @@ Rules are applied in order during the operation collection phase. After all oper
 
 ## No Plugin System Needed
 
-The TypeScript formatter originally used 10 remark plugins to work around AST round-trip issues (`preserve-jsx.ts`, `preserve-image-alt.ts`, `fix-autolink-output.ts`, etc.). The hybrid approach — which uses the AST only for analysis, never for output — eliminates the need for these plugins. The Rust implementation validates that 9 of 10 plugins are unnecessary (see [Rust Rewrite: Plugin Validation](rust-rewrite#plugin-validation)).
+The TypeScript formatter originally used 10 remark plugins to work around AST round-trip issues (`preserve-jsx.ts`, `preserve-image-alt.ts`, `fix-autolink-output.ts`, etc.). The hybrid approach — which uses the AST only for analysis, never for output — eliminates the need for these plugins. The Rust implementation validates that 9 of 10 plugins are unnecessary (see [Rust Rewrite: Plugin Validation](rust-rewrite#implemented-formatting-rules-plugin-validation)).
 
 The formatting logic lives in the Rust engine (`crates/mdx-formatter-core/src/formatter.rs`). The TypeScript code in `src/` is a thin wrapper that loads the native module.
 
