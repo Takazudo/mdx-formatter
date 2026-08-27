@@ -8,7 +8,9 @@ import { formatFile, checkFile, dryRunReport } from './index.js';
 import type { DryRunReportEntry } from './index.js';
 import { loadFullConfig } from './load-config.js';
 import type { FormatOptions } from './types.js';
-import { discoverFiles } from './discover.js';
+import { discoverFiles, normalizeOperand } from './discover.js';
+
+const DEFAULT_PATTERNS = ['**/*.{md,mdx}'];
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8')) as {
   version: string;
@@ -18,7 +20,7 @@ program
   .name('mdx-formatter')
   .description('AST-based markdown and MDX formatter')
   .version(pkg.version)
-  .argument('[patterns...]', 'Glob patterns for files to format', ['**/*.{md,mdx}'])
+  .argument('[patterns...]', 'Glob patterns or explicit files to format')
   .option('-w, --write', 'Write formatted files in place')
   .option('-c, --check', 'Check if files need formatting')
   .option(
@@ -90,16 +92,37 @@ async function main(
   const { settings, excludePatterns } = loadFullConfig(
     options.config ? { config: options.config } : {},
   );
-  const ignorePatterns = [...new Set([...cliIgnorePatterns, ...excludePatterns])];
   const formatOptions: FormatOptions = { settings };
 
-  const uniqueFiles = await discoverFiles(patterns, ignorePatterns);
+  const operands = patterns.length === 0 ? DEFAULT_PATTERNS : patterns;
+  const {
+    files: uniqueFiles,
+    anyMatchedBeforeFilter,
+    badOperands,
+  } = await discoverFiles(operands, { cliIgnorePatterns, excludePatterns });
+
+  if (badOperands.length > 0) {
+    for (const { operand, reason } of badOperands) {
+      if (reason === 'directory') {
+        const globBase = operand.replace(/[\\/]+$/, '');
+        console.error(
+          `${operand}: is a directory (pass a glob such as '${globBase}/**/*.md' to format its contents)`,
+        );
+      } else {
+        console.error(`${operand}: no such file`);
+      }
+    }
+    process.exit(1);
+  }
 
   if (uniqueFiles.length === 0) {
+    const message = anyMatchedBeforeFilter
+      ? 'All matching files were excluded by ignore/exclude patterns — 0 files to process.'
+      : 'No files found matching the patterns.';
     if (options.dryRun) {
-      console.error(chalk.yellow('No files found matching the patterns.'));
+      console.error(chalk.yellow(message));
     } else {
-      console.log(chalk.yellow('No files found matching the patterns.'));
+      console.log(chalk.yellow(message));
     }
     return;
   }
@@ -115,9 +138,10 @@ async function main(
   let errorCount = 0;
 
   for (const file of uniqueFiles) {
+    const ioPath = normalizeOperand(file);
     try {
       if (options.write) {
-        const changed = await formatFile(file, formatOptions);
+        const changed = await formatFile(ioPath, formatOptions);
         if (changed) {
           changedCount++;
           console.log(chalk.green('✓'), chalk.gray(file), chalk.green('formatted'));
@@ -125,7 +149,7 @@ async function main(
           console.log(chalk.gray('○'), chalk.gray(file), chalk.gray('unchanged'));
         }
       } else if (options.check) {
-        const needsFormatting = await checkFile(file, formatOptions);
+        const needsFormatting = await checkFile(ioPath, formatOptions);
         if (needsFormatting) {
           changedCount++;
           console.log(chalk.yellow('⚠'), chalk.gray(file), chalk.yellow('needs formatting'));
@@ -134,7 +158,7 @@ async function main(
         }
       } else {
         // Default: just show what would be done
-        const needsFormatting = await checkFile(file, formatOptions);
+        const needsFormatting = await checkFile(ioPath, formatOptions);
         if (needsFormatting) {
           changedCount++;
           console.log(chalk.blue('→'), chalk.gray(file), chalk.blue('would be formatted'));
@@ -190,9 +214,10 @@ async function runDryRun(files: string[], formatOptions: FormatOptions): Promise
   let filesWithChanges = 0;
 
   for (const file of files) {
+    const ioPath = normalizeOperand(file);
     let content: string;
     try {
-      content = await fs.readFile(file, 'utf-8');
+      content = await fs.readFile(ioPath, 'utf-8');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(`${file}: read error: ${message}\n`);
