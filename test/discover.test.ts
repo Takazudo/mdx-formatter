@@ -79,13 +79,16 @@ describe('discoverFiles', () => {
     expect(result.badOperands).toEqual([]);
   });
 
-  it('applies CLI ignore to explicit paths', async () => {
+  it.each([
+    ['foo.md', 'foo.md'],
+    ['tests/foo.md', 'tests/**'],
+  ])('applies CLI ignore to explicit path %s with %s', async (operand, ignorePattern) => {
     const cwd = await makeTempDir();
-    await writeFile(cwd, 'foo.md');
+    await writeFile(cwd, operand);
 
-    const result = await discoverFiles(['foo.md'], {
+    const result = await discoverFiles([operand], {
       cwd,
-      cliIgnorePatterns: ['foo.md'],
+      cliIgnorePatterns: [ignorePattern],
       excludePatterns: [],
     });
 
