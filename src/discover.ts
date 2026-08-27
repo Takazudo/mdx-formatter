@@ -250,9 +250,12 @@ export async function discoverFiles(
     if (matches.length > 0) {
       anyMatchedBeforeFilter = true;
     } else if (filteredDuringWalk) {
-      // This deliberately avoids a second unfiltered walk, which would defeat
-      // directory pruning merely to calculate an exact pre-filter count.
-      anyMatchedBeforeFilter = true;
+      // A pruned directory does not tell us whether it contained a matching
+      // file. Probe only in this zero-match case so an empty ignored directory
+      // still reports "No files found" while a hidden candidate gets D4's
+      // filtered message. This is an existence check, not a pre-filter count.
+      const unfilteredMatches = await glob(pattern, { cwd, nodir: true });
+      anyMatchedBeforeFilter ||= unfilteredMatches.length > 0;
     }
 
     for (const match of matches) {
