@@ -22,9 +22,44 @@ mdx-formatter --dry-run "**/*.{md,mdx}"
 # Ignore specific patterns
 mdx-formatter --write "**/*.md" --ignore "node_modules/**,dist/**"
 
+# Apply additional .gitignore-style rules (repeatable)
+mdx-formatter --write "**/*.md" --ignore-path .ci/mdx-ignore
+
+# Disable automatic .gitignore discovery for this invocation
+mdx-formatter --check "**/*.md" --no-gitignore
+
 # Use a custom config file
 mdx-formatter --write "**/*.md" --config ./my-config.json
 ```
+
+The CLI loads `.gitignore` files automatically for glob discovery. Rules are
+anchored to the directory containing each `.gitignore`; nested files are
+evaluated after parent files, so deeper rules override shallower ones. Files
+above the current working directory are not consulted. Use repeatable
+`--ignore-path` options for caller-provided rules (later files override
+earlier ones); `--no-gitignore` disables only the automatic lookup.
+
+An explicit path argument bypasses config `exclude` and automatic `.gitignore`
+rules, but `--ignore` and `--ignore-path` still apply. Quote glob operands:
+when the shell expands an unquoted `*.md` into real filenames, the CLI sees
+explicit paths and therefore cannot apply `exclude` or automatic `.gitignore`
+rules to them.
+
+### Ignore-file examples
+
+If `.ci/mdx-ignore` contains `generated/`, apply it while discovering files:
+
+```bash
+mdx-formatter --check "**/*.{md,mdx}" --ignore-path .ci/mdx-ignore
+```
+
+To inspect files that the project's `.gitignore` would normally hide:
+
+```bash
+mdx-formatter --check "**/*.{md,mdx}" --no-gitignore
+```
+
+The `--ignore-path` rules still apply when `--no-gitignore` is present.
 
 ### Preview changes with `--dry-run`
 

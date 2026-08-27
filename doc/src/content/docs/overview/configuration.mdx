@@ -42,7 +42,11 @@ Or add an `"mdx-formatter"` key to your `package.json`:
 
 ## Excluding Files
 
-You can add an `exclude` array to your config file to skip files matching the given glob patterns. These patterns are merged with the CLI `--ignore` option.
+You can add an `exclude` array to your config file to skip files matching the
+given glob patterns during glob discovery. These patterns are merged with the
+CLI `--ignore` option. An explicit path argument bypasses both `exclude` and
+the automatically loaded `.gitignore`, but remains subject to `--ignore` and
+`--ignore-path`.
 
 ```json
 {
@@ -55,6 +59,19 @@ You can add an `exclude` array to your config file to skip files matching the gi
 
 This is useful for excluding auto-generated files that don't need formatting, without adding patterns to every CLI invocation.
 
+Git-ignored paths do not need an `exclude` entry: automatic `.gitignore`
+discovery already skips them during glob discovery. Keep `exclude` for paths
+that are not covered by Git's ignore rules.
+
+The filters are applied as follows:
+
+| Filter source                | Glob matches | Explicit paths |
+| ---------------------------- | ------------ | -------------- |
+| Config `exclude`             | applies      | bypassed       |
+| Auto-loaded `.gitignore`     | applies      | bypassed       |
+| `--ignore <patterns>`        | applies      | applies        |
+| `--ignore-path <file>`       | applies      | applies        |
+
 The `exclude` key also works in `package.json`:
 
 ```json
@@ -64,3 +81,37 @@ The `exclude` key also works in `package.json`:
   }
 }
 ```
+
+## `.gitignore` Discovery
+
+:::warning[Behavior change]
+
+The CLI now loads `.gitignore` files automatically during glob discovery.
+This is enabled by default, so Git-ignored files are skipped without adding
+the same patterns to `exclude`. Pass `--no-gitignore` to opt out for a
+command when you need the pre-change behavior.
+
+:::
+
+For each candidate, rules are read from the current working directory down to
+the candidate's own directory. A nested `.gitignore` is anchored to the
+directory that contains it: for example, `generated/` in `docs/.gitignore`
+matches `docs/generated/`, not a similarly named directory elsewhere. Deeper
+The deeper `.gitignore` files are evaluated after shallower ones, so their rules (including
+`!` negations) take precedence.
+
+Discovery does not consult `.gitignore` files above the current working
+directory. If you run the CLI from `packages/app`, a `.gitignore` in the
+repository parent is outside the discovery scope.
+
+Use `--ignore-path <file>` to supply additional `.gitignore`-style rules. The
+option is repeatable; each file is anchored to its own directory, and later
+files override earlier files. `--no-gitignore` disables only the automatic
+`.gitignore` lookup; supplied `--ignore-path` files and `--ignore` patterns
+still apply.
+
+Always quote glob operands, for example `"**/*.md"`. An unquoted shell glob
+such as `*.md` expands to real filenames before `mdx-formatter` sees it. Those
+filenames are classified as explicit paths, so they bypass `exclude` and
+automatic `.gitignore` rules (while `--ignore` and `--ignore-path` still
+apply).

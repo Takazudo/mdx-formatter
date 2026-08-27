@@ -47,7 +47,25 @@ mdx-formatter --write "**/*.{md,mdx}"
 
 # With config file
 mdx-formatter --config .mdx-formatter.json --write "**/*.mdx"
+
+# Apply additional .gitignore-style rules (repeatable)
+mdx-formatter --check "**/*.mdx" --ignore-path .ci/mdx-ignore
+
+# Disable automatic .gitignore discovery for this invocation
+mdx-formatter --check "**/*.mdx" --no-gitignore
 ```
+
+The CLI automatically loads `.gitignore` files for glob discovery. Rules are
+anchored to each file's own directory, deeper `.gitignore` files override
+shallower ones, and files above the current working directory are not
+consulted. `--ignore-path <file>` adds repeatable, `.gitignore`-style rule
+files (later files override earlier ones); `--no-gitignore` disables only the
+automatic lookup.
+
+Explicit path arguments bypass config `exclude` and automatic `.gitignore`
+rules, but still honor `--ignore` and `--ignore-path`. Quote glob operands:
+an unquoted shell glob such as `*.md` expands to explicit filenames before the
+CLI sees it, so `exclude` and automatic `.gitignore` rules do not apply.
 
 ### API
 
