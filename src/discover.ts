@@ -1,6 +1,7 @@
-import { statSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { escape, glob, hasMagic } from 'glob';
+import { readFileSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { escape, glob, hasMagic, Ignore as GlobIgnore } from 'glob';
+import ignore, { type Ignore } from 'ignore';
 
 export interface DiscoveryResult {
   files: string[];
@@ -11,6 +12,8 @@ export interface DiscoveryResult {
 export interface DiscoverOptions {
   cliIgnorePatterns: string[];
   excludePatterns: string[];
+  ignorePaths?: string[];
+  useGitignore?: boolean;
   cwd?: string;
 }
 
@@ -57,16 +60,120 @@ async function explicitPathIsIncluded(
   operand: string,
   cwd: string,
   cliIgnorePatterns: string[],
+  suppliedIgnoreFiles: CompiledIgnoreFile[],
 ): Promise<boolean> {
-  if (cliIgnorePatterns.length === 0) return true;
-
   const absolutePath = resolve(cwd, normalizeOperand(operand));
-  const matches = await glob(escape(absolutePath), {
-    cwd,
-    ignore: cliIgnorePatterns,
-    nodir: true,
+  if (cliIgnorePatterns.length > 0) {
+    const matches = await glob(escape(absolutePath), {
+      cwd,
+      ignore: cliIgnorePatterns,
+      nodir: true,
+    });
+    if (matches.length === 0) return false;
+  }
+
+  return !ignoreFilesDecision(absolutePath, false, suppliedIgnoreFiles);
+}
+
+interface CompiledIgnoreFile {
+  directory: string;
+  matcher: Ignore;
+}
+
+interface GlobPath {
+  fullpath(): string;
+  isDirectory(): boolean;
+}
+
+function pathRelativeTo(directory: string, absolutePath: string): string | undefined {
+  const result = relative(directory, absolutePath);
+  if (result === '' || result === '..' || result.startsWith(`..${sep}`) || isAbsolute(result)) {
+    return undefined;
+  }
+  return normalizeOperand(result);
+}
+
+function testIgnoreFile(
+  absolutePath: string,
+  isDirectory: boolean,
+  compiled: CompiledIgnoreFile,
+): boolean | undefined {
+  const relativePath = pathRelativeTo(compiled.directory, absolutePath);
+  if (relativePath === undefined) return undefined;
+
+  const result = compiled.matcher.test(isDirectory ? `${relativePath}/` : relativePath);
+  if (result.ignored) return true;
+  if (result.unignored) return false;
+  return undefined;
+}
+
+/** Evaluate files in the supplied order, retaining the last matching decision. */
+function ignoreFilesDecision(
+  absolutePath: string,
+  isDirectory: boolean,
+  compiledFiles: CompiledIgnoreFile[],
+): boolean {
+  let ignored = false;
+  for (const compiled of compiledFiles) {
+    const decision = testIgnoreFile(absolutePath, isDirectory, compiled);
+    if (decision !== undefined) ignored = decision;
+  }
+  return ignored;
+}
+
+function loadSuppliedIgnoreFiles(paths: string[], cwd: string): CompiledIgnoreFile[] {
+  return paths.map((file) => {
+    const absolutePath = resolve(cwd, normalizeOperand(file));
+    let rules: string;
+    try {
+      rules = readFileSync(absolutePath, 'utf-8');
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Cannot read ignore file '${file}': ${detail}`);
+    }
+    return {
+      directory: dirname(absolutePath),
+      matcher: ignore({ ignorecase: false }).add(rules),
+    };
   });
-  return matches.length > 0;
+}
+
+function createAutoGitignoreLoader(): (directory: string) => CompiledIgnoreFile | null {
+  const cache = new Map<string, CompiledIgnoreFile | null>();
+  return (directory) => {
+    const absoluteDirectory = resolve(directory);
+    const cached = cache.get(absoluteDirectory);
+    if (cached !== undefined) return cached;
+
+    try {
+      const rules = readFileSync(resolve(absoluteDirectory, '.gitignore'), 'utf-8');
+      const compiled = {
+        directory: absoluteDirectory,
+        matcher: ignore({ ignorecase: false }).add(rules),
+      };
+      cache.set(absoluteDirectory, compiled);
+      return compiled;
+    } catch {
+      cache.set(absoluteDirectory, null);
+      return null;
+    }
+  };
+}
+
+function ancestorDirectories(cwd: string, leafDirectory: string): string[] {
+  const relativeLeaf = relative(cwd, leafDirectory);
+  if (relativeLeaf === '..' || relativeLeaf.startsWith(`..${sep}`) || isAbsolute(relativeLeaf)) {
+    return [];
+  }
+
+  const directories = [cwd];
+  if (relativeLeaf === '') return directories;
+  let current = cwd;
+  for (const part of relativeLeaf.split(sep)) {
+    current = resolve(current, part);
+    directories.push(current);
+  }
+  return directories;
 }
 
 export async function discoverFiles(
@@ -75,36 +182,77 @@ export async function discoverFiles(
 ): Promise<DiscoveryResult> {
   const cwd = options.cwd ?? process.cwd();
   const { explicitPaths, globPatterns, badOperands } = classifyOperands(operands, cwd);
+  const suppliedIgnoreFiles = loadSuppliedIgnoreFiles(options.ignorePaths ?? [], cwd);
+  const loadAutoGitignore = createAutoGitignoreLoader();
   const filesByAbsolutePath = new Map<string, string>();
   let anyMatchedBeforeFilter = explicitPaths.length > 0;
 
   // Seed explicit paths first so their spelling and filter-bypass semantics win
   // when a later glob resolves to the same file.
   for (const operand of explicitPaths) {
-    if (await explicitPathIsIncluded(operand, cwd, options.cliIgnorePatterns)) {
+    if (
+      await explicitPathIsIncluded(operand, cwd, options.cliIgnorePatterns, suppliedIgnoreFiles)
+    ) {
       filesByAbsolutePath.set(resolve(cwd, normalizeOperand(operand)), operand);
     }
   }
 
-  const globIgnorePatterns = [
-    ...new Set([...options.cliIgnorePatterns, ...options.excludePatterns]),
-  ];
+  const hardIgnore = new GlobIgnore(
+    [...new Set([...options.cliIgnorePatterns, ...options.excludePatterns])],
+    {},
+  );
+  const gitignoreEnabled = options.useGitignore ?? true;
   for (const originalPattern of globPatterns) {
     const pattern = normalizeOperand(originalPattern);
+    let filteredDuringWalk = false;
+    const ignoredByGitRules = (path: GlobPath): boolean => {
+      const absolutePath = path.fullpath();
+      const directory = path.isDirectory();
+      let ignored = false;
+
+      if (gitignoreEnabled) {
+        for (const ancestor of ancestorDirectories(cwd, dirname(absolutePath))) {
+          const compiled = loadAutoGitignore(ancestor);
+          if (compiled === null) continue;
+          const decision = testIgnoreFile(absolutePath, directory, compiled);
+          if (decision !== undefined) ignored = decision;
+        }
+      }
+
+      for (const compiled of suppliedIgnoreFiles) {
+        const decision = testIgnoreFile(absolutePath, directory, compiled);
+        if (decision !== undefined) ignored = decision;
+      }
+      return ignored;
+    };
+    const ignoreCallbacks = {
+      ignored(path: GlobPath): boolean {
+        const result =
+          hardIgnore.ignored(path as Parameters<typeof hardIgnore.ignored>[0]) ||
+          ignoredByGitRules(path);
+        filteredDuringWalk ||= result;
+        return result;
+      },
+      childrenIgnored(path: GlobPath): boolean {
+        const result =
+          hardIgnore.childrenIgnored(path as Parameters<typeof hardIgnore.childrenIgnored>[0]) ||
+          ignoredByGitRules(path);
+        filteredDuringWalk ||= result;
+        return result;
+      },
+    };
     const matches = await glob(pattern, {
       cwd,
-      ignore: globIgnorePatterns,
+      ignore: ignoreCallbacks,
       nodir: true,
     });
 
     if (matches.length > 0) {
       anyMatchedBeforeFilter = true;
-    } else if (globIgnorePatterns.length > 0) {
-      // D4 needs only the existence of a pre-filter match, never an exact
-      // count. The follow-up gitignore work replaces this fallback with its
-      // pruning-aware ignore callbacks.
-      const unfilteredMatches = await glob(pattern, { cwd, nodir: true });
-      anyMatchedBeforeFilter ||= unfilteredMatches.length > 0;
+    } else if (filteredDuringWalk) {
+      // This deliberately avoids a second unfiltered walk, which would defeat
+      // directory pruning merely to calculate an exact pre-filter count.
+      anyMatchedBeforeFilter = true;
     }
 
     for (const match of matches) {
