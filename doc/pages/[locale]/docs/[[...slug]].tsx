@@ -22,6 +22,9 @@
 //
 // docHistory note: same as the default-locale stub — when docHistory is
 // selected, the generator patches this file too.
+// Binding decision: retain this generated static merge as the sole DocHistory
+// path because the host-owned stub shadows the package route; static reachability
+// keeps the island registered.
 
 import type { JSX } from "preact";
 import { routeContext } from "virtual:zudo-doc-route-context";

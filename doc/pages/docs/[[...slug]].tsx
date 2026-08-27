@@ -26,6 +26,9 @@
 // DocHistory's chrome-derive default is a no-op stub (unlike
 // DesignTokenPanelBootstrap, which the package auto-defaults), so without
 // that patch the doc-history button never hydrates on this route.
+// Binding decision: retain this generated static merge as the sole DocHistory
+// path because the host-owned stub shadows the package route; static reachability
+// keeps the island registered.
 
 import type { JSX } from "preact";
 import { routeContext } from "virtual:zudo-doc-route-context";
