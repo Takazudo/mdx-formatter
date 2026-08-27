@@ -12,4 +12,5 @@ path = "src/main.rs"
 mdx-formatter-core = { path = "../mdx-formatter-core" }
 clap = { version = "4", features = ["derive"] }
 glob = "0.3"
+ignore = "0.4"
 colored = "2"
