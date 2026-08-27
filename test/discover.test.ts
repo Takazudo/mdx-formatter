@@ -116,6 +116,20 @@ describe('discoverFiles', () => {
     expect(unmatched.anyMatchedBeforeFilter).toBe(false);
   });
 
+  it('does not treat an empty ignored directory as a filtered match', async () => {
+    const cwd = await makeTempDir();
+    await fs.mkdir(path.join(cwd, 'build'));
+
+    const result = await discoverFiles(['**/*.md'], {
+      cwd,
+      cliIgnorePatterns: ['build/**'],
+      excludePatterns: [],
+    });
+
+    expect(result.files).toEqual([]);
+    expect(result.anyMatchedBeforeFilter).toBe(false);
+  });
+
   it('preserves Windows spelling for an explicit result', async () => {
     const cwd = await makeTempDir();
     await writeFile(cwd, 'nested/file.md');
