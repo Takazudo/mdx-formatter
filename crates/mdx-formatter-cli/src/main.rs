@@ -310,6 +310,7 @@ fn collect_files(
         .git_ignore(use_gitignore)
         .git_global(false)
         .git_exclude(false)
+        .require_git(false)
         .parents(false)
         .follow_links(false);
     for entry in walker.build().filter_map(Result::ok) {
