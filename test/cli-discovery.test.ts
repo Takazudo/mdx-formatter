@@ -64,6 +64,24 @@ describe('CLI gitignore discovery', () => {
     expect(excluded.stdout).toContain('All matching files were excluded');
   }, 30_000);
 
+  it('keeps --ignore-path active when --no-gitignore disables automatic files', async () => {
+    const cwd = await makeTempDir();
+    await writeFile(cwd, '.gitignore', 'keep.md\n');
+    await writeFile(cwd, '.caller-ignore', 'drop.md\n');
+    await writeFile(cwd, 'keep.md');
+    await writeFile(cwd, 'drop.md');
+
+    const result = await runCli(
+      ['--check', '*.md', '--no-gitignore', '--ignore-path', '.caller-ignore'],
+      { cwd },
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('Processing 1 file(s)...');
+    expect(result.stdout).toContain('keep.md');
+    expect(result.stdout).not.toContain('drop.md');
+  }, 30_000);
+
   it('reports a missing --ignore-path as a hard error', async () => {
     const cwd = await makeTempDir();
 
