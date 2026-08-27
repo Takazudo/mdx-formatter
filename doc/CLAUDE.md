@@ -1,6 +1,6 @@
 # mdx-formatter Documentation Site
 
-Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) 5.2.1 — a zfb-based documentation framework with MDX, Tailwind CSS v4, and Preact islands. This project is intentionally minimal: one config file (`zfb.config.ts`) plus markdown content — layout, chrome, and islands all ship from `@takazudo/zudo-doc` in `node_modules`. Node.js >= 22 is required.
+Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) 5.13.0 — a zfb-based documentation framework with MDX, Tailwind CSS v4, and Preact islands. This project is intentionally minimal: one config file (`zfb.config.ts`) plus markdown content — layout, chrome, and islands all ship from `@takazudo/zudo-doc` in `node_modules`. Node.js >= 22 is required.
 
 ## Tech Stack
 
@@ -20,6 +20,11 @@ Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) 5.
 - `pnpm build` — runs `zfb build` for a static HTML export to `dist/`
 - `pnpm check` — runs `zfb check` for type and content checking
 - `pnpm preview` — runs `zfb preview` to serve the built `dist/`
+
+The 5.13 scaffold's `scripts/check-links.js` is intentionally not adopted in
+this in-place upgrade: strict use would require a separate content/allowlist
+policy for the existing link warnings, while `zfb build` remains the current
+link-validation gate for this site.
 
 The formatter playground loads project-owned WASM files from `public/wasm/`.
 From the repository root, run `pnpm build:wasm:doc` before using the playground
