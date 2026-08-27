@@ -64,6 +64,8 @@ describe('classifyOperands', () => {
 });
 
 describe('discoverFiles', () => {
+  const baseOptions = { cliIgnorePatterns: [], excludePatterns: [] };
+
   it('lets explicit paths bypass config exclude and gives them dedupe precedence', async () => {
     const cwd = await makeTempDir();
     await writeFile(cwd, 'foo.md');
@@ -126,6 +128,119 @@ describe('discoverFiles', () => {
     });
 
     expect(result.files).toEqual([operand]);
+  });
+
+  it('honors root and nested gitignore files using each file as its anchor', async () => {
+    const cwd = await makeTempDir();
+    await writeFile(cwd, '.gitignore', '/root-only.md\n');
+    await writeFile(cwd, 'docs/.gitignore', 'generated/\n');
+    await writeFile(cwd, 'root-only.md');
+    await writeFile(cwd, 'docs/root-only.md');
+    await writeFile(cwd, 'docs/generated/page.mdx');
+    await writeFile(cwd, 'generated/page.mdx');
+
+    const result = await discoverFiles(['**/*.{md,mdx}'], { cwd, ...baseOptions });
+
+    expect(result.files.sort()).toEqual(['docs/root-only.md', 'generated/page.mdx']);
+  });
+
+  it('lets deeper gitignore decisions override shallower decisions', async () => {
+    const cwd = await makeTempDir();
+    await writeFile(cwd, '.gitignore', '*.md\n');
+    await writeFile(cwd, 'docs/.gitignore', '!keep.md\n');
+    await writeFile(cwd, 'root.md');
+    await writeFile(cwd, 'docs/drop.md');
+    await writeFile(cwd, 'docs/keep.md');
+
+    const result = await discoverFiles(['**/*.md'], { cwd, ...baseOptions });
+
+    expect(result.files).toEqual(['docs/keep.md']);
+  });
+
+  it('uses valid git negation semantics to re-include a child', async () => {
+    const cwd = await makeTempDir();
+    await writeFile(cwd, '.gitignore', 'generated/*\n!generated/keep.md\n');
+    await writeFile(cwd, 'generated/drop.md');
+    await writeFile(cwd, 'generated/keep.md');
+
+    const result = await discoverFiles(['**/*.md'], { cwd, ...baseOptions });
+
+    expect(result.files).toEqual(['generated/keep.md']);
+  });
+
+  it('does not consult gitignore files above cwd', async () => {
+    const parent = await makeTempDir();
+    const cwd = path.join(parent, 'project');
+    await writeFile(parent, '.gitignore', '*.md\n');
+    await writeFile(parent, 'project/keep.md');
+
+    const result = await discoverFiles(['**/*.md'], { cwd, ...baseOptions });
+
+    expect(result.files).toEqual(['keep.md']);
+  });
+
+  it('lets explicit paths bypass automatic gitignore but not supplied ignore files', async () => {
+    const cwd = await makeTempDir();
+    await writeFile(cwd, '.gitignore', 'generated/\n');
+    await writeFile(cwd, '.caller-ignore', 'generated/keep.md\n');
+    await writeFile(cwd, 'generated/keep.md');
+
+    const automatic = await discoverFiles(['generated/keep.md'], { cwd, ...baseOptions });
+    const supplied = await discoverFiles(['generated/keep.md'], {
+      cwd,
+      ...baseOptions,
+      ignorePaths: ['.caller-ignore'],
+    });
+
+    expect(automatic.files).toEqual(['generated/keep.md']);
+    expect(supplied.files).toEqual([]);
+  });
+
+  it('anchors supplied ignore files and lets later files override earlier ones', async () => {
+    const cwd = await makeTempDir();
+    await writeFile(cwd, 'docs/.first-ignore', 'generated/*\n');
+    await writeFile(cwd, 'docs/.second-ignore', '!generated/keep.md\n');
+    await writeFile(cwd, 'docs/generated/drop.md');
+    await writeFile(cwd, 'docs/generated/keep.md');
+    await writeFile(cwd, 'generated/drop.md');
+
+    const result = await discoverFiles(['**/*.md'], {
+      cwd,
+      ...baseOptions,
+      ignorePaths: ['docs/.first-ignore', 'docs/.second-ignore'],
+    });
+
+    expect(result.files.sort()).toEqual(['docs/generated/keep.md', 'generated/drop.md']);
+  });
+
+  it('can disable automatic gitignore discovery', async () => {
+    const cwd = await makeTempDir();
+    await writeFile(cwd, '.gitignore', 'generated/\n');
+    await writeFile(cwd, 'generated/page.mdx');
+
+    const result = await discoverFiles(['**/*.mdx'], {
+      cwd,
+      ...baseOptions,
+      useGitignore: false,
+    });
+
+    expect(result.files).toEqual(['generated/page.mdx']);
+  });
+
+  it('prunes a directory ignored with directory-form gitignore syntax', async () => {
+    const cwd = await makeTempDir();
+    await writeFile(cwd, '.gitignore', 'generated/\n');
+    await Promise.all(
+      Array.from({ length: 100 }, (_, index) =>
+        writeFile(cwd, `generated/level-${index}/page-${index}.md`),
+      ),
+    );
+    await writeFile(cwd, 'keep.md');
+
+    const result = await discoverFiles(['**/*.md'], { cwd, ...baseOptions });
+
+    expect(result.files).toEqual(['keep.md']);
+    expect(result.anyMatchedBeforeFilter).toBe(true);
   });
 });
 

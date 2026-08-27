@@ -16,6 +16,10 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
   version: string;
 };
 
+function collectOption(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
 program
   .name('mdx-formatter')
   .description('AST-based markdown and MDX formatter')
@@ -38,6 +42,13 @@ program
     'Comma-separated patterns to ignore',
     'node_modules/**,dist/**,build/**,.git/**,worktrees/**',
   )
+  .option(
+    '--ignore-path <file>',
+    'Read .gitignore-style rules from file (repeatable; later files override earlier ones)',
+    collectOption,
+    [],
+  )
+  .option('--no-gitignore', 'Disable automatic .gitignore discovery (enabled by default)')
   .action(
     async (
       patterns: string[],
@@ -47,6 +58,8 @@ program
         dryRun?: boolean;
         config?: string;
         ignore: string;
+        ignorePath: string[];
+        gitignore: boolean;
       },
     ) => {
       try {
@@ -84,6 +97,8 @@ async function main(
     dryRun?: boolean;
     config?: string;
     ignore: string;
+    ignorePath: string[];
+    gitignore: boolean;
   },
 ): Promise<void> {
   const cliIgnorePatterns = options.ignore.split(',').map((p) => p.trim());
@@ -99,7 +114,12 @@ async function main(
     files: uniqueFiles,
     anyMatchedBeforeFilter,
     badOperands,
-  } = await discoverFiles(operands, { cliIgnorePatterns, excludePatterns });
+  } = await discoverFiles(operands, {
+    cliIgnorePatterns,
+    excludePatterns,
+    ignorePaths: options.ignorePath,
+    useGitignore: options.gitignore,
+  });
 
   if (badOperands.length > 0) {
     for (const { operand, reason } of badOperands) {
