@@ -1,6 +1,6 @@
 # mdx-formatter Documentation Site
 
-Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) 5.13.0 — a zfb-based documentation framework with MDX, Tailwind CSS v4, and Preact islands. This project is intentionally minimal: one config file (`zfb.config.ts`) plus markdown content — layout, chrome, and islands all ship from `@takazudo/zudo-doc` in `node_modules`. Node.js >= 22 is required.
+Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) 5.21.0 — a zfb-based documentation framework with MDX, Tailwind CSS v4, and Preact islands. This project is intentionally minimal: one config file (`zfb.config.ts`) plus markdown content — layout, chrome, and islands all ship from `@takazudo/zudo-doc` in `node_modules`. Node.js >= 22 is required.
 
 ## Tech Stack
 
