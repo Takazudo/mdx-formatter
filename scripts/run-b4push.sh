@@ -23,6 +23,16 @@ fail() {
   FAILURES+=("$1")
 }
 
+# Machine-wide queue for heavy steps, shared by every agent session on this machine
+# (owner's ~/.claude or ~/.codex). Absent on CI and on other machines → runs directly.
+heavy() {
+  local g="${HEAVY_GUARD:-}"
+  [ -n "$g" ] || for c in "$HOME/.claude/scripts/heavy-guard.sh" "$HOME/.codex/scripts/heavy-guard.sh"; do
+    [ -x "$c" ] && { g="$c"; break; }
+  done
+  if [ -n "$g" ] && [ -z "${CI:-}" ]; then "$g" -- "$@"; else "$@"; fi
+}
+
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DOC_DIR="$ROOT_DIR/doc"
 
@@ -36,7 +46,7 @@ fi
 
 # ── Step 2: TypeScript build ──────────────────────────
 step "Step 2/6: TypeScript build"
-if (cd "$ROOT_DIR" && pnpm build); then
+if (cd "$ROOT_DIR" && heavy pnpm build); then
   pass "TypeScript compilation passed"
 else
   fail "TypeScript build"
@@ -44,7 +54,7 @@ fi
 
 # ── Step 3: Unit tests ───────────────────────────────
 step "Step 3/6: Unit tests"
-if (cd "$ROOT_DIR" && pnpm test); then
+if (cd "$ROOT_DIR" && heavy pnpm test); then
   pass "All tests passed"
 else
   fail "Unit tests"
@@ -68,7 +78,7 @@ fi
 
 # ── Step 6: Doc site build ───────────────────────────
 step "Step 6/6: Doc site build"
-if (cd "$DOC_DIR" && pnpm build); then
+if (cd "$DOC_DIR" && heavy pnpm build); then
   pass "Doc site build passed"
 else
   fail "Doc site build"
