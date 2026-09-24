@@ -12,16 +12,21 @@ allowed-tools:
 
 # Before Push Check
 
-Run `pnpm b4push` from the project root. This executes `scripts/run-b4push.sh` which runs all checks in order:
+Run `pnpm b4push` from the project root. This executes `scripts/run-b4push.sh` and runs the checks in order:
 
 1. Code quality (root) - Prettier + ESLint
-2. TypeScript build - Compile to dist/
-3. Unit tests - Vitest suite (232 tests)
-4. Doc data generation - doc-titles.json + category-nav.json
-5. Doc quality checks - TypeScript + ESLint + Prettier
-6. Doc site build - Full Docusaurus production build
+2. Build the current native formatter binary
+3. TypeScript build - Compile to dist/
+4. Unit tests - `pnpm test`
+5. Native formatter tests - `pnpm test:rust`
+6. Native passthrough tests - `pnpm test:rust-passthrough`
+7. Build the playground WASM package and copy it into the doc site
+8. Doc quality checks - TypeScript + ESLint + Prettier
+9. Doc site build - Production build with zfb
 
-Takes ~40 seconds. All 6 steps must pass.
+The native formatter build, doc WASM build, and doc site build use the machine-wide heavy guard. Type checks, lint, formatting, and Vitest suites run without queueing.
+
+The root test suites run only after the native build succeeds. Doc checks and the doc site build run only after the playground WASM build succeeds, so stale artifacts are never used when preparation fails.
 
 ## On failure
 
@@ -32,7 +37,7 @@ Takes ~40 seconds. All 6 steps must pass.
 3. Re-run `pnpm b4push` to confirm all checks pass
 4. Report the final status
 
-Heavy steps (TypeScript build, unit tests, doc site build) run through the machine-wide heavy-guard and print a `heavy-guard: verdict=PASS|FAIL|ENV_SUSPECT` line.
+Do not wrap the entire `pnpm b4push` command in another heavy guard. Its resource-intensive build steps enter the machine-wide queue individually and print a `heavy-guard: verdict=PASS|FAIL|ENV_SUSPECT` line.
 
-- Exit 75 = the queue timed out and the step never ran — it is not a test failure
+- Exit 75 = the queue timed out and the guarded step never ran. b4push reports it as not run and returns 75 when no other check failed; do not retry it unguarded.
 - `ENV_SUSPECT` → rerun once. Still red with no assertion / type / lint error → defer that step to CI under a `deferred-verification` issue and report it as deferred, never as passed
