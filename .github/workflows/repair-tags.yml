@@ -1,0 +1,66 @@
+# Manual recovery only. Never publishes packages or modifies the next tag.
+name: Repair npm latest tags
+
+on:
+  workflow_dispatch:
+    inputs:
+      stable_version:
+        description: 'Newest stable version present on all five packages (for example 1.2.1)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Print the verified command plan without writes'
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: npm-release-and-tag-repair
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Refuse to overlap any active legacy Release run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Older Release revisions do not share the concurrency group. An
+          # active run can still write tags after this repair starts.
+          for status in queued in_progress waiting requested pending; do
+            count=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?status=${status}&per_page=1" --jq '.total_count')
+            if [ "$count" != 0 ]; then
+              echo "::error::Release has ${count} ${status} run(s). Wait for them to finish before tag repair."
+              exit 1
+            fi
+          done
+      - name: Verify npm auth
+        if: ${{ inputs.dry_run == false }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm whoami
+      - name: Validate all packages, then repair latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          STABLE_VERSION: ${{ inputs.stable_version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ "$DRY_RUN" = "true" ]; then
+            node scripts/release/tags-cli.mjs repair "$STABLE_VERSION" --dry-run
+          else
+            node scripts/release/tags-cli.mjs repair "$STABLE_VERSION"
+          fi

@@ -11,11 +11,10 @@
 #    versions in the packed tarball). prepublishOnly (tsc && vitest run)
 #    executes against the linux-x64 artifact copied into crates/, so the
 #    tests exercise the exact binary being shipped.
-# 4. Moves both latest and next to that version for all 5 packages.
+# 4. Promotes next for prereleases; latest and next for stable versions.
 #
-# Dist-tag policy: prereleases initially publish under next and stable versions
-# under latest. After all 5 packages are live, both latest and next are moved to
-# the released version so either install channel always resolves to the edge.
+# Dist-tag policy: prereleases publish/promote next only and preserve latest.
+# Stable versions publish under latest and promote both latest and next.
 #
 # Idempotency: every publish is guarded by an npm-registry existence check
 # (skip when the exact version is already live, re-check after a failed
@@ -27,6 +26,13 @@
 # requires 2FA for publish otherwise, which cannot be satisfied in CI.
 
 name: Release
+
+# Fixed group shared with repair-tags.yml. Covers npm publish itself, which
+# changes tags before the explicit synchronization step.
+concurrency:
+  group: npm-release-and-tag-repair
+  cancel-in-progress: false
+  queue: max
 
 on:
   push:
@@ -126,11 +132,7 @@ jobs:
         id: meta
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          if [[ "$VERSION" == *-next.* ]]; then
-            DIST_TAG=next
-          else
-            DIST_TAG=latest
-          fi
+          DIST_TAG=$(node scripts/release/tags-cli.mjs channel "$VERSION")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "dist_tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
           echo "Releasing v${VERSION} under initial dist-tag '${DIST_TAG}'"
@@ -153,27 +155,7 @@ jobs:
       - name: Publish platform packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          VERSION="${{ steps.meta.outputs.version }}"
-          DIST_TAG="${{ steps.meta.outputs.dist_tag }}"
-          for dir in npm/darwin-arm64 npm/darwin-x64 npm/linux-x64-gnu npm/win32-x64-msvc; do
-            PKG=$(node -p "require('./$dir/package.json').name")
-            if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
-              echo "${PKG}@${VERSION} already published — skipping"
-              continue
-            fi
-            echo "Publishing ${PKG}@${VERSION} (--tag ${DIST_TAG})..."
-            if ! (cd "$dir" && npm publish --access public --tag "$DIST_TAG" --provenance); then
-              # Race tolerance: another run may have published it between the
-              # check and the publish. "Now exists" counts as success.
-              if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
-                echo "${PKG}@${VERSION} appeared during publish — treating as success"
-              else
-                echo "::error::Failed to publish ${PKG}@${VERSION}"
-                exit 1
-              fi
-            fi
-          done
+        run: node scripts/release/tags-cli.mjs publish-platforms "${{ steps.meta.outputs.version }}" "${{ steps.meta.outputs.dist_tag }}"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -185,89 +167,13 @@ jobs:
         run: cp artifacts/bindings-x86_64-unknown-linux-gnu/mdx-formatter-napi.linux-x64-gnu.node crates/mdx-formatter-napi/mdx-formatter-napi.node
 
       - name: Publish root package
+        # pnpm publish rewrites pinned workspace:X.Y.Z dependencies in the
+        # packed tarball. The helper retains exact-version idempotency.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          VERSION="${{ steps.meta.outputs.version }}"
-          DIST_TAG="${{ steps.meta.outputs.dist_tag }}"
-          PKG="@takazudo/mdx-formatter"
-          if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
-            echo "${PKG}@${VERSION} already published — skipping"
-            exit 0
-          fi
-          echo "Publishing ${PKG}@${VERSION} (--tag ${DIST_TAG})..."
-          # pnpm publish (NOT npm publish): rewrites the workspace:X.Y.Z
-          # optionalDependencies to exact versions in the packed tarball.
-          if ! pnpm publish --access public --tag "$DIST_TAG" --no-git-checks --provenance; then
-            if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
-              echo "${PKG}@${VERSION} appeared during publish — treating as success"
-            else
-              echo "::error::Failed to publish ${PKG}@${VERSION}"
-              exit 1
-            fi
-          fi
+        run: node scripts/release/tags-cli.mjs publish-root "${{ steps.meta.outputs.version }}" "${{ steps.meta.outputs.dist_tag }}"
 
-      # `next` existed before the project adopted one edge channel. Keep it as
-      # a compatibility alias, with both tags following every successful release.
-      - name: Point latest and next to released version
+      - name: Promote release dist-tags and verify registry state
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          VERSION="${{ steps.meta.outputs.version }}"
-          for PKG in @takazudo/mdx-formatter @takazudo/mdx-formatter-darwin-arm64 @takazudo/mdx-formatter-darwin-x64 @takazudo/mdx-formatter-linux-x64-gnu @takazudo/mdx-formatter-win32-x64-msvc; do
-            for DIST_TAG in latest next; do
-              for attempt in 1 2 3 4 5 6; do
-                if npm dist-tag add "${PKG}@${VERSION}" "$DIST_TAG"; then
-                  echo "${PKG}@${DIST_TAG} -> ${VERSION} ✓"
-                  break
-                fi
-                if [ "$attempt" = "6" ]; then
-                  echo "::error::Failed to point ${PKG}@${DIST_TAG} to ${VERSION} after retries"
-                  exit 1
-                fi
-                echo "${PKG}@${VERSION} not ready for dist-tag update (attempt ${attempt}/6) — waiting 10s..."
-                sleep 10
-              done
-            done
-          done
-
-      - name: Verify published versions
-        run: |
-          VERSION="${{ steps.meta.outputs.version }}"
-          echo "=== published @ ${VERSION} ==="
-          for PKG in @takazudo/mdx-formatter @takazudo/mdx-formatter-darwin-arm64 @takazudo/mdx-formatter-darwin-x64 @takazudo/mdx-formatter-linux-x64-gnu @takazudo/mdx-formatter-win32-x64-msvc; do
-            # The npm registry CDN can lag several seconds behind a fresh
-            # publish, so a bare `npm view` right after publishing 404s on a
-            # version that IS live. Retry before failing so verification
-            # tolerates propagation without masking a genuine publish failure.
-            for attempt in 1 2 3 4 5 6; do
-              if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
-                echo "${PKG}@${VERSION} ✓"
-                break
-              fi
-              if [ "$attempt" = "6" ]; then
-                echo "::error::${PKG}@${VERSION} not visible on the registry after retries"
-                exit 1
-              fi
-              echo "${PKG}@${VERSION} not yet visible (attempt ${attempt}/6) — waiting 10s for registry propagation..."
-              sleep 10
-            done
-          done
-          echo "=== synchronized edge dist-tags ==="
-          for PKG in @takazudo/mdx-formatter @takazudo/mdx-formatter-darwin-arm64 @takazudo/mdx-formatter-darwin-x64 @takazudo/mdx-formatter-linux-x64-gnu @takazudo/mdx-formatter-win32-x64-msvc; do
-            for DIST_TAG in latest next; do
-              for attempt in 1 2 3 4 5 6; do
-                ACTUAL=$(npm view "${PKG}@${DIST_TAG}" version 2>/dev/null || true)
-                if [ "$ACTUAL" = "$VERSION" ]; then
-                  echo "${PKG}@${DIST_TAG} -> ${ACTUAL} ✓"
-                  break
-                fi
-                if [ "$attempt" = "6" ]; then
-                  echo "::error::${PKG}@${DIST_TAG} resolved to '${ACTUAL}', expected '${VERSION}'"
-                  exit 1
-                fi
-                echo "${PKG}@${DIST_TAG} not synchronized yet (attempt ${attempt}/6) — waiting 10s..."
-                sleep 10
-              done
-            done
-          done
+        run: node scripts/release/tags-cli.mjs sync "${{ steps.meta.outputs.version }}"
