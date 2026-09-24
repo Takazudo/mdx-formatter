@@ -1,10 +1,10 @@
 # npm dist-tag policy and recovery
 
-The `Release` workflow publishes all five exact package versions, platform packages before the root package. Every prerelease suffix (`-next.*`, `-beta.*`, and others) uses `next` for the initial publish and final promotion. `latest` stays on the stable release. A stable release initially publishes under `latest`, then promotes both `latest` and `next`. The two workflows share the fixed `npm-release-and-tag-repair` concurrency group, including the publish job's initial npm tag writes.
+The `Release` workflow publishes all five exact package versions, platform packages before the root package. Every prerelease suffix (`-next.*`, `-beta.*`, and others) initially publishes under `next`; stable releases initially publish under `latest`. Once all five versions are live, every release promotes both `latest` and `next` to that version. The release and manual repair workflows share the fixed `npm-release-and-tag-repair` concurrency group, including the publish job's initial npm tag writes.
 
-## Repair a misplaced `latest`
+## Historical stable-only `latest` repair
 
-Use this only after the policy workflow has merged to `main`. Do not dispatch it from an unreviewed branch. The workflow changes `latest` only; it never publishes, creates a release, or changes `next`.
+This manual workflow remains for recovery of the September 2026 incident. It restores `latest` to a stable version and does not apply the current both-tag release policy. Do not use it for routine releases; rerun `release.yml` at the exact tag after a partial release. The repair workflow changes `latest` only; it never publishes, creates a release, or changes `next`.
 
 1. Check `gh run list --workflow release.yml --status in_progress` and also `queued`, `waiting`, `requested`, and `pending`. Wait for **all** Release runs, especially old workflow revisions without the concurrency group, to finish. The repair workflow repeats this preflight and fails if any are active.
 2. Read `npm view <package> versions --json` and `npm view <package> dist-tags --json` for the root package and all four platform packages. Confirm the same newest stable version is available on every package. Save the five dist-tag results as the rollback record. For the September 2026 incident the candidate was `1.2.1`, but use that value only if it is still newest stable.

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  initialPublishTag,
   packages,
   publishExactVersion,
   releaseTags,
@@ -81,19 +82,23 @@ test('exact-version publish skips existing packages and safely retries a partial
   assert.equal(calls, 3);
 });
 
-test('any prerelease suffix publishes under next only and preserves latest', async () => {
-  assert.deepEqual(releaseTags('1.3.0-next.4'), ['next']);
-  assert.deepEqual(releaseTags('1.3.0-beta.2'), ['next']);
+test('any prerelease suffix publishes under next, then promotes both tags', async () => {
+  assert.equal(initialPublishTag('1.3.0-next.4'), 'next');
+  assert.equal(initialPublishTag('1.3.0-beta.2'), 'next');
+  assert.deepEqual(releaseTags('1.3.0-next.4'), ['latest', 'next']);
+  assert.deepEqual(releaseTags('1.3.0-beta.2'), ['latest', 'next']);
   for (const version of ['1.3.0-next.4', '1.3.0-beta.2']) {
     const npm = registry({ versions: ['1.2.1', version], next: version });
     await synchronizeRelease(npm, version, instant);
-    assert.equal(npm.calls.length, 5);
+    assert.equal(npm.calls.length, 10);
     for (const pkg of packages)
-      assert.deepEqual(await npm.tags(pkg), { latest: '1.2.1', next: version });
+      assert.deepEqual(await npm.tags(pkg), { latest: version, next: version });
   }
 });
 
 test('stable release promotes latest and next for all packages', async () => {
+  assert.equal(initialPublishTag('1.3.0'), 'latest');
+  assert.deepEqual(releaseTags('1.3.0'), ['latest', 'next']);
   const npm = registry({ versions: ['1.2.1', '1.3.0'] });
   await synchronizeRelease(npm, '1.3.0', instant);
   assert.equal(npm.calls.length, 10);
@@ -113,7 +118,7 @@ test('partial update can be retried and tag-add failure fails visibly', async ()
   assert.equal((await npm.tags(packages[0])).next, '1.3.0-next.4');
   fail = false;
   await synchronizeRelease(npm, '1.3.0-next.4', instant);
-  assert.equal(npm.calls.length, 7);
+  assert.equal(npm.calls.length, 14);
 });
 
 test('visibility retries tolerate propagation, then fail when a package stays absent', async () => {
@@ -128,14 +133,14 @@ test('visibility retries tolerate propagation, then fail when a package stays ab
   await assert.rejects(synchronizeRelease(npm, '1.3.0-next.4', instant), /visibility failed/);
 });
 
-test('prerelease release leaves absent latest absent', async () => {
+test('prerelease release creates latest when it is absent', async () => {
   const npm = registry();
   for (const pkg of packages) delete npm.state.get(pkg).tags.latest;
   await synchronizeRelease(npm, '1.3.0-next.4', instant);
-  for (const pkg of packages) assert.equal((await npm.tags(pkg)).latest, undefined);
+  for (const pkg of packages) assert.equal((await npm.tags(pkg)).latest, '1.3.0-next.4');
 });
 
-test('release refuses a newer stable latest and detects concurrent latest changes', async () => {
+test('release refuses a newer latest and detects concurrent latest changes', async () => {
   const npm = registry({ versions: ['1.2.1', '1.3.0'] });
   npm.state.get(packages[0]).tags.latest = '2.0.0';
   await assert.rejects(synchronizeRelease(npm, '1.3.0', instant), /refusing to downgrade/);
@@ -145,7 +150,7 @@ test('release refuses a newer stable latest and detects concurrent latest change
     await original(...args);
     if (args[0] === packages[4]) other.state.get(packages[0]).tags.latest = '1.3.0';
   };
-  await assert.rejects(synchronizeRelease(other, '1.3.0-next.4', instant), /latest changed/);
+  await assert.rejects(synchronizeRelease(other, '1.3.0-next.4', instant), /verification failed/);
 });
 
 test('repair validates all five before writing, preserves next, and supports dry run', async () => {

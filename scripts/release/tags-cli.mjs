@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import {
+  initialPublishTag,
   npmRegistry,
   publishExactVersion,
-  releaseTags,
   repairLatest,
   synchronizeRelease,
 } from './tags.mjs';
@@ -12,10 +12,10 @@ const [action, ...args] = process.argv.slice(2);
 const registry = npmRegistry();
 try {
   if (action === 'channel') {
-    console.log(releaseTags(args[0])[0]);
+    console.log(initialPublishTag(args[0]));
   } else if (action === 'publish-platforms' || action === 'publish-root') {
     const [version, tag] = args;
-    if (!version || !tag || releaseTags(version)[0] !== tag)
+    if (!version || !tag || initialPublishTag(version) !== tag)
       throw new Error('Invalid publish version or tag');
     const dirs =
       action === 'publish-root'

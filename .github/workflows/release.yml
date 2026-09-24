@@ -11,10 +11,10 @@
 #    versions in the packed tarball). prepublishOnly (tsc && vitest run)
 #    executes against the linux-x64 artifact copied into crates/, so the
 #    tests exercise the exact binary being shipped.
-# 4. Promotes next for prereleases; latest and next for stable versions.
+# 4. Promotes both latest and next for every release.
 #
-# Dist-tag policy: prereleases publish/promote next only and preserve latest.
-# Stable versions publish under latest and promote both latest and next.
+# Dist-tag policy: prereleases initially publish under next and stable versions
+# under latest. After all five versions are live, both tags move to the release.
 #
 # Idempotency: every publish is guarded by an npm-registry existence check
 # (skip when the exact version is already live, re-check after a failed

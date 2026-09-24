@@ -49,5 +49,5 @@ pnpm --dir doc preview # Preview doc/dist/ with zfb
 - `files` field limits published content to: `dist/`, `format-stdin.js`, `README.md`, `LICENSE`
 - `prepublishOnly` runs `tsc && vitest run` automatically
 - Use `/l-make-release` for ALL releases (stable, prerelease, promotion) — one-call autonomous: bump, changelog, CI wait, tag; the tag triggers `release.yml` which auto-publishes all 5 packages via the repo `NPM_TOKEN`. Pass `--confirm` for interactive vetting
-- Prereleases publish and promote `next` only, preserving stable `latest`; stable releases promote both `latest` and `next` for the root and all four platform packages. Tag-only recovery uses `.github/workflows/repair-tags.yml` after policy merge and never changes `next`
+- Prereleases initially publish under `next` and stable releases under `latest`; after all five packages are live, every release promotes both `latest` and `next` for the root and all four platform packages. The stable-only `.github/workflows/repair-tags.yml` is for historical recovery, not routine releases
 - Never run `npm publish` / `pnpm publish` locally — publishing happens only in `release.yml` (the root package MUST go through `pnpm publish` there, which rewrites the `workspace:` specifiers)

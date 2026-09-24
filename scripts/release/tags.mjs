@@ -53,7 +53,12 @@ export function compareVersions(left, right) {
 }
 
 export function releaseTags(version) {
-  return parseVersion(version).prerelease ? ['next'] : ['latest', 'next'];
+  parseVersion(version);
+  return ['latest', 'next'];
+}
+
+export function initialPublishTag(version) {
+  return parseVersion(version).prerelease ? 'next' : 'latest';
 }
 
 export async function publishExactVersion(registry, pkg, version, publish) {
@@ -115,7 +120,6 @@ export async function retry(
 
 export async function synchronizeRelease(registry, version, options = {}) {
   const tags = releaseTags(version);
-  const latestBefore = new Map();
   for (const pkg of packages) {
     await retry(
       () => registry.versionExists(pkg, version),
@@ -123,43 +127,18 @@ export async function synchronizeRelease(registry, version, options = {}) {
       options,
     );
     const currentTags = await registry.tags(pkg);
-    const current = currentTags.latest;
-    if (
-      parseVersion(version).prerelease &&
-      currentTags.next &&
-      compareVersions(currentTags.next, version) > 0
-    ) {
-      throw new Error(`${pkg}: refusing to downgrade next from ${currentTags.next} to ${version}`);
+    for (const tag of tags) {
+      if (currentTags[tag] && compareVersions(currentTags[tag], version) > 0)
+        throw new Error(
+          `${pkg}: refusing to downgrade ${tag} from ${currentTags[tag]} to ${version}`,
+        );
     }
-    if (
-      current &&
-      !parseVersion(current).prerelease &&
-      !parseVersion(version).prerelease &&
-      compareStable(current, version) > 0
-    ) {
-      throw new Error(`${pkg}: refusing to downgrade latest from ${current} to ${version}`);
-    }
-    latestBefore.set(pkg, current);
   }
   for (const pkg of packages) {
     for (const tag of tags) {
       const current = await registry.tags(pkg);
-      if (
-        tag === 'latest' &&
-        current.latest &&
-        !parseVersion(current.latest).prerelease &&
-        compareVersions(current.latest, version) > 0
-      ) {
-        throw new Error(`${pkg}: latest advanced to ${current.latest}; refusing downgrade`);
-      }
-      if (
-        tag === 'next' &&
-        parseVersion(version).prerelease &&
-        current.next &&
-        compareVersions(current.next, version) > 0
-      ) {
-        throw new Error(`${pkg}: next advanced to ${current.next}; refusing downgrade`);
-      }
+      if (current[tag] && compareVersions(current[tag], version) > 0)
+        throw new Error(`${pkg}: ${tag} advanced to ${current[tag]}; refusing downgrade`);
       await retry(
         async () => {
           await registry.add(pkg, version, tag);
@@ -177,11 +156,6 @@ export async function synchronizeRelease(registry, version, options = {}) {
         `${pkg}@${tag} verification`,
         options,
       );
-    }
-    if (parseVersion(version).prerelease) {
-      const currentLatest = (await registry.tags(pkg)).latest;
-      if (currentLatest !== latestBefore.get(pkg))
-        throw new Error(`${pkg}: latest changed during prerelease synchronization`);
     }
   }
 }
