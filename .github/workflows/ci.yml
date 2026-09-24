@@ -34,3 +34,4 @@ jobs:
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm test
+      - run: node --test scripts/release/tags.node-test.mjs

@@ -47,6 +47,7 @@ export default defineConfig({
       scanRoot: "..",
     },
     defaultLocaleOnlyPrefixes: [
+      "/docs/claude/",
       "/docs/claude-md/",
       "/docs/claude-skills/",
       "/docs/claude-agents/",

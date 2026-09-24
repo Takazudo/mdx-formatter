@@ -1,10 +1,10 @@
 # mdx-formatter Documentation Site
 
-Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) 5.21.0 — a zfb-based documentation framework with MDX, Tailwind CSS v4, and Preact islands. This project is intentionally minimal: one config file (`zfb.config.ts`) plus markdown content — layout, chrome, and islands all ship from `@takazudo/zudo-doc` in `node_modules`. Node.js >= 22 is required.
+Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) 5.27.0 — a zfb-based documentation framework with MDX, Tailwind CSS v4, and Preact islands. This project is intentionally minimal: one config file (`zfb.config.ts`) plus markdown content — layout, chrome, and islands all ship from `@takazudo/zudo-doc` in `node_modules`. Node.js >= 22 is required.
 
 ## Tech Stack
 
-- **zfb** — documentation build framework
+- **zfb 2.20.2** — documentation build framework
 - **MDX** — content format, authored under `src/content/`
 - **Tailwind CSS v4** — compiled by zfb's embedded Tailwind engine (no `@tailwindcss/vite` plugin, no `tailwindcss` dependency); `src/styles/global.css` imports `tailwindcss/preflight` + `tailwindcss/utilities` and zfb's internal resolver serves both
 - **Preact** — for interactive islands only (with compat mode for React API)
@@ -94,3 +94,5 @@ Admonitions (above), tabbed content (`<Tabs>` / `<TabItem>`, `<CodeGroup>`), and
 - **docHistory** — Document edit history
 - **llmsTxt** — Generates llms.txt for LLM consumption
 - **changelog** — Changelog page at `/docs/changelog`
+
+Claude resource docs stay in the default locale: `defaultLocaleOnlyPrefixes` includes both `/docs/claude/` and the resource subsection prefixes because zudo-doc 5.15+ localizes resource overview indexes by default.

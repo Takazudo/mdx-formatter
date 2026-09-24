@@ -10,7 +10,7 @@ AST-based markdown and MDX formatter powered by a Rust engine (via napi-rs). Pub
 - **Test framework**: vitest
 - **Linting**: ESLint (flat config) + Prettier + lefthook (pre-commit hooks)
 - **Build**: `tsc` (output to `dist/`)
-- **Doc site**: zudo-doc 5.21.0 / zfb (workspace in `doc/`; Node.js >= 22)
+- **Doc site**: zudo-doc 5.27.0 / zfb 2.20.2 (workspace in `doc/`; Node.js >= 22)
 - **Rust implementation**: Production-ready Rust engine in `crates/` (markdown-rs + napi-rs + WASM)
 
 ## Commands
@@ -49,5 +49,5 @@ pnpm --dir doc preview # Preview doc/dist/ with zfb
 - `files` field limits published content to: `dist/`, `format-stdin.js`, `README.md`, `LICENSE`
 - `prepublishOnly` runs `tsc && vitest run` automatically
 - Use `/l-make-release` for ALL releases (stable, prerelease, promotion) — one-call autonomous: bump, changelog, CI wait, tag; the tag triggers `release.yml` which auto-publishes all 5 packages via the repo `NPM_TOKEN`. Pass `--confirm` for interactive vetting
-- Every successful release points both npm dist-tags, `latest` and legacy-compatible `next`, to the released edge version for the root and all four platform packages
+- Prereleases publish and promote `next` only, preserving stable `latest`; stable releases promote both `latest` and `next` for the root and all four platform packages. Tag-only recovery uses `.github/workflows/repair-tags.yml` after policy merge and never changes `next`
 - Never run `npm publish` / `pnpm publish` locally — publishing happens only in `release.yml` (the root package MUST go through `pnpm publish` there, which rewrites the `workspace:` specifiers)
