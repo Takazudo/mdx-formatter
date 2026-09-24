@@ -202,6 +202,50 @@ test('repair reports partial failure and can resume safely', async () => {
   for (const pkg of packages) assert.equal((await npm.tags(pkg)).latest, '1.2.1');
 });
 
+test('repair waits for registry tag propagation after a successful write', async () => {
+  const npm = registry({ latest: '1.3.0-next.4' });
+  const originalAdd = npm.add;
+  const originalTags = npm.tags;
+  let staleReads = 0;
+  npm.add = async (...args) => {
+    await originalAdd(...args);
+    if (args[0] === packages[0]) staleReads = 2;
+  };
+  npm.tags = async (pkg) => {
+    if (pkg === packages[0] && staleReads > 0) {
+      staleReads--;
+      return { latest: '1.3.0-next.4', next: '1.3.0-next.4' };
+    }
+    return originalTags(pkg);
+  };
+
+  await repairLatest(npm, '1.2.1', { retryOptions: instant });
+  assert.equal(staleReads, 0);
+  assert.equal(npm.calls.length, 5);
+  for (const pkg of packages) assert.equal((await npm.tags(pkg)).latest, '1.2.1');
+});
+
+test('repair reports a write whose tag never becomes visible', async () => {
+  const npm = registry({ latest: '1.3.0-next.4' });
+  const originalAdd = npm.add;
+  const originalTags = npm.tags;
+  let wrote = false;
+  npm.add = async (...args) => {
+    await originalAdd(...args);
+    wrote = true;
+  };
+  npm.tags = async (pkg) =>
+    wrote && pkg === packages[0]
+      ? { latest: '1.3.0-next.4', next: '1.3.0-next.4' }
+      : originalTags(pkg);
+
+  await assert.rejects(
+    repairLatest(npm, '1.2.1', { retryOptions: instant }),
+    /Tag repair incomplete.*latest did not resolve to 1.2.1/,
+  );
+  assert.equal(npm.calls.length, 1);
+});
+
 test('old prerelease rerun cannot move next backwards', async () => {
   const npm = registry({
     versions: ['1.2.1', '1.3.0-next.4', '1.3.0-next.5'],

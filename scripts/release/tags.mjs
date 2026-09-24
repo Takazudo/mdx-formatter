@@ -186,7 +186,24 @@ export async function synchronizeRelease(registry, version, options = {}) {
   }
 }
 
-export async function repairLatest(registry, target, { dryRun = false, log = () => {} } = {}) {
+async function waitForLatest(registry, pkg, target, expectedNext, options = {}) {
+  const { attempts = 6, wait = () => new Promise((resolve) => setTimeout(resolve, 10000)) } =
+    options;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const tags = await registry.tags(pkg);
+    if (tags.next !== expectedNext) throw new Error(`${pkg}: next changed unexpectedly`);
+    if (tags.latest === target) return;
+    if (attempt === attempts)
+      throw new Error(`${pkg}: latest did not resolve to ${target} after ${attempts} attempts`);
+    await wait();
+  }
+}
+
+export async function repairLatest(
+  registry,
+  target,
+  { dryRun = false, log = () => {}, retryOptions = {} } = {},
+) {
   if (parseVersion(target).prerelease) throw new Error(`Repair target must be stable: ${target}`);
   const snapshots = new Map();
   // Validate every package and the full plan before the first write.
@@ -229,15 +246,12 @@ export async function repairLatest(registry, target, { dryRun = false, log = () 
       if (dryRun) continue;
       await registry.add(pkg, target, 'latest');
       changed.push(pkg);
-      const after = await registry.tags(pkg);
-      if (after.latest !== target || after.next !== baseline.next)
-        throw new Error(`${pkg}: unexpected tags after update`);
+      // npm's read CDN can briefly return the old tag after a successful write.
+      await waitForLatest(registry, pkg, target, baseline.next, retryOptions);
     }
     if (!dryRun) {
       for (const pkg of packages) {
-        const after = await registry.tags(pkg);
-        if (after.latest !== target || after.next !== snapshots.get(pkg).next)
-          throw new Error(`${pkg}: final tags changed unexpectedly`);
+        await waitForLatest(registry, pkg, target, snapshots.get(pkg).next, retryOptions);
       }
     }
   } catch (error) {
