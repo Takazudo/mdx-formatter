@@ -14,4 +14,4 @@ Use this only after the policy workflow has merged to `main`. Do not dispatch it
 
 If the repair itself must be rolled back, use the saved before-state. For each package changed by the repair, re-read its tags and published stable versions. Only when `latest` still equals the repair target and the prior version is still the intended stable version, run `npm dist-tag add '<package>@<prior-version>' latest` with authorized npm credentials. Do not roll back over a newer stable release or change `next`. If the saved `latest` was a prerelease, investigate before restoring it: the purpose of this repair is to remove that erroneous state. A partial repair is safe to retry and is preferable to blind rollback.
 
-The helper can also be exercised locally without writes: `node scripts/release/tags-cli.mjs repair 1.2.1 --dry-run`. It reads public metadata only. Run `node --test scripts/release/tags.test.mjs` for policy tests.
+The helper can also be exercised locally without writes: `node scripts/release/tags-cli.mjs repair 1.2.1 --dry-run`. It reads public metadata only. Run `node --test scripts/release/tags.node-test.mjs` for policy tests.
