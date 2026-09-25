@@ -28,12 +28,6 @@ Or use directly with npx:
 npx @takazudo/mdx-formatter --write "**/*.md"
 ```
 
-### Prerelease (next)
-
-```bash
-npm install @takazudo/mdx-formatter@next
-```
-
 ## Usage
 
 ### CLI

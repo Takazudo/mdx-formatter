@@ -48,6 +48,6 @@ pnpm --dir doc preview # Preview doc/dist/ with zfb
 - Scoped package: `@takazudo/mdx-formatter` + 4 platform binary packages (`npm/*`, pnpm workspace members pinned as `workspace:X.Y.Z` optionalDependencies)
 - `files` field limits published content to: `dist/`, `format-stdin.js`, `README.md`, `LICENSE`
 - `prepublishOnly` runs `tsc && vitest run` automatically
-- Use `/l-make-release` for ALL releases (stable, prerelease, promotion) — one-call autonomous: bump, changelog, CI wait, tag; the tag triggers `release.yml` which auto-publishes all 5 packages via the repo `NPM_TOKEN`. Pass `--confirm` for interactive vetting
-- Prereleases initially publish under `next` and stable releases under `latest`; after all five packages are live, every release promotes both `latest` and `next` for the root and all four platform packages. The stable-only `.github/workflows/repair-tags.yml` is for historical recovery, not routine releases
+- Use `/l-make-release` for ALL releases — one-call autonomous: bump, changelog, CI wait, tag; the tag triggers `release.yml` which auto-publishes all 5 packages via the repo `NPM_TOKEN`. Pass `--confirm` for interactive vetting
+- Stable releases only — the `-next.N` prerelease line is retired. Every release publishes under `latest` and `release.yml` then moves `next` to the same version for the root and all four platform packages, so `@next` users land on stable. Never delete the `next` tag. The stable-only `.github/workflows/repair-tags.yml` is for historical recovery, not routine releases
 - Never run `npm publish` / `pnpm publish` locally — publishing happens only in `release.yml` (the root package MUST go through `pnpm publish` there, which rewrites the `workspace:` specifiers)

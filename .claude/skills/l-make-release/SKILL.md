@@ -1,7 +1,7 @@
 ---
-description: 'Release @takazudo/mdx-formatter — bump the version, sync platform packages, write the changelog, push, wait for CI, tag (which triggers the release.yml auto-publish of all 5 npm packages via the repo NPM_TOKEN), promote both latest and next for every release, watch the publish run, and create the GitHub Release. Fully autonomous end-to-end by default (no confirmation prompts); pass --confirm to vet the proposal interactively and stop before tagging. Triggers on rough requests like "bump version", "cut a release", "release mdx-formatter", "make a release", "publish a new version".'
+description: 'Release @takazudo/mdx-formatter — bump the version, sync platform packages, write the changelog, push, wait for CI, tag (which triggers the release.yml auto-publish of all 5 npm packages via the repo NPM_TOKEN), move both latest and next to the new version, watch the publish run, and create the GitHub Release. Fully autonomous end-to-end by default (no confirmation prompts); pass --confirm to vet the proposal interactively and stop before tagging. Triggers on rough requests like "bump version", "cut a release", "release mdx-formatter", "make a release", "publish a new version".'
 user-invocable: true
-argument-description: 'Optional: major, minor, patch — stable release with that bump. next — start or continue an X.Y.Z-next.N prerelease. stable — promote the current prerelease to stable. No argument: prerelease → increment N; stable → analyze commits and pick the bump autonomously. --confirm — interactive mode: present the bump proposal and wait, and stop before tagging instead of publishing.'
+argument-description: 'Optional: major, minor, patch — stable release with that bump. No argument: analyze commits and pick the bump autonomously (a leftover X.Y.Z-next.N version is finalized to X.Y.Z). --confirm — interactive mode: present the bump proposal and wait, and stop before tagging instead of publishing.'
 ---
 
 # /l-make-release
@@ -21,14 +21,14 @@ This skill is **model-invocable**: a rough natural-language request like "bump v
 - The four platform packages (`npm/darwin-arm64`, `npm/darwin-x64`, `npm/linux-x64-gnu`, `npm/win32-x64-msvc`) are **pnpm workspace members**, declared on the root as pinned `workspace:X.Y.Z` optionalDependencies. They resolve locally at bump time — before the new versions exist on the registry — so the lockfile stays consistent and bump-commit CI is green. (The pre-workspace flow could never have green CI on the bump commit: `ERR_PNPM_OUTDATED_LOCKFILE`, see v1.2.1 history.)
 - `scripts/sync-napi-versions.mjs` keeps all five `package.json` versions + the `workspace:` specifiers lockstep with the root version.
 - `release.yml` publishes the platform packages with `npm publish` and the root with `pnpm publish` (which rewrites `workspace:X.Y.Z` → exact `X.Y.Z` in the tarball). Every publish is idempotency-guarded, so re-running the workflow after a partial failure is safe.
-- Prereleases initially publish under `next`, and stable releases initially publish under `latest`. After all five exact versions are live, `release.yml` promotes both `latest` and `next` on every package, including prereleases.
+- **Stable releases only — no prereleases.** The `-next.N` line was retired after `1.3.0-next.5`. Every release publishes under `latest`, then `release.yml` moves `next` to the same version, so `next` is just an alias of `latest` and anyone still installing `@next` lands on the stable release. Don't delete the `next` tag: `@next` installs would fail.
 - The repo secret `NPM_TOKEN` is an automation token covering ALL `@takazudo` packages (root + platform). If a publish fails with `E404 Not Found - PUT` or a 2FA error, the token scope/type is the problem — fix it at npmjs.com → Access Tokens.
 
 ## Boundaries
 
 - This skill **never** runs `npm publish` / `pnpm publish` locally. Publishing happens only in `release.yml`, triggered by the tag push.
 - The GitHub Release is created AFTER the publish run succeeds (it does not trigger anything — the tag does).
-- Prereleases get a git tag (required to trigger publishing) but **no changelog doc and no GitHub Release** (existing convention).
+- Never create a prerelease (`X.Y.Z-next.N` or any other suffix), even if asked for "next". Ship a stable version instead.
 
 ## Step 1: Preconditions
 
@@ -50,24 +50,15 @@ Read the current version from the root `package.json`.
 
 ### No argument
 
-- Current is `X.Y.Z-next.N` (prerelease): continue the line → `X.Y.Z-next.{N+1}`
-- Current is stable `X.Y.Z`: analyze commits since the last stable tag (Step 3) and pick autonomously:
+- Current is a leftover prerelease `X.Y.Z-next.N`: finalize it → `X.Y.Z` (analyze commits since the last **stable** tag, skipping `-next.*` tags).
+- Current is stable `X.Y.Z`: analyze commits since the last tag (Step 3) and pick autonomously:
   - breaking changes → **major**
   - new features → **minor**
   - otherwise → **patch**
 
 ### `major` / `minor` / `patch` argument
 
-Stable release with that bump from the current stable version (e.g. `patch`: `1.2.1` → `1.2.2`). If the current version is a prerelease, stop with an error — promote with `stable` or bump explicitly from the prerelease's base.
-
-### `next` argument
-
-- Current is stable `X.Y.Z`: start a new minor prerelease → `X.{Y+1}.0-next.1`
-- Current is `X.Y.Z-next.N`: continue → `X.Y.Z-next.{N+1}`
-
-### `stable` argument
-
-Strip the `-next.N` suffix (e.g. `1.3.0-next.4` → `1.3.0`). Requires the current version to be a prerelease; stop with an error otherwise.
+Stable release with that bump from the current stable version (e.g. `patch`: `1.2.1` → `1.2.2`). If the current version is a leftover prerelease, bump from its base (`1.3.0-next.5` + `patch` → `1.3.0`, + `minor` → `1.3.0`, + `major` → `2.0.0`).
 
 ### Guard: version must not already exist on npm
 
@@ -77,7 +68,7 @@ A partially recovered prior run may have published the computed version even tho
 npm view "@takazudo/mdx-formatter@<version>" version 2>/dev/null
 ```
 
-If this prints a version, the computed version is taken — recompute (next prerelease N, or next patch) and re-check.
+If this prints a version, the computed version is taken — recompute (next patch) and re-check.
 
 ## Step 3: Analyze Changes and Propose
 
@@ -137,7 +128,7 @@ pnpm install --lockfile-only --no-frozen-lockfile
 
 `--lockfile-only` updates `pnpm-lock.yaml` without touching `node_modules` (avoids the non-TTY purge abort). The platform entries are workspace links, so the new version always resolves. The expected diff is exactly the four `specifier: workspace:<old>` → `workspace:<new>` lines — if anything structural appears, stop and surface it.
 
-### 4d. Write the changelog doc (STABLE releases only — skip for prereleases)
+### 4d. Write the changelog doc
 
 Create `doc/src/content/docs/changelog/v{VERSION}.mdx`:
 
@@ -175,7 +166,7 @@ Rules:
 - Each entry: commit subject with the short hash in parentheses
 - The changelog category sorts `desc`, so the position formula puts newer versions on top
 
-For a `stable` promotion, analyze ALL commits since the last **stable** tag (skipping `-next.*` tags) so the changelog covers the whole prerelease line.
+When finalizing a leftover prerelease, analyze ALL commits since the last **stable** tag (skipping `-next.*` tags) so the changelog covers the whole prerelease line.
 
 ## Step 5: Build and Test
 
@@ -197,7 +188,7 @@ ONE commit containing everything (single revert = full rollback):
 
 ```bash
 git add package.json npm/*/package.json pnpm-lock.yaml
-git add doc/src/content/docs/changelog/v{VERSION}.mdx   # stable only
+git add doc/src/content/docs/changelog/v{VERSION}.mdx
 git commit -m "chore(release): Bump to v{VERSION}"
 git push origin main
 BUMP_SHA=$(git rev-parse HEAD)
@@ -226,7 +217,7 @@ git tag v{VERSION}
 git push origin v{VERSION}
 ```
 
-The tag push triggers `release.yml`: 4 platform binary builds → 4 platform package publishes → root package publish (prepublishOnly runs tsc + vitest against the shipped linux binary) → promote both `latest` and `next` on all five packages.
+The tag push triggers `release.yml`: 4 platform binary builds → 4 platform package publishes → root package publish (prepublishOnly runs tsc + vitest against the shipped linux binary) → move both `latest` and `next` to the new version on all five packages.
 
 ## Step 9: Watch the Release Run
 
@@ -241,7 +232,7 @@ Watch it to completion with a background poll (`gh run view <id> --json status,c
 - **On success**: proceed to Step 10.
 - **On failure**: fetch the failed logs (`gh run view <id> --log-failed`). If clearly transient (network flake, runner eviction), retry once with `gh run rerun <id> --failed` — the idempotency guards make re-runs safe. Otherwise surface the failure summary and stop. Do NOT delete the tag; the next run of this skill bumps past the broken version.
 
-## Step 10: GitHub Release (STABLE releases only — skip for prereleases)
+## Step 10: GitHub Release
 
 ```bash
 NOTES=$(sed -n '/^Released:/,$ p' doc/src/content/docs/changelog/v{VERSION}.mdx)
@@ -259,7 +250,7 @@ for PKG in @takazudo/mdx-formatter @takazudo/mdx-formatter-darwin-arm64 @takazud
 done
 ```
 
-Verify all five exact package versions and confirm both `@latest` and `@next` resolve to `{VERSION}` for every release, including prereleases. Report: released version, observed `latest` / `next` dist-tags, release.yml run URL, GitHub Release URL (stable), npm package page `https://www.npmjs.com/package/@takazudo/mdx-formatter`.
+Verify all five exact package versions and confirm both `@latest` and `@next` resolve to `{VERSION}`. Report: released version, observed `latest` / `next` dist-tags, release.yml run URL, GitHub Release URL, npm package page `https://www.npmjs.com/package/@takazudo/mdx-formatter`.
 
 ## Failure Recovery
 
@@ -275,7 +266,7 @@ Fix, commit, push, re-invoke `/watch-ci`. Do not tag until green.
 
 - Transient → `gh run rerun <id> --failed` (once).
 - Real failure after a partial publish (e.g. platform packages live, root missing) → fix the cause, then rerun the original run (`gh run rerun <id>`) or dispatch against its exact tag (`gh workflow run release.yml --ref v{VERSION}`) — the idempotency guards skip what is already live. Verify the tag still points at the intended release commit first.
-- Dist-tag synchronization failure after all packages publish → re-run the workflow. Exact-version guards skip publishing, then the idempotent dist-tag step retries both tags for every release.
+- Dist-tag synchronization failure after all packages publish → re-run the workflow. Exact-version guards skip publishing, then the idempotent dist-tag step retries both tags.
 
 #### `E404 Not Found - PUT` on publish = invalid/expired NPM_TOKEN (NOT provenance, NOT workflow config)
 
