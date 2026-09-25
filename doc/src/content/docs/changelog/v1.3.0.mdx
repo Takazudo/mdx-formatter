@@ -1,0 +1,52 @@
+---
+title: 'v1.3.0'
+sidebar_position: 1300
+---
+
+# v1.3.0
+
+Released: 2026-09-25
+
+This is the final release of the `1.3.0-next` prerelease line. From now on only stable versions are published; the `next` dist-tag stays as an alias of `latest`, so `@next` users should switch to `@latest`.
+
+## Breaking Changes
+
+- CLI glob discovery now honors `.gitignore` by default; pass `--no-gitignore` for the previous behavior (89f36a1)
+- `tighten-list-continuations` heuristic now preserves `key: value` paragraphs (b07c8bf)
+
+## Features
+
+- feat(cli): honor gitignore during discovery (89f36a1)
+
+## Bug Fixes
+
+- [formatter] Fix #109 self-closing JSX corruption via AST-derived classification (cf4101a)
+- [formatter] Template-literal-aware JSX opening-tag scan + regression tests (#112) (0d7eae1)
+- [formatter] Fix #107 — preserve key:value paragraphs in tighten-list-continuations (b07c8bf)
+- [formatter] Add convergence fail-safe: return original input on divergence (e402de2)
+- [formatter] Advance rejected attr matches on UTF-8 boundary (7e8e1a6)
+- [formatter] Exclude trailing-whitespace-only values from key:value guard (06e983a)
+- fix(cli): classify explicit file operands (f4cd696)
+- fix(cli): align Rust file discovery semantics (d08e50d)
+- fix(cli): distinguish empty ignored directories (70497a7)
+- fix(cli): short-circuit filtered match probe (45959f0)
+- fix(cli): load gitignores outside repositories (0fbe2ac)
+
+## Other Changes
+
+- [claude] Retire the next prerelease line; release stable only (23bfa90)
+- release: promote latest and next for every version (0df74ed)
+- fix(release): await npm tag propagation during repair (f9f48bf)
+- fix(release): keep stable latest during prereleases and add tag repair (42e4b18)
+- ci: run release channel policy tests across Node versions (8040133)
+- [misc] Rename napi.yml to release.yml and add root-package auto-publish (e63b387)
+- [formatter] Make npm/* platform packages workspace members with pinned workspace: specifiers (541c662)
+- [misc] Pin pnpm via packageManager field + add npm provenance to release.yml (718d44d)
+- [misc] Add CI-gated regression tests for #109 and #107 (20cbcc0)
+- refactor(cli): extract file discovery (cc4ab1c)
+- docs: migrate site to root custom domain (24fdd34)
+- docs: redirect legacy documentation URLs (9ffb232)
+- [doc] Re-scaffold docs on zudo-doc 5.2.1 and port the playground to a Preact island (6d80cee, 2f6c726)
+- [doc] Bump zfb / zudo-doc toolchain (1473695, e7efa71, 9693119)
+- [doc] Document CLI discovery ignore behavior (9e1aed2)
+- [misc] b4push: queue heavy steps through the machine-wide heavy-guard (8044683)
