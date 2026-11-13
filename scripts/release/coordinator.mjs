@@ -184,11 +184,27 @@ async function readCi(io, sha) {
   return selectCiRun(runs, sha);
 }
 
+/** Every Release (drafts included), all pages; refuses to guess past the page cap. */
+export async function listAllReleases(io, { maxPages = 20 } = {}) {
+  const all = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const items = (await io.github.get(`repos/${REPO}/releases?per_page=100&page=${page}`)) ?? [];
+    all.push(...items);
+    if (items.length < 100) return all;
+  }
+  throw new ReleaseError(
+    `More than ${maxPages * 100} Releases; refusing to decide from a partial list.`,
+    {
+      code: 'TOO_MANY_RELEASES',
+    },
+  );
+}
+
 async function readRelease(io, tag) {
   const byTag = await io.github.get(`repos/${REPO}/releases/tags/${tag}`);
   if (byTag) return { draft: byTag.draft, prerelease: byTag.prerelease, url: byTag.html_url };
   // GET by tag omits drafts; the list includes them.
-  const list = (await io.github.get(`repos/${REPO}/releases?per_page=100`)) ?? [];
+  const list = await listAllReleases(io);
   const found = list.find((r) => r.tag_name === tag);
   return found ? { draft: found.draft, prerelease: found.prerelease, url: found.html_url } : null;
 }
@@ -703,7 +719,7 @@ export async function finalizeGithubRelease(
     return { action: 'noop', url: existing.url };
   }
   const mdx = io.git(['show', `${sha}:${CHANGELOG_DIR}/v${version}.mdx`]);
-  const all = (await io.github.get(`repos/${REPO}/releases?per_page=100`)) ?? [];
+  const all = await listAllReleases(io);
   try {
     await io.github.request('POST', `repos/${REPO}/releases`, {
       tag_name: tag,

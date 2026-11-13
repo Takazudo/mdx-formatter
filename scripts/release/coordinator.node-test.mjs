@@ -670,3 +670,30 @@ test('helpers: CI selection, notes and latest marking', () => {
   assert.equal(shouldMarkLatest('1.3.1', ['v1.4.0']), false);
   assert.ok(new ReleaseError('x').code === 'REFUSED');
 });
+
+test('Release lookups read every page instead of the first 100', async () => {
+  const { listAllReleases } = await import('./coordinator.mjs');
+  const pages = {
+    1: Array.from({ length: 100 }, (_, i) => ({ tag_name: `v0.0.${i}` })),
+    2: [{ tag_name: 'v9.0.0' }],
+  };
+  const io = fakeIo({
+    handlers: {
+      get: async (path) =>
+        path.includes('/releases?') ? (pages[/[?&]page=(\d+)/.exec(path)[1]] ?? []) : undefined,
+    },
+  });
+  const all = await listAllReleases(io);
+  assert.equal(all.length, 101);
+  assert.equal(
+    shouldMarkLatest(
+      VERSION,
+      all.map((r) => r.tag_name),
+    ),
+    false,
+  );
+  const endless = fakeIo({
+    handlers: { get: async (path) => (path.includes('/releases?') ? pages[1] : undefined) },
+  });
+  await assert.rejects(listAllReleases(endless, { maxPages: 3 }), /partial list/);
+});

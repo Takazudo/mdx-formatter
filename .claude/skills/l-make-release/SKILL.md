@@ -39,7 +39,8 @@ Verify ALL of the following. If any check fails, stop with a clear message.
 1. Current branch is `main` (`git branch --show-current`), or, in Claude Code Cloud, the session branch freshly created from the latest `origin/main`
 2. Working tree is clean (`git status --porcelain` returns empty)
 3. Know which GitHub capabilities exist: an authenticated `gh` (`gh auth status`), or the GitHub MCP tools (`actions_run_trigger`, `actions_list`, `create_pull_request`, `merge_pull_request`). In Claude Code Cloud `gh` is usually unauthenticated; use the MCP tools. If neither can dispatch a workflow, stop after Step 7 and hand the user the coordinator inputs (Actions UI fallback).
-4. Tags are fresh and at least one `v*` tag exists:
+4. **First OIDC release only (until one release has shown `_npmUser.trustedPublisher` on all five):** ask the user to confirm on npmjs.com that each of the five packages has an active (not expired) trusted publisher for `release.yml` allowing `npm publish` and `npm dist-tag`. npm expires a new configuration that sees no successful publish within two days; registration alone does not prove OIDC publishing works. You cannot read these settings without the owner's login.
+5. Tags are fresh and at least one `v*` tag exists:
 
    ```bash
    git fetch --tags origin

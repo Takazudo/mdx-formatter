@@ -52,6 +52,7 @@ permissions: {}
 concurrency:
   group: release-coordinator
   cancel-in-progress: false
+  queue: max
 
 env:
   NODE_RELEASE_VERSION: '24.22.0'

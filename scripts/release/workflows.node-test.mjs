@@ -57,6 +57,12 @@ test('publish happens only on a real tag run, after pack, with pinned npm and no
   assert.match(publish.if, /startsWith\(github\.ref, 'refs\/tags\/v'\)/);
   assert.match(publish.if, /inputs\.dry_run != true/);
   assert.match(publish.if, /needs\.gate\.outputs\.mode == 'release'/);
+  // A failed native build leaves pack skipped; that must never start the OIDC job.
+  for (const job of [publish, wf.jobs.finalize])
+    assert.match(
+      job.if,
+      /needs\.pack\.result == 'skipped' && needs\.gate\.outputs\.build != 'true'/,
+    );
   assert.deepEqual(publish.needs, ['gate', 'pack']);
   assert.deepEqual(wf.jobs.pack.needs, ['gate', 'build']);
   assert.equal(publish.environment, undefined);

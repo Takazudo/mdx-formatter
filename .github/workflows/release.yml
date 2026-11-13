@@ -192,9 +192,10 @@ jobs:
       always() && needs.gate.result == 'success' &&
       needs.gate.outputs.mode == 'release' && needs.gate.outputs.publish == 'true' &&
       startsWith(github.ref, 'refs/tags/v') && inputs.dry_run != true &&
-      (needs.pack.result == 'success' || needs.pack.result == 'skipped')
+      (needs.pack.result == 'success' || (needs.pack.result == 'skipped' && needs.gate.outputs.build != 'true'))
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Bounded registry propagation waits (up to ~6 min per package) fit inside this.
+    timeout-minutes: 45
     permissions:
       contents: read
       id-token: write
@@ -229,7 +230,7 @@ jobs:
     needs: [gate, pack, publish]
     if: >-
       always() && needs.gate.result == 'success' && needs.gate.outputs.mode == 'release' &&
-      (needs.pack.result == 'success' || needs.pack.result == 'skipped') &&
+      (needs.pack.result == 'success' || (needs.pack.result == 'skipped' && needs.gate.outputs.build != 'true')) &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 20
