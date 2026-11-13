@@ -165,7 +165,9 @@ function NumberSetting({
         on:input={(event) => {
           const next = clampSetting(event.currentTarget.value, min, max, fallback);
           value.value = next;
-          if (event.currentTarget.value !== String(next)) {
+          // Leave an emptied field alone so the user can type a replacement;
+          // the fallback still applies to formatting meanwhile.
+          if (event.currentTarget.value !== '' && event.currentTarget.value !== String(next)) {
             event.currentTarget.value = String(next);
           }
         }}
