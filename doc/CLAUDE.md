@@ -1,15 +1,16 @@
 # mdx-formatter Documentation Site
 
-Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) 5.27.0 — a zfb-based documentation framework with MDX, Tailwind CSS v4, and Preact islands. This project is intentionally minimal: one config file (`zfb.config.ts`) plus markdown content — layout, chrome, and islands all ship from `@takazudo/zudo-doc` in `node_modules`. Node.js >= 22 is required.
+Documentation site built with [zudo-doc](https://github.com/zudolab/zudo-doc) 11.0.0 — a zfb-based documentation framework with MDX, zudo-wind utilities, and zudo-react islands. This project is intentionally minimal: one config file (`zfb.config.ts`) plus markdown content — layout, chrome, and islands all ship from `@takazudo/zudo-doc` in `node_modules`. Node.js >= 24 is required.
 
 ## Tech Stack
 
-- **zfb 2.20.2** — documentation build framework
+- **zfb 6.0.1** — documentation build framework (native Rolldown bundler; `ZFB_BUNDLER`, `ZFB_ROLLDOWN_PROTOTYPE` and `ZFB_ESBUILD_BIN` must stay unset)
 - **MDX** — content format, authored under `src/content/`
-- **Tailwind CSS v4** — compiled by zfb's embedded Tailwind engine (no `@tailwindcss/vite` plugin, no `tailwindcss` dependency); `src/styles/global.css` imports `tailwindcss/preflight` + `tailwindcss/utilities` and zfb's internal resolver serves both
-- **Preact** — for interactive islands only (with compat mode for React API)
+- **zudo-wind** — zfb's own utility compiler (not Tailwind). The `zudoDoc()` preset declares the tokens, reset and breakpoints; `src/styles/global.css` declares `@layer zw-reset, zd-flow;`, imports the package CSS and keeps a `:root {}` token-override slot. There is no numeric spacing scale; run `pnpm exec zfb wind audit --project-root . --fail-on error` after class changes (CI runs it too)
+- **zudo-react** — zfb's component runtime for pages and islands: `class`, `on:click`, `signal()` / `computed()`, `<Show>`, `modelValue` / `modelChecked`. No Preact or React dependency
+- **Graphite theme pack** — zudo-doc's default look; `themePack` is intentionally unset so the site follows the package default (`<html data-theme-pack="graphite">`)
 - **zfb semantic highlighting** — native build-time fenced-code rendering plus lazy `@takazudo/zfb-md-wasm` for HtmlPreview; both emit `hi-*` classes resolved through `--zd-syntax-*` design tokens
-- **@takazudo/zudo-doc** — the package that owns everything: layout, chrome, islands, default `@theme` design tokens, and (via `packageOwnedRoutes`, on by default) the doc routes themselves
+- **@takazudo/zudo-doc** — the package that owns everything: layout, chrome, islands, default design tokens and theme packs, and (via `packageOwnedRoutes`, on by default) the doc routes themselves
 
 ## Commands
 
@@ -83,7 +84,7 @@ Admonitions (above), tabbed content (`<Tabs>` / `<TabItem>`, `<CodeGroup>`), and
 - English (default): `/docs/...` — content in `src/content/docs/`
 - Japanese: `/ja/docs/...` — content in `src/content/docs-ja/`
 - Japanese docs should mirror the English directory structure
-- Both `pages/docs/[[...slug]].tsx` and `pages/[locale]/docs/[[...slug]].tsx` are self-contained doc-route stubs shipped by the generator — required so `pnpm dev` doesn't 404 on doc pages (a zfb dev-mode limitation on package-injected dynamic routes). Don't delete them.
+- Both `pages/docs/[[...slug]].tsx` and `pages/[locale]/docs/[[...slug]].tsx` are self-contained doc-route stubs from the create-zudo-doc 11 templates, kept for explicit host route ownership. They read the project bindings through `virtual:zudo-doc-chrome-bindings` (which also lets zfb's island scanner reach `FormatterPlayground`) and merge `DocHistoryBoundary` for the history control. Don't delete them.
 
 ## Enabled Features
 

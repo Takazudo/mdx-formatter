@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "dev": "run-p dev:zfb dev:history",
@@ -22,17 +22,13 @@
     "setup:doc-skill:both": "bash scripts/setup-doc-skill.sh --target both"
   },
   "dependencies": {
-    "@takazudo/zfb": "2.20.2",
-    "@takazudo/zfb-runtime": "2.20.2",
-    "@takazudo/zfb-md-wasm": "2.20.2",
-    "@takazudo/zudo-doc": "^5.27.0",
+    "@takazudo/zfb": "6.0.1",
+    "@takazudo/zfb-runtime": "6.0.1",
+    "@takazudo/zfb-md-wasm": "6.0.1",
+    "@takazudo/zudo-doc": "^11.0.0",
     "zod": "^4.3.6",
-    "preact": "^10.29.1",
-    "preact-render-to-string": "^6.6.6",
-    "katex": "^0.16.38",
     "diff": "^8.0.3",
-    "@takazudo/zdtp": "0.8.2",
-    "@takazudo/zudo-doc-history-server": "^5.27.0"
+    "@takazudo/zudo-doc-history-server": "^11.0.0"
   },
   "devDependencies": {
     "typescript": "^5.9.0",
