@@ -1,28 +1,43 @@
-/* Cascade layers: preflight → flow → (unlayered utilities). Tokens/base rules
-   ship from @takazudo/zudo-doc/theme.css.
-   NOTE: the `@takazudo/zdtp/styles.css` import is intentionally NOT here —
-   it is inserted right after the @layer line above, ONLY when
-   designTokenPanel is selected (see features/design-token-panel.ts). It
-   can't ship unconditionally because it pulls in zdtp's own bytes. */
-@layer zd-preflight, zd-flow;
-@import "tailwindcss/preflight" layer(zd-preflight);
-@import "tailwindcss/utilities";
+/* zfb's zudo-wind preset owns the reset and generated utility layer. Declare
+   the package layers first so authored flow styles keep their cascade order. */
+@layer zw-reset, zd-flow;
 
-/* Package-shipped tokens, safelist, content typography, and feature CSS.
-   Order is load-bearing — theme.css MUST precede features.css. Do not reorder. */
+/* The zdtp stylesheet is inserted after theme.css only when the feature is
+   selected (see features/design-token-panel.ts). It carries zdtp's own bytes. */
 @import "@takazudo/zudo-doc/theme.css";
-@import "@takazudo/zudo-doc/safelist.css";
 @import "@takazudo/zudo-doc/content.css";
 @import "@takazudo/zudo-doc/page-loading.css";
 @import "@takazudo/zudo-doc/features.css";
 
-/* Scan this project's own source for Tailwind utility classes. */
-@source "src/content/**/*.{mdx,md}";
-@source "src/components/**/*.{tsx,ts,jsx,js}";
-@source "pages/**/*.{tsx,ts,jsx,js}";
+/* Override design-token custom properties from the package theme here. */
+:root {
+  /* Formatter playground boundaries. Packs other than Graphite fall back to
+     the muted tint the playground used before Graphite. */
+  --fp-line: color-mix(in oklab, var(--zd-muted) 30%, transparent);
+  --fp-control-border: color-mix(in oklab, var(--zd-muted) 30%, transparent);
+}
 
-/* ── Your token overrides ──────────────────────────────────────────────
-   Override any default @theme token from @takazudo/zudo-doc/theme.css here. */
-@theme {
-  /* e.g. --color-accent: oklch(0.6 0.2 250); */
+/* Graphite keeps muted at text contrast and inlines separate roles for
+   decorative lines and control borders (dist/theme-packs/graphite/pack.css);
+   these mirror those values for the playground. */
+html[data-theme-pack="graphite"] {
+  --fp-line: light-dark(#d2d8dc, #41464d);
+  --fp-control-border: light-dark(#737d86, #858d96);
+}
+
+/* Formatter playground (src/components/formatter-playground.tsx). */
+.fp-line {
+  border-color: var(--fp-line);
+}
+
+.fp-control:not(:focus) {
+  border-color: var(--fp-control-border);
+}
+
+.fp-setting-detail {
+  margin-inline-start: 1.25rem;
+}
+
+.fp-number-input {
+  width: 3.5rem;
 }

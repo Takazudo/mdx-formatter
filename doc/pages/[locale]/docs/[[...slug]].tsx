@@ -1,11 +1,10 @@
-/** @jsxRuntime automatic */
-/** @jsxImportSource preact */
 // Locked manifest (#2653 Decision 4, i18n addendum): the locale-prefixed
-// counterpart of pages/docs/[[...slug]].tsx — required for the same reason
-// (injected DYNAMIC routes 404 in `zfb dev`). Self-contained apart from the
-// documented scanner-reachability project binding: no `pages/lib`, no
-// `@/config`. Like the default-locale stub, this route statically imports the
-// project bindings so zfb can discover FormatterPlayground. Mirrors
+// counterpart of pages/docs/[[...slug]].tsx, retained for explicit host route
+// ownership; zfb also serves package-injected dynamic routes in dev. Self-contained: only the
+// sanctioned package entrypoints — no `pages/lib`, no `@/config`. The
+// `virtual:zudo-doc-chrome-bindings` import is unconditional, just like the
+// default-locale stub: the routes plugin supplies `{}` when no host module is
+// configured. Mirrors
 // the package's own `routes/locale-docs-slug.tsx` shape, rebuilt from the
 // route-context payload instead of the package-internal `_context.js`.
 //
@@ -22,20 +21,17 @@
 //
 // docHistory note: same as the default-locale stub — when docHistory is
 // selected, the generator patches this file too.
-// Binding decision: retain this generated static merge as the sole DocHistory
-// path because the host-owned stub shadows the package route; static reachability
-// keeps the island registered.
 
-import type { JSX } from "preact";
+import type { JSX } from "@takazudo/zfb/zudo-react/jsx-runtime";
 import { routeContext } from "virtual:zudo-doc-route-context";
 import {
   createRouteContext,
   type RouteContextPayload,
 } from "@takazudo/zudo-doc/route-context";
 import { createChrome } from "@takazudo/zudo-doc/chrome";
-import { DocHistory } from "@takazudo/zudo-doc/doc-history";
+import { DocHistoryBoundary as DocHistory } from "@takazudo/zudo-doc/doc-history-area";
 import { defineChromeBindings } from "@takazudo/zudo-doc/chrome-bindings";
-import { chromeBindings } from "../../../src/chrome-bindings";
+import { chromeBindings } from "virtual:zudo-doc-chrome-bindings";
 
 const ctx = routeContext as unknown as RouteContextPayload;
 const routeCtx = createRouteContext(ctx);
