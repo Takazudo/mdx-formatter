@@ -10,7 +10,7 @@ AST-based markdown and MDX formatter powered by a Rust engine (via napi-rs). Pub
 - **Test framework**: vitest
 - **Linting**: ESLint (flat config) + Prettier + lefthook (pre-commit hooks)
 - **Build**: `tsc` (output to `dist/`)
-- **Doc site**: zudo-doc 5.27.0 / zfb 2.20.2 (workspace in `doc/`; Node.js >= 22)
+- **Doc site**: zudo-doc 11.0.0 / zfb 6.0.1 with zudo-react, zudo-wind and the default Graphite theme pack (workspace in `doc/`; Node.js >= 24)
 - **Rust implementation**: Production-ready Rust engine in `crates/` (markdown-rs + napi-rs + WASM)
 
 ## Commands
