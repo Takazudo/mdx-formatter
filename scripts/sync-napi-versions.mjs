@@ -9,6 +9,7 @@
  * Usage:
  *   node scripts/sync-napi-versions.mjs
  *   pnpm sync:napi-versions
+ *   node scripts/sync-napi-versions.mjs --check   # report drift, write nothing, exit 1 on drift
  *
  * Exits non-zero with a clear error if the root version is missing or invalid.
  * Re-running the script on an already-synced tree is a no-op.
@@ -52,6 +53,15 @@ function fail(message) {
   process.exit(1);
 }
 
+const CHECK = process.argv.includes('--check');
+const drift = [];
+
+function writeOrRecord(path, nextRaw, raw) {
+  if (nextRaw === raw) return;
+  if (CHECK) drift.push(path);
+  else writeFileSync(path, nextRaw);
+}
+
 function main() {
   const rootPkgPath = resolve(repoRoot, 'package.json');
   const { data: rootPkg } = readJson(rootPkgPath);
@@ -70,9 +80,7 @@ function main() {
     const previousVersion = pkg.version;
     pkg.version = rootVersion;
     const nextRaw = stringifyJson(pkg);
-    if (nextRaw !== raw) {
-      writeFileSync(pkgPath, nextRaw);
-    }
+    writeOrRecord(pkgPath, nextRaw, raw);
     process.stdout.write(`  npm/${platform}/package.json: ${previousVersion} -> ${rootVersion}\n`);
   }
 
@@ -95,9 +103,8 @@ function main() {
   }
 
   const nextRootRaw = stringifyJson(rootPkg2);
-  if (nextRootRaw !== rootRaw) {
-    writeFileSync(rootPkgPath, nextRootRaw);
-  }
+  writeOrRecord(rootPkgPath, nextRootRaw, rootRaw);
+  if (CHECK && drift.length) fail(`not in lockstep with the root version: ${drift.join(', ')}`);
 }
 
 main();

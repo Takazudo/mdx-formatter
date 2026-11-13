@@ -1,5 +1,17 @@
-# Manual recovery only. Never publishes packages or modifies the next tag.
+# Manual recovery only: moves `latest` back to a stable version on all five
+# packages. Never publishes, never touches `next`, never creates a release.
+#
+# plan   read-only: refuses while any Release run is active (old revisions did
+#        not share the concurrency group), validates all five and prints the plan.
+# apply  only when dry_run is false. The only job with id-token: write; npm
+#        authenticates through OIDC (no token). It re-checks for active Release
+#        runs and re-reads every package right before each write.
+#
+# npm trusted publisher for each package: owner Takazudo, repository
+# mdx-formatter, workflow repair-tags.yml, environment empty, allowed action
+# npm dist-tag only (no npm publish).
 name: Repair npm latest tags
+run-name: ${{ format('Repair latest to {0}{1}', inputs.stable_version, inputs.dry_run && ' (dry run)' || '') }}
 
 on:
   workflow_dispatch:
@@ -19,8 +31,14 @@ concurrency:
   cancel-in-progress: false
   queue: max
 
+permissions: {}
+
+env:
+  NODE_RELEASE_VERSION: '24.22.0'
+  NPM_RELEASE_VERSION: '11.21.1'
+
 jobs:
-  repair:
+  plan:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -28,39 +46,46 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-      - name: Refuse to overlap any active legacy Release run
+          node-version: ${{ env.NODE_RELEASE_VERSION }}
+      - name: Refuse to overlap any active Release run
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Older Release revisions do not share the concurrency group. An
-          # active run can still write tags after this repair starts.
-          for status in queued in_progress waiting requested pending; do
-            count=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?status=${status}&per_page=1" --jq '.total_count')
-            if [ "$count" != 0 ]; then
-              echo "::error::Release has ${count} ${status} run(s). Wait for them to finish before tag repair."
-              exit 1
-            fi
-          done
-      - name: Verify npm auth
-        if: ${{ inputs.dry_run == false }}
+        run: bash scripts/release/no-active-release.sh
+      - name: Validate all five packages and print the plan (no writes)
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm whoami
-      - name: Validate all packages, then repair latest
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           STABLE_VERSION: ${{ inputs.stable_version }}
-          DRY_RUN: ${{ inputs.dry_run }}
+        run: node scripts/release/tags-cli.mjs repair "$STABLE_VERSION" --dry-run
+
+  apply:
+    needs: plan
+    if: inputs.dry_run == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # No registry-url: setup-node would write an npmrc expecting NODE_AUTH_TOKEN.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_RELEASE_VERSION }}
+      - name: Pin npm for OIDC dist-tag
         run: |
-          set -euo pipefail
-          if [ "$DRY_RUN" = "true" ]; then
-            node scripts/release/tags-cli.mjs repair "$STABLE_VERSION" --dry-run
-          else
-            node scripts/release/tags-cli.mjs repair "$STABLE_VERSION"
-          fi
+          npm install -g "npm@${NPM_RELEASE_VERSION}"
+          test "$(npm --version)" = "$NPM_RELEASE_VERSION"
+      - name: Refuse to overlap any active Release run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/release/no-active-release.sh
+      - name: Repair latest (next unchanged)
+        env:
+          STABLE_VERSION: ${{ inputs.stable_version }}
+        run: node scripts/release/tags-cli.mjs repair "$STABLE_VERSION"

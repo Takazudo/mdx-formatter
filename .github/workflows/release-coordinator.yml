@@ -1,0 +1,125 @@
+# release-coordinator.yml — start a release without pushing a tag yourself.
+#
+# For callers that cannot push tags or hold a PAT (Claude Code Cloud's git
+# proxy, an unauthenticated gh). Dispatch it on main with:
+#   version  X.Y.Z, equal to package.json at sha (stable only, no "v")
+#   sha      the full 40-character commit on main to release
+#   dry_run  true (default) runs only the read-only gate
+#
+# Jobs, each with only what it needs:
+#   gate     contents/actions read. Must be main's copy of this file. version,
+#            five-package lockstep, lockfile and changelog at sha; sha on main;
+#            ci.yml push run green for exactly sha; tag absent or already at
+#            sha; npm readable (unknown -> exit 3, never "unpublished") and no
+#            regression; no npm version or GitHub Release without its tag.
+#            Warns, never switches, when main moved past sha.
+#   tag      contents: write. Re-runs the gate, then creates v<version> at sha
+#            via the REST API with this run's GITHUB_TOKEN. An identical tag is
+#            kept (safe resume); another commit fails. Never moves or deletes.
+#   dispatch actions: write. Explicitly starts release.yml at the tag (a
+#            GITHUB_TOKEN tag push starts no workflow). Waits for nothing it
+#            holds a lock on. Reuses an active run, re-runs the failed jobs of
+#            the last run after a partial publish (same artifacts), refuses when
+#            a green run left state incomplete, and does nothing when npm and the
+#            GitHub Release are complete. Correlates by workflow, tag, SHA, run id
+#            and attempt.
+#
+# This workflow holds no npm credential and never writes to npm. A green
+# coordinator means "tag present and one release.yml run started or found";
+# the release is done only when that release.yml run is green.
+name: Release coordinator
+run-name: ${{ format('Release coordinator v{0} @ {1}{2}', inputs.version, inputs.sha, inputs.dry_run && ' (dry run)' || '') }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 1.3.1 (package.json at sha, no "v")'
+        required: true
+        type: string
+      sha:
+        description: 'Full 40-character commit SHA on main'
+        required: true
+        type: string
+      dry_run:
+        description: 'Run the read-only gate only (no tag, no dispatch)'
+        type: boolean
+        default: true
+
+permissions: {}
+
+# Own group: never the release lock, so it cannot wait on the run it starts.
+concurrency:
+  group: release-coordinator
+  cancel-in-progress: false
+  queue: max
+
+env:
+  NODE_RELEASE_VERSION: '24.22.0'
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_RELEASE_VERSION }}
+      - name: Gate version, commit, CI, tag and registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          SHA: ${{ inputs.sha }}
+        run: node scripts/release/tags-cli.mjs coordinate-gate --version "$VERSION" --sha "$SHA"
+
+  tag:
+    needs: gate
+    if: inputs.dry_run == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_RELEASE_VERSION }}
+      - name: Create or confirm the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          SHA: ${{ inputs.sha }}
+        run: node scripts/release/tags-cli.mjs coordinate-tag --version "$VERSION" --sha "$SHA"
+
+  dispatch:
+    needs: tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_RELEASE_VERSION }}
+      - name: Start, reuse or resume the release.yml run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          SHA: ${{ inputs.sha }}
+        run: node scripts/release/tags-cli.mjs coordinate-dispatch --version "$VERSION" --sha "$SHA"
