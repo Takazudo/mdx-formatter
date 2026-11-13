@@ -5,7 +5,7 @@ inputs:
   node-version:
     description: 'Node.js version to use'
     required: false
-    default: '22'
+    default: '24'
   working-directory:
     description: 'Working directory containing the zfb documentation project'
     required: false
@@ -46,6 +46,11 @@ runs:
 
     - name: Check zfb documentation site
       run: pnpm check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - name: Audit utility candidates
+      run: pnpm exec zfb wind audit --project-root . --fail-on error
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
