@@ -1,42 +1,44 @@
 ---
-description: 'Release @takazudo/mdx-formatter — bump the version, sync platform packages, write the changelog, push, wait for CI, tag (which triggers the release.yml auto-publish of all 5 npm packages via the repo NPM_TOKEN), move both latest and next to the new version, watch the publish run, and create the GitHub Release. Fully autonomous end-to-end by default (no confirmation prompts); pass --confirm to vet the proposal interactively and stop before tagging. Triggers on rough requests like "bump version", "cut a release", "release mdx-formatter", "make a release", "publish a new version".'
+description: 'Release @takazudo/mdx-formatter — bump the version, sync platform packages, write the changelog, integrate on main, wait for CI, run the release coordinator (dry run, then the real start) so Actions tags the frozen SHA and release.yml publishes all 5 npm packages through OIDC trusted publishing, then verify npm, dist-tags and the GitHub Release. Works from Claude Code Cloud (no tag push, no PAT, no npm token). Fully autonomous end-to-end by default; pass --confirm to vet the proposal and stop after the coordinator dry run. Triggers on rough requests like "bump version", "cut a release", "release mdx-formatter", "make a release", "publish a new version".'
 user-invocable: true
 argument-description: 'Optional: major, minor, patch — stable release with that bump. No argument: analyze commits and pick the bump autonomously (a leftover X.Y.Z-next.N version is finalized to X.Y.Z). --confirm — interactive mode: present the bump proposal and wait, and stop before tagging instead of publishing.'
 ---
 
 # /l-make-release
 
-One-call orchestrator for releasing `@takazudo/mdx-formatter` and its four lockstep platform packages. Bumps the version, syncs the platform packages, writes a changelog doc (stable only), commits + pushes, waits for CI, pushes the `v*` tag — which triggers `.github/workflows/release.yml` to build the napi binaries, publish **all five npm packages**, and move both `latest` and `next` to every successful release — watches that run to completion, then creates the GitHub Release (stable only).
+One-call orchestrator for releasing `@takazudo/mdx-formatter` and its four lockstep platform packages. Bumps the version, syncs the platform packages, writes a changelog doc, integrates the bump on `main`, waits for CI on that exact commit, then dispatches `.github/workflows/release-coordinator.yml`: a read-only dry run first, then the real start. The coordinator creates the `v*` tag at the frozen SHA with Actions' own token and explicitly dispatches `release.yml`, which builds the napi binaries, packs once, publishes **all five npm packages** through OIDC trusted publishing, moves both `latest` and `next`, verifies the registry and creates the GitHub Release. Full reference: [scripts/release/README.md](../../../scripts/release/README.md).
 
 ## Invocation & autonomy
 
 This skill is **model-invocable**: a rough natural-language request like "bump version", "cut a release", or "release it" may trigger it.
 
-**Default: fully autonomous end-to-end — NEVER ask for confirmation, NEVER stop and wait.** Steps 1–3 are read-only; print the Step 3 proposal (current → new version + categorized changelog) **for visibility only** and proceed straight into Step 4. The tag push at Step 8 IS the publish trigger — do not pause to ask "tag?", "publish?", or any equivalent. The invocation itself is the authorization.
+**Default: fully autonomous end-to-end — NEVER ask for confirmation, NEVER stop and wait.** Steps 1–3 are read-only; print the Step 3 proposal (current → new version + categorized changelog) **for visibility only** and proceed straight into Step 4. The coordinator start with `dry_run=false` at Step 9 IS the publish trigger — do not pause to ask "tag?", "publish?", or any equivalent. The invocation itself is the authorization. A request that only asks to prepare or check a release is not an invocation of this skill's publish steps.
 
-**`--confirm` option (opt-in interactive mode).** When the invocation includes `--confirm` (e.g. `/l-make-release --confirm`, `/l-make-release minor --confirm`), restore interactive behavior: present the Step 3 proposal and **wait for explicit user confirmation** before the first mutation (Step 4), and **stop after Step 7 (CI green) with the tag NOT yet pushed** — report the exact `git tag` / `git push` commands and let the user fire them. Use this when the version strategy or release notes need vetting.
+**`--confirm` option (opt-in interactive mode).** When the invocation includes `--confirm` (e.g. `/l-make-release --confirm`, `/l-make-release minor --confirm`), restore interactive behavior: present the Step 3 proposal and **wait for explicit user confirmation** before the first mutation (Step 4), and **stop after Step 8 (coordinator dry run green)** — report the version, the frozen SHA and the coordinator inputs for `dry_run=false`, and let the user start it. Use this when the version strategy or release notes need vetting.
 
 ## Architecture (why this works)
 
 - The four platform packages (`npm/darwin-arm64`, `npm/darwin-x64`, `npm/linux-x64-gnu`, `npm/win32-x64-msvc`) are **pnpm workspace members**, declared on the root as pinned `workspace:X.Y.Z` optionalDependencies. They resolve locally at bump time — before the new versions exist on the registry — so the lockfile stays consistent and bump-commit CI is green. (The pre-workspace flow could never have green CI on the bump commit: `ERR_PNPM_OUTDATED_LOCKFILE`, see v1.2.1 history.)
 - `scripts/sync-napi-versions.mjs` keeps all five `package.json` versions + the `workspace:` specifiers lockstep with the root version.
-- `release.yml` publishes the platform packages with `npm publish` and the root with `pnpm publish` (which rewrites `workspace:X.Y.Z` → exact `X.Y.Z` in the tarball). Every publish is idempotency-guarded, so re-running the workflow after a partial failure is safe.
+- `release.yml` packs once — the platform packages with `npm pack`, the root with `pnpm pack` (which rewrites `workspace:X.Y.Z` → exact `X.Y.Z`) — verifies the tarballs and the shipped Linux binary, then publishes those exact files with `npm publish <tgz>` through OIDC, natives first. An existing version must have identical bytes; a version is never republished.
 - **Stable releases only — no prereleases.** The `-next.N` line was retired after `1.3.0-next.5`. Every release publishes under `latest`, then `release.yml` moves `next` to the same version, so `next` is just an alias of `latest` and anyone still installing `@next` lands on the stable release. Don't delete the `next` tag: `@next` installs would fail.
-- The repo secret `NPM_TOKEN` is an automation token covering ALL `@takazudo` packages (root + platform). If a publish fails with `E404 Not Found - PUT` or a 2FA error, the token scope/type is the problem — fix it at npmjs.com → Access Tokens.
+- **No npm token.** npm authenticates the `publish` job through GitHub OIDC (trusted publisher: owner `Takazudo`, repo `mdx-formatter`, workflow `release.yml`, no environment, allowed `npm publish` + `npm dist-tag`, on each of the five packages). The job refuses `NPM_TOKEN` / `NODE_AUTH_TOKEN` / npmrc tokens rather than falling back to them.
+- **Why a coordinator.** Claude Code Cloud's `gh` is not authenticated and its git proxy can refuse tag pushes. `release-coordinator.yml` (dispatched on `main`) creates the tag with Actions' own `GITHUB_TOKEN` and dispatches `release.yml` explicitly, because a tag created with `GITHUB_TOKEN` does not trigger push workflows.
 
 ## Boundaries
 
-- This skill **never** runs `npm publish` / `pnpm publish` locally. Publishing happens only in `release.yml`, triggered by the tag push.
-- The GitHub Release is created AFTER the publish run succeeds (it does not trigger anything — the tag does).
+- This skill **never** runs `npm publish` / `pnpm publish` / `npm dist-tag` locally and never adds an npm token, PAT or other credential. Publishing happens only in `release.yml`.
+- The GitHub Release is created by `release.yml`'s `finalize` job after all five packages and both dist-tags are verified.
+- Never move or delete a `v*` tag. The coordinator refuses a tag at another commit and keeps an identical one.
 - Never create a prerelease (`X.Y.Z-next.N` or any other suffix), even if asked for "next". Ship a stable version instead.
 
 ## Step 1: Preconditions
 
 Verify ALL of the following. If any check fails, stop with a clear message.
 
-1. Current branch is `main` (`git branch --show-current`)
+1. Current branch is `main` (`git branch --show-current`), or, in Claude Code Cloud, the session branch freshly created from the latest `origin/main`
 2. Working tree is clean (`git status --porcelain` returns empty)
-3. `gh` CLI is authenticated (`gh auth status`)
+3. Know which GitHub capabilities exist: an authenticated `gh` (`gh auth status`), or the GitHub MCP tools (`actions_run_trigger`, `actions_list`, `create_pull_request`, `merge_pull_request`). In Claude Code Cloud `gh` is usually unauthenticated; use the MCP tools. If neither can dispatch a workflow, stop after Step 7 and hand the user the coordinator inputs (Actions UI fallback).
 4. Tags are fresh and at least one `v*` tag exists:
 
    ```bash
@@ -65,10 +67,10 @@ Stable release with that bump from the current stable version (e.g. `patch`: `1.
 A partially recovered prior run may have published the computed version even though the local state suggests otherwise. Always check, and bump past any hit:
 
 ```bash
-npm view "@takazudo/mdx-formatter@<version>" version 2>/dev/null
+node -e "fetch('https://registry.npmjs.org/@takazudo%2fmdx-formatter',{headers:{'Cache-Control':'no-cache'}}).then(async r=>{if(r.status!==200)throw new Error('HTTP '+r.status);const d=await r.json();console.log(d.versions['<version>']?'TAKEN':'FREE')}).catch(e=>{console.error('UNKNOWN',e.message);process.exit(3)})"
 ```
 
-If this prints a version, the computed version is taken — recompute (next patch) and re-check.
+`TAKEN` → recompute (next patch) and re-check. `UNKNOWN` (network, 4xx/5xx) is not "free": retry later or stop.
 
 ## Step 3: Analyze Changes and Propose
 
@@ -182,7 +184,7 @@ git checkout -- . && git clean -f doc/src/content/docs/changelog/
 
 (`git clean` removes the untracked changelog mdx written in Step 4d.)
 
-## Step 6: Atomic Commit + Push
+## Step 6: Atomic Commit, Integrate on main
 
 ONE commit containing everything (single revert = full rollback):
 
@@ -190,67 +192,49 @@ ONE commit containing everything (single revert = full rollback):
 git add package.json npm/*/package.json pnpm-lock.yaml
 git add doc/src/content/docs/changelog/v{VERSION}.mdx
 git commit -m "chore(release): Bump to v{VERSION}"
-git push origin main
-BUMP_SHA=$(git rev-parse HEAD)
 ```
 
-## Step 7: Wait for CI on the Bump Commit
+- **Local with push rights to `main`:** `git push origin main`.
+- **Claude Code Cloud (or no direct push):** push the session branch, open a PR to `main`, wait for its CI, and merge it with a regular merge.
 
-Delegate to `/watch-ci` — do NOT reimplement polling:
+Then read `main`'s HEAD and keep it as `SHA` (full 40 characters). That is the frozen candidate; never replace it with a later `main` commit during this release.
 
-```
-Skill(skill="watch-ci", args="--branch main --commit <BUMP_SHA>")
-```
+## Step 7: Wait for CI on the exact candidate
 
-If CI fails, fix the issue, push the fix, and re-invoke `/watch-ci`. **Do not tag until CI is green.**
+`ci.yml`'s **push** run on `main` for exactly `SHA` must be green (a PR run does not count). Delegate to `/watch-ci` when `gh` works (`Skill(skill="watch-ci", args="--branch main --commit <SHA>")`), otherwise poll `actions_list` → `list_workflow_runs` for `ci.yml` filtered by branch `main` and match `head_sha`. If it was cancelled by a later push, re-run it; do not freeze another commit.
 
-**With `--confirm`: STOP HERE.** Report that the bump is pushed and CI is green, and print the exact commands for the user to fire:
+## Step 8: Coordinator dry run
 
-```
-git tag v{VERSION} && git push origin v{VERSION}
-```
+Dispatch `release-coordinator.yml` on `main` with `version={VERSION}`, `sha=<SHA>`, `dry_run=true`:
 
-## Step 8: Tag → Auto-Publish
+- Cloud: `actions_run_trigger` (`method: run_workflow`, `workflow_id: release-coordinator.yml`, `ref: main`, `inputs: {version, sha, dry_run: true}`).
+- With `gh`: `gh workflow run release-coordinator.yml --ref main -f version={VERSION} -f sha=<SHA> -f dry_run=true`.
 
-```bash
-git tag v{VERSION}
-git push origin v{VERSION}
-```
+Find the run titled `Release coordinator v{VERSION} @ <SHA> (dry run)` and wait for it. It must be green; read its summary (CI run, npm state, warnings). A failure here changes nothing — fix the cause and repeat. Exit-3 style messages ("unknown", "pending") mean "check again later", never "not published".
 
-The tag push triggers `release.yml`: 4 platform binary builds → 4 platform package publishes → root package publish (prepublishOnly runs tsc + vitest against the shipped linux binary) → move both `latest` and `next` to the new version on all five packages.
+**With `--confirm`: STOP HERE** and report `version`, `SHA` and the `dry_run=false` inputs.
 
-## Step 9: Watch the Release Run
+## Step 9: Start the release
 
-Find the run (allow a few seconds for it to appear):
+Send the same inputs with `dry_run=false`. The `tag` job creates `v{VERSION}` at `SHA` (or keeps an identical one), and the `dispatch` job starts `release.yml` at the tag and prints the run id and attempt. A green coordinator is **not** a finished release. If the tag job reports HTTP 403, do not work around it with another credential; report GitHub's message and the candidate/control/workflow SHAs it printed and let the user decide (push the tag with their credentials, or freeze a new candidate).
 
-```bash
-gh run list --workflow release.yml --limit 3 --json databaseId,displayTitle,status,headBranch
-```
+## Step 10: Watch the Release run
 
-Watch it to completion with a background poll (`gh run view <id> --json status,conclusion` every 30s until `completed` — background shell loop, NOT foreground sleep).
+Follow the `release.yml` run the coordinator reported (match run id, tag `v{VERSION}` and `SHA`). Poll in the background (`actions_get` → `get_workflow_run`, or `gh run view <id> --json status,conclusion`) — never a foreground sleep.
 
-- **On success**: proceed to Step 10.
-- **On failure**: fetch the failed logs (`gh run view <id> --log-failed`). If clearly transient (network flake, runner eviction), retry once with `gh run rerun <id> --failed` — the idempotency guards make re-runs safe. Otherwise surface the failure summary and stop. Do NOT delete the tag; the next run of this skill bumps past the broken version.
-
-## Step 10: GitHub Release
-
-```bash
-NOTES=$(sed -n '/^Released:/,$ p' doc/src/content/docs/changelog/v{VERSION}.mdx)
-gh release create v{VERSION} --title "v{VERSION}" --notes "$NOTES"
-```
+- **Success:** `finalize` printed the five-package evidence table and the GitHub Release URL.
+- **Failure:** read the failed job log. Re-send the coordinator with the same inputs: it reuses an active run, re-runs the failed jobs of the original run after a partial publish (same packed tarballs), or starts a new run when nothing was published. Never move the tag, never republish.
 
 ## Step 11: Verify + Final Report
 
 ```bash
-npm view @takazudo/mdx-formatter dist-tags
 for PKG in @takazudo/mdx-formatter @takazudo/mdx-formatter-darwin-arm64 @takazudo/mdx-formatter-darwin-x64 @takazudo/mdx-formatter-linux-x64-gnu @takazudo/mdx-formatter-win32-x64-msvc; do
-  npm view "${PKG}@${VERSION}" version
-  npm view "${PKG}@latest" version
-  npm view "${PKG}@next" version
+  npm view "${PKG}@${VERSION}" version _npmUser.trustedPublisher dist.attestations.url
+  npm view "${PKG}" dist-tags --json
 done
 ```
 
-Verify all five exact package versions and confirm both `@latest` and `@next` resolve to `{VERSION}`. Report: released version, observed `latest` / `next` dist-tags, release.yml run URL, GitHub Release URL, npm package page `https://www.npmjs.com/package/@takazudo/mdx-formatter`.
+Report separately: npm publication (five exact versions, trusted publisher, provenance run id), dist-tags (`latest` and `next` = `{VERSION}` on all five), the tag (`v{VERSION}` → `SHA`), and the GitHub Release URL, plus the coordinator and release.yml run URLs.
 
 ## Failure Recovery
 
@@ -262,27 +246,22 @@ Nothing is committed yet. Reset the working tree, fix the issue, re-run the skil
 
 Fix, commit, push, re-invoke `/watch-ci`. Do not tag until green.
 
-### release.yml fails (Step 9)
+### release.yml fails (Step 10)
 
-- Transient → `gh run rerun <id> --failed` (once).
-- Real failure after a partial publish (e.g. platform packages live, root missing) → fix the cause, then rerun the original run (`gh run rerun <id>`) or dispatch against its exact tag (`gh workflow run release.yml --ref v{VERSION}`) — the idempotency guards skip what is already live. Verify the tag still points at the intended release commit first.
-- Dist-tag synchronization failure after all packages publish → re-run the workflow. Exact-version guards skip publishing, then the idempotent dist-tag step retries both tags.
+- Re-send the coordinator with the same `version` and `SHA`. It decides from observed state: an active run is reused, a partial publish re-runs the failed jobs of the original run (its packed tarballs are reused), nothing published → a new run. In the Actions UI, "Re-run failed jobs" on the original run is equivalent.
+- `different bytes` in the publish log means npm already holds that version from another build. Do not force it; resume the original run instead, or leave the version and release the next patch.
+- `registry ... unknown` / exit 3: the registry could not be read. Wait and re-run; it is never treated as "not published".
+- All five published but dist-tags or the GitHub Release missing → re-send the coordinator; `release.yml` then skips uploads, checks provenance, synchronizes the tags and finalizes.
 
-#### `E404 Not Found - PUT` on publish = invalid/expired NPM_TOKEN (NOT provenance, NOT workflow config)
+#### OIDC authentication failures
 
-A `404 Not Found - PUT .../@takazudo%2f...` when publishing a package that **already exists** on npm is npm's scope-mask for a **401/403 authorization failure** — almost always a dead `NPM_TOKEN`. The publish job's **"Verify npm auth" step (`npm whoami`) catches this up front**: if it prints a username, the token authenticates; if it 401s, the token is invalid/expired.
-
-This was a real incident: a token that published fine when freshly created later E404'd every publish ~6 weeks on — it had **expired**. Provenance and workflow config were red herrings (both a provenance run and a plain-publish run failed identically; the cause was the token). GitHub secrets are **per-repository**, so "the same token works in another repo" does not mean this repo's `NPM_TOKEN` secret holds a valid value.
-
-**Fix:** generate a fresh **Automation** token on npmjs.com (Access Tokens → Generate → Classic → Automation; Automation tokens bypass the 2FA-for-writes gate that blocks CI), then `gh secret set NPM_TOKEN` (or via the repo Settings UI). Re-run the workflow — the idempotency guards make re-runs safe. If `npm whoami` succeeds but publish still 403s, the token authenticates but lacks **write** access to the scope/packages — fix the token's package permissions on npmjs.com.
-
-- 2FA/OTP errors (`EOTP`) → same fix: use an Automation token (they are exempt from interactive OTP).
+`ENEEDAUTH`, `E404 Not Found - PUT` or `E403` from `npm publish` / `npm dist-tag` in the `publish` job mean npm did not accept the OIDC identity. Check, on npmjs.com for the failing package, that a trusted publisher exists with owner `Takazudo`, repository `mdx-formatter`, workflow `release.yml` (exact, with `.yml`), environment empty, and allowed actions `npm publish` and `npm dist-tag`; that the job still has `id-token: write`; and that npm is ≥ 11.21.0. Read the registry before retrying: a failed command does not prove nothing was published. Re-issuing an old npm token is **not** a fix; the workflows refuse tokens. If the owner decides to fall back temporarily, that is a separate, explicit change.
 
 ### Historical stable-only `latest` repair
 
-The `repair-tags.yml` workflow remains for the September 2026 stable-only recovery. It does not implement the current both-tag policy. For a partial current release, rerun `release.yml` against the exact release tag so its idempotent publish checks and both-tag synchronization complete. Use the stable-only repair workflow only when deliberately restoring stable `latest`; follow [scripts/release/README.md](../../../scripts/release/README.md) and verify that this is the intended policy for that incident.
+The `repair-tags.yml` workflow remains for the September 2026 stable-only recovery. It does not implement the current both-tag policy. For a partial current release, re-send the coordinator (or "Re-run failed jobs" on the original `release.yml` run) so its byte-checked publish and both-tag synchronization complete. Use the stable-only repair workflow only when deliberately restoring stable `latest`; follow [scripts/release/README.md](../../../scripts/release/README.md) and verify that this is the intended policy for that incident.
 
-### Rolling back before the tag was pushed
+### Rolling back before the coordinator created the tag
 
 The Step 6 commit is atomic — one revert undoes the bump, the lockfile, and the changelog doc:
 

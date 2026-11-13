@@ -61,44 +61,189 @@ export function initialPublishTag(version) {
   return parseVersion(version).prerelease ? 'next' : 'latest';
 }
 
-export async function publishExactVersion(registry, pkg, version, publish) {
-  if (await registry.versionExists(pkg, version)) return 'already published';
-  try {
-    await publish();
-    return 'published';
-  } catch (error) {
-    // Another run may publish the exact version between the check and publish.
-    if (await registry.versionExists(pkg, version)) return 'appeared during publish';
-    throw new Error(`Failed to publish ${pkg}@${version}`, { cause: error });
+/**
+ * The registry state of one package could not be established (network error,
+ * auth failure, 429/5xx, malformed JSON, or an unexpected 404 for a package
+ * that has been public for years). Callers must treat this as "unknown" and
+ * stop; it is never evidence that a version is unpublished.
+ */
+export class RegistryUnknownError extends Error {
+  constructor(message, options) {
+    super(message, options);
+    this.name = 'RegistryUnknownError';
   }
 }
 
-export function npmRegistry(
-  command = (args) => execFileSync('npm', ['--loglevel=error', ...args], { encoding: 'utf8' }),
-) {
+export const REGISTRY_URL = 'https://registry.npmjs.org';
+
+function defaultNpmCommand(args) {
+  return execFileSync('npm', ['--loglevel=error', ...args], { encoding: 'utf8' });
+}
+
+/**
+ * Registry access with fail-closed reads. Reads use the full packument over
+ * HTTPS (no npm CLI auth involved); only `add` (dist-tag write) shells out to
+ * the npm CLI, which authenticates through OIDC inside the publish/apply jobs.
+ */
+export function npmRegistry({
+  fetchImpl = globalThis.fetch,
+  command = defaultNpmCommand,
+  registryUrl = REGISTRY_URL,
+} = {}) {
+  async function packument(pkg) {
+    const url = `${registryUrl}/${pkg.replace('/', '%2f')}`;
+    let response;
+    try {
+      response = await fetchImpl(url, {
+        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+      });
+    } catch (error) {
+      throw new RegistryUnknownError(`${pkg}: registry unreachable (${error.message})`, {
+        cause: error,
+      });
+    }
+    if (response.status !== 200) {
+      // All five packages have been public since 1.x, so 404 here is a
+      // registry/proxy fault rather than "nothing published".
+      throw new RegistryUnknownError(`${pkg}: registry answered HTTP ${response.status}`);
+    }
+    let doc;
+    try {
+      doc = await response.json();
+    } catch (error) {
+      throw new RegistryUnknownError(`${pkg}: registry returned invalid JSON`, { cause: error });
+    }
+    if (
+      !doc ||
+      typeof doc !== 'object' ||
+      doc.name !== pkg ||
+      !doc.versions ||
+      typeof doc.versions !== 'object' ||
+      !doc['dist-tags'] ||
+      typeof doc['dist-tags'] !== 'object'
+    ) {
+      throw new RegistryUnknownError(`${pkg}: registry document is malformed`);
+    }
+    return doc;
+  }
   return {
+    packument,
+    /** The registry's document for pkg@version, or null when definitely absent. */
+    async versionInfo(pkg, version) {
+      return (await packument(pkg)).versions[version] ?? null;
+    },
     async versionExists(pkg, version) {
-      try {
-        return (
-          JSON.parse(
-            command(['view', `${pkg}@${version}`, 'version', '--json', '--prefer-online']),
-          ) === version
-        );
-      } catch {
-        return false;
-      }
+      return Boolean((await packument(pkg)).versions[version]);
     },
     async versions(pkg) {
-      const value = JSON.parse(command(['view', pkg, 'versions', '--json', '--prefer-online']));
-      return Array.isArray(value) ? value : [value];
+      return Object.keys((await packument(pkg)).versions);
     },
     async tags(pkg) {
-      return JSON.parse(command(['view', pkg, 'dist-tags', '--json', '--prefer-online']));
+      return { ...(await packument(pkg))['dist-tags'] };
+    },
+    async attestations(url) {
+      let response;
+      try {
+        response = await fetchImpl(url, { headers: { Accept: 'application/json' } });
+      } catch (error) {
+        throw new RegistryUnknownError(`attestations unreachable (${error.message})`, {
+          cause: error,
+        });
+      }
+      if (response.status !== 200)
+        throw new RegistryUnknownError(`attestations answered HTTP ${response.status}`);
+      try {
+        return await response.json();
+      } catch (error) {
+        throw new RegistryUnknownError('attestations returned invalid JSON', { cause: error });
+      }
     },
     async add(pkg, version, tag) {
       command(['dist-tag', 'add', `${pkg}@${version}`, tag]);
     },
   };
+}
+
+/**
+ * Publish one exact version from an already packed tarball.
+ * - absent              -> publish, then wait until the registry shows the same integrity
+ * - present, same bytes -> skip (a previous attempt of this release published it)
+ * - present, other bytes -> stop; never treat existence as identity
+ * - unknown             -> stop (RegistryUnknownError propagates)
+ * A failed publish command is followed by a bounded read-back, because the
+ * registry may have accepted the upload before the client lost the response.
+ */
+export async function publishExactVersion(
+  registry,
+  pkg,
+  version,
+  publish,
+  { integrity, retryOptions } = {},
+) {
+  if (!integrity) throw new Error(`${pkg}@${version}: expected tarball integrity is required`);
+  const matches = (info) => {
+    if (info.dist?.integrity === integrity) return true;
+    throw fatal(
+      `${pkg}@${version} is already on npm with integrity ${info.dist?.integrity ?? 'unknown'}, ` +
+        `but this run packed ${integrity}. Refusing to continue with different bytes; ` +
+        'resume with "Re-run failed jobs" on the original release run so its artifacts are reused.',
+    );
+  };
+  const existing = await registry.versionInfo(pkg, version);
+  if (existing) {
+    matches(existing);
+    return 'already published';
+  }
+  let outcome = 'published';
+  try {
+    await publish();
+  } catch (error) {
+    let seen = null;
+    try {
+      await retry(
+        async () => {
+          seen = await registry.versionInfo(pkg, version);
+          return Boolean(seen);
+        },
+        `${pkg}@${version} read-back after failed publish`,
+        retryOptions,
+      );
+    } catch {
+      throw new Error(
+        `Failed to publish ${pkg}@${version}; the registry does not show it (or could not be read). ` +
+          'Read the registry again before any retry.',
+        { cause: error },
+      );
+    }
+    matches(seen);
+    outcome = 'appeared during publish';
+  }
+  await retry(
+    async () => {
+      const info = await registry.versionInfo(pkg, version);
+      return Boolean(info) && matches(info);
+    },
+    `${pkg}@${version} visibility`,
+    retryOptions,
+  );
+  return outcome;
+}
+
+/** Refuse before any write when publishing `version` would move latest/next backwards. */
+export async function assertNoDowngrade(registry, version) {
+  for (const pkg of packages) {
+    const current = await registry.tags(pkg);
+    for (const tag of releaseTags(version)) {
+      if (current[tag] && compareVersions(current[tag], version) > 0)
+        throw new Error(`${pkg}: refusing to downgrade ${tag} from ${current[tag]} to ${version}`);
+    }
+  }
+}
+
+function fatal(message) {
+  const error = new Error(message);
+  error.fatal = true;
+  return error;
 }
 
 export async function retry(
@@ -110,6 +255,8 @@ export async function retry(
     try {
       if (await check()) return;
     } catch (error) {
+      // A definite refusal (e.g. different bytes) is never retried away.
+      if (error?.fatal) throw error;
       if (attempt === attempts)
         throw new Error(`${label} failed after ${attempts} attempts`, { cause: error });
     }

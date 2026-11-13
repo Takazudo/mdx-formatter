@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  RegistryUnknownError,
+  assertNoDowngrade,
   initialPublishTag,
+  npmRegistry,
   packages,
   publishExactVersion,
   releaseTags,
@@ -24,6 +27,12 @@ function registry({
     async versionExists(pkg, version) {
       return state.get(pkg).versions.includes(version);
     },
+    async versionInfo(pkg, version) {
+      const entry = state.get(pkg);
+      return entry.versions.includes(version)
+        ? { version, dist: { integrity: entry.integrity?.[version] ?? `sha512-${version}` } }
+        : null;
+    },
     async versions(pkg) {
       return state.get(pkg).versions;
     },
@@ -39,47 +48,90 @@ function registry({
 
 const instant = { attempts: 3, wait: async () => {} };
 
-test('exact-version publish skips existing packages and safely retries a partial publish', async () => {
+test('exact-version publish compares bytes, never just existence', async () => {
   const npm = registry();
   let calls = 0;
   const pkg = packages[0];
+  const opts = { integrity: 'sha512-1.2.1', retryOptions: instant };
   assert.equal(
-    await publishExactVersion(npm, pkg, '1.2.1', () => {
-      calls++;
-    }),
+    await publishExactVersion(npm, pkg, '1.2.1', () => calls++, opts),
     'already published',
   );
   assert.equal(calls, 0);
+  await assert.rejects(
+    publishExactVersion(npm, pkg, '1.2.1', () => calls++, { ...opts, integrity: 'sha512-other' }),
+    /different bytes/,
+  );
+  assert.equal(calls, 0);
+  const publish = (v) => () => {
+    calls++;
+    npm.state.get(pkg).versions.push(v);
+  };
   assert.equal(
-    await publishExactVersion(npm, pkg, '1.3.0', () => {
-      calls++;
-      npm.state.get(pkg).versions.push('1.3.0');
+    await publishExactVersion(npm, pkg, '1.3.0', publish('1.3.0'), {
+      ...opts,
+      integrity: 'sha512-1.3.0',
     }),
     'published',
   );
   assert.equal(
-    await publishExactVersion(npm, pkg, '1.3.0', () => {
-      calls++;
-    }),
-    'already published',
-  );
-  assert.equal(calls, 1);
-  assert.equal(
-    await publishExactVersion(npm, pkg, '1.4.0', () => {
-      calls++;
-      npm.state.get(pkg).versions.push('1.4.0');
-      throw new Error('lost response after registry accepted publish');
-    }),
+    await publishExactVersion(
+      npm,
+      pkg,
+      '1.4.0',
+      () => {
+        publish('1.4.0')();
+        throw new Error('lost response after registry accepted publish');
+      },
+      { ...opts, integrity: 'sha512-1.4.0' },
+    ),
     'appeared during publish',
   );
   await assert.rejects(
-    publishExactVersion(npm, pkg, '1.5.0', () => {
-      calls++;
-      throw new Error('real failure');
-    }),
+    publishExactVersion(
+      npm,
+      pkg,
+      '1.5.0',
+      () => {
+        calls++;
+        throw new Error('real failure');
+      },
+      { ...opts, integrity: 'sha512-1.5.0' },
+    ),
     /Failed to publish/,
   );
+  await assert.rejects(
+    publishExactVersion(npm, pkg, '1.6.0', () => {}, {}),
+    /integrity is required/,
+  );
   assert.equal(calls, 3);
+});
+
+test('a publish whose upload never becomes visible fails instead of continuing', async () => {
+  const npm = registry();
+  await assert.rejects(
+    publishExactVersion(npm, packages[1], '1.3.0', () => {}, {
+      integrity: 'sha512-1.3.0',
+      retryOptions: instant,
+    }),
+    /visibility failed/,
+  );
+});
+
+test('a registry read error during publish stops before uploading', async () => {
+  const npm = registry();
+  npm.versionInfo = async () => {
+    throw new RegistryUnknownError('HTTP 503');
+  };
+  let calls = 0;
+  await assert.rejects(
+    publishExactVersion(npm, packages[0], '1.3.0', () => calls++, {
+      integrity: 'sha512-x',
+      retryOptions: instant,
+    }),
+    RegistryUnknownError,
+  );
+  assert.equal(calls, 0);
 });
 
 test('any prerelease suffix publishes under next, then promotes both tags', async () => {
@@ -263,10 +315,67 @@ test('old prerelease rerun cannot move next backwards', async () => {
   assert.equal(npm.calls.length, 0);
 });
 
+function fakeFetch(responses) {
+  const queue = [...responses];
+  return async () => {
+    const next = queue.shift();
+    if (next instanceof Error) throw next;
+    return {
+      status: next.status,
+      async json() {
+        if (next.body === undefined) throw new SyntaxError('Unexpected end of JSON input');
+        return next.body;
+      },
+    };
+  };
+}
+
+const packument = (pkg, versions = { '1.3.0': { dist: { integrity: 'sha512-a' } } }) => ({
+  name: pkg,
+  versions,
+  'dist-tags': { latest: '1.3.0', next: '1.3.0' },
+});
+
 test('regression: a registry read error is never reported as "not published"', async () => {
-  const { npmRegistry } = await import('./tags.mjs');
-  const failing = npmRegistry(() => {
-    throw new Error('npm ERR! code E429 Too Many Requests');
+  const pkg = packages[0];
+  for (const failure of [
+    new TypeError('fetch failed'),
+    { status: 401 },
+    { status: 403 },
+    { status: 404 },
+    { status: 429 },
+    { status: 500 },
+    { status: 503 },
+    { status: 200 },
+    { status: 200, body: { name: 'other', versions: {}, 'dist-tags': {} } },
+    { status: 200, body: { name: pkg } },
+  ]) {
+    const npm = npmRegistry({ fetchImpl: fakeFetch([failure]) });
+    await assert.rejects(
+      npm.versionExists(pkg, '1.3.0'),
+      RegistryUnknownError,
+      JSON.stringify(failure),
+    );
+  }
+});
+
+test('registry reads separate published and definitely absent versions', async () => {
+  const pkg = packages[0];
+  const npm = npmRegistry({
+    fetchImpl: fakeFetch([
+      { status: 200, body: packument(pkg) },
+      { status: 200, body: packument(pkg) },
+    ]),
   });
-  await assert.rejects(failing.versionExists(packages[0], '1.3.0'));
+  assert.equal(await npm.versionExists(pkg, '1.3.0'), true);
+  assert.equal(await npm.versionInfo(pkg, '1.3.1'), null);
+});
+
+test('downgrade guard refuses before any publish when latest or next is newer', async () => {
+  const npm = registry({ versions: ['1.3.0', '1.4.0'], latest: '1.4.0', next: '1.4.0' });
+  await assert.rejects(assertNoDowngrade(npm, '1.3.1'), /refusing to downgrade latest from 1.4.0/);
+  await assertNoDowngrade(
+    registry({ versions: ['1.3.0'], latest: '1.3.0', next: '1.3.0' }),
+    '1.3.1',
+  );
 });

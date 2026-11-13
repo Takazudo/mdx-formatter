@@ -47,7 +47,8 @@ pnpm --dir doc preview # Preview doc/dist/ with zfb
 
 - Scoped package: `@takazudo/mdx-formatter` + 4 platform binary packages (`npm/*`, pnpm workspace members pinned as `workspace:X.Y.Z` optionalDependencies)
 - `files` field limits published content to: `dist/`, `format-stdin.js`, `README.md`, `LICENSE`
-- `prepublishOnly` runs `tsc && vitest run` automatically
-- Use `/l-make-release` for ALL releases — one-call autonomous: bump, changelog, CI wait, tag; the tag triggers `release.yml` which auto-publishes all 5 packages via the repo `NPM_TOKEN`. Pass `--confirm` for interactive vetting
+- `prepublishOnly` runs `tsc && vitest run` for local `pnpm publish`; `release.yml` runs the same `tsc` + `vitest` explicitly against the shipped Linux binary before packing
+- Use `/l-make-release` for ALL releases — bump, changelog, integrate on `main`, CI wait on the exact commit, then `release-coordinator.yml` (dry run first, then `dry_run=false`) tags that SHA with Actions' token and dispatches `release.yml`. Pass `--confirm` for interactive vetting
+- npm auth is OIDC trusted publishing only (workflow `release.yml`, no environment, `npm publish` + `npm dist-tag`; `repair-tags.yml` for dist-tag only). No `NPM_TOKEN`/`NODE_AUTH_TOKEN`: the jobs refuse tokens. Claude Code Cloud starts releases through the coordinator (GitHub MCP `actions_run_trigger`), never by pushing tags or adding a PAT. Details: `scripts/release/README.md`
 - Stable releases only — the `-next.N` prerelease line is retired. Every release publishes under `latest` and `release.yml` then moves `next` to the same version for the root and all four platform packages, so `@next` users land on stable. Never delete the `next` tag. The stable-only `.github/workflows/repair-tags.yml` is for historical recovery, not routine releases
-- Never run `npm publish` / `pnpm publish` locally — publishing happens only in `release.yml` (the root package MUST go through `pnpm publish` there, which rewrites the `workspace:` specifiers)
+- Never run `npm publish` / `pnpm publish` locally — publishing happens only in `release.yml`, which packs once (the root MUST be packed with `pnpm pack`, which rewrites the `workspace:` specifiers to exact versions), verifies the tarballs and publishes those exact files

@@ -1,34 +1,48 @@
-# release.yml (formerly napi.yml)
+# release.yml — publishes all five npm packages through trusted publishing (OIDC).
 #
-# Full npm release pipeline, triggered by pushing a v* tag (normally done by
-# the /l-make-release skill) or manually via workflow_dispatch for recovery
-# re-runs after a partial failure.
+# Triggers
+#   push of a v* tag (a person with tag rights), or
+#   workflow_dispatch at a v* tag (release-coordinator.yml, or "Run workflow"
+#   in the Actions UI). A tag created with GITHUB_TOKEN does not start push
+#   workflows, so the coordinator dispatches this file explicitly.
+#   workflow_dispatch with dry_run=true on any ref builds, packs and verifies
+#   the five tarballs and never publishes (artifact-only native verification).
 #
-# 1. Cross-compiles the napi binary for 4 platforms.
-# 2. Publishes the 4 platform packages (npm/*) with npm publish.
-# 3. Publishes the root @takazudo/mdx-formatter package with pnpm publish
-#    (rewrites the pinned workspace:X.Y.Z optionalDependencies to exact
-#    versions in the packed tarball). prepublishOnly (tsc && vitest run)
-#    executes against the linux-x64 artifact copied into crates/, so the
-#    tests exercise the exact binary being shipped.
-# 4. Promotes both latest and next for every release.
+# Jobs
+#   gate      read-only. Real runs: ref is refs/tags/vX.Y.Z of this file, the
+#             tag names GITHUB_SHA, package.json/npm/*/lockfile/changelog are
+#             lockstep at X.Y.Z, the commit is on main, ci.yml's push run on main
+#             is green for exactly that commit, npm is readable (unknown ->
+#             stop) and no dist-tag would regress.
+#   build     four native binaries (one per OS/arch runner).
+#   pack      prepublishOnly equivalent (tsc + vitest against the Linux binary
+#             that ships), then packs once: natives with npm, root with pnpm
+#             (workspace:X.Y.Z -> X.Y.Z). Verifies every tarball, installs the
+#             packed root + Linux package and runs the library and CLI, and
+#             uploads the tarballs with their sha512 integrities.
+#   publish   the only job with id-token: write. npm 11.21.1, no token: refuses
+#             NPM_TOKEN / NODE_AUTH_TOKEN / npmrc tokens. Publishes the exact
+#             packed files, natives first and visible before the root; an
+#             existing version must have identical bytes. Then moves latest and
+#             next on all five.
+#   finalize  contents: write. Reads back all five (integrity, provenance for
+#             this tag + commit + workflow, trusted publisher, both dist-tags),
+#             then creates or confirms the GitHub Release from the changelog.
 #
-# Dist-tag policy: prereleases initially publish under next and stable versions
-# under latest. After all five versions are live, both tags move to the release.
+# npm trusted publisher for each of the five packages (npmjs.com, Settings):
+#   owner Takazudo, repository mdx-formatter, workflow release.yml,
+#   environment empty, allowed: npm publish + npm dist-tag.
+# Keep this filename and the job free of environments; both are part of that identity.
 #
-# Idempotency: every publish is guarded by an npm-registry existence check
-# (skip when the exact version is already live, re-check after a failed
-# publish to tolerate races), so re-running this workflow after a partial
-# failure only publishes what is still missing.
-#
-# IMPORTANT: NPM_TOKEN must be an Automation-type (or granular) token with
-# publish access to the root package AND the four platform packages. npm
-# requires 2FA for publish otherwise, which cannot be satisfied in CI.
+# Resume a failed run with "Re-run failed jobs" on the same run (or the
+# coordinator, which does that for a partial publish): it reuses this run's
+# packed tarballs. A fresh run rebuilds natives, and the publish step stops if
+# npm already holds different bytes for the version.
 
 name: Release
+run-name: ${{ inputs.dry_run && format('Release {0} (dry run)', github.ref_name) || format('Release {0}', github.ref_name) }}
 
-# Fixed group shared with repair-tags.yml. Covers npm publish itself, which
-# changes tags before the explicit synchronization step.
+# Shared with repair-tags.yml so tag writes never interleave.
 concurrency:
   group: npm-release-and-tag-repair
   cancel-in-progress: false
@@ -39,9 +53,51 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build, pack and verify only; no npm writes, no GitHub Release'
+        type: boolean
+        default: false
+
+permissions: {}
+
+env:
+  NODE_RELEASE_VERSION: '24.22.0'
+  NPM_RELEASE_VERSION: '11.21.1'
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      mode: ${{ steps.gate.outputs.mode }}
+      version: ${{ steps.gate.outputs.version }}
+      sha: ${{ steps.gate.outputs.sha }}
+      build: ${{ steps.gate.outputs.build }}
+      publish: ${{ steps.gate.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_RELEASE_VERSION }}
+      - name: Gate release identity
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
+        run: node scripts/release/tags-cli.mjs release-gate --dry-run "$DRY_RUN"
+
   build:
+    needs: gate
+    if: needs.gate.outputs.build == 'true'
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -70,9 +126,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Sync platform package versions with root
-        shell: bash
-        run: node scripts/sync-napi-versions.mjs
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.settings.target }}
@@ -85,95 +140,123 @@ jobs:
           path: mdx-formatter-napi.*.node
           if-no-files-found: error
 
-  publish:
-    # Invariant: platform package.json versions and the root's pinned
-    # workspace:X.Y.Z optionalDependencies are synced with the root version
-    # via scripts/sync-napi-versions.mjs before build and before publish, so
-    # each tag publishes all five packages at the tag's root version. On a
-    # properly tagged commit the sync is a no-op; on a mis-tagged commit it
-    # changes specifiers and the frozen-lockfile install below fails loud.
-    needs: build
+  pack:
+    needs: [gate, build]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
       contents: read
-      # OIDC token for npm publish provenance attestation.
-      id-token: write
     steps:
       - uses: actions/checkout@v4
-      - name: Sync platform package versions with root
-        shell: bash
-        run: node scripts/sync-napi-versions.mjs
-      # pnpm version comes from the root package.json "packageManager" field
-      # (pinned exactly there so publish behavior — workspace: specifier
-      # rewriting — does not drift with the latest pnpm 10.x).
+        with:
+          persist-credentials: false
+      - name: Verify the five packages are in lockstep (no rewrite)
+        run: node scripts/sync-napi-versions.mjs --check
+      # pnpm comes from package.json "packageManager"; its pack rewrites workspace:X.Y.Z.
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-
-      # Fail-fast auth guard: an invalid/expired NPM_TOKEN otherwise surfaces
-      # only as an opaque "E404 Not Found - PUT" at publish time (npm masks a
-      # 403/401 as 404 for scoped packages). `npm whoami` turns that into a
-      # clear, early failure. NOTE: NPM_TOKEN must be a valid Automation token
-      # (bypasses 2FA) with publish rights to the @takazudo scope.
-      - name: Verify npm auth
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          node-version: ${{ env.NODE_RELEASE_VERSION }}
+      - name: Pin npm
         run: |
-          echo "Authenticated to npm as: $(npm whoami)"
-
+          npm install -g "npm@${NPM_RELEASE_VERSION}"
+          test "$(npm --version)" = "$NPM_RELEASE_VERSION"
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
-
-      - name: Determine version and initial dist-tag
-        id: meta
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          DIST_TAG=$(node scripts/release/tags-cli.mjs channel "$VERSION")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "dist_tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
-          echo "Releasing v${VERSION} under initial dist-tag '${DIST_TAG}'"
-
-      - name: Copy binaries to platform packages
-        run: |
-          cp artifacts/bindings-aarch64-apple-darwin/mdx-formatter-napi.darwin-arm64.node npm/darwin-arm64/mdx-formatter-napi.node
-          cp artifacts/bindings-x86_64-apple-darwin/mdx-formatter-napi.darwin-x64.node npm/darwin-x64/mdx-formatter-napi.node
-          cp artifacts/bindings-x86_64-unknown-linux-gnu/mdx-formatter-napi.linux-x64-gnu.node npm/linux-x64-gnu/mdx-formatter-napi.node
-          cp artifacts/bindings-x86_64-pc-windows-msvc/mdx-formatter-napi.win32-x64-msvc.node npm/win32-x64-msvc/mdx-formatter-napi.node
-
-      - name: List artifacts
-        run: |
-          echo "=== Platform packages ==="
-          ls -lR npm/
-
-      # Strict ordering: all four platform packages must be live before the
-      # root package publishes, so a consumer can never resolve a root
-      # version whose exact-pinned binary packages are missing.
-      - name: Publish platform packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: node scripts/release/tags-cli.mjs publish-platforms "${{ steps.meta.outputs.version }}" "${{ steps.meta.outputs.dist_tag }}"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Place linux binary for prepublish tests
+          pattern: bindings-*
+          path: ${{ runner.temp }}/bindings
+      - run: pnpm install --frozen-lockfile
+      - name: Place the shipped Linux binary for the prepublish tests
         # src/rust-formatter.ts prefers crates/mdx-formatter-napi/mdx-formatter-napi.node,
-        # so prepublishOnly's vitest run exercises the exact artifact shipped
-        # in @takazudo/mdx-formatter-linux-x64-gnu.
-        run: cp artifacts/bindings-x86_64-unknown-linux-gnu/mdx-formatter-napi.linux-x64-gnu.node crates/mdx-formatter-napi/mdx-formatter-napi.node
-
-      - name: Publish root package
-        # pnpm publish rewrites pinned workspace:X.Y.Z dependencies in the
-        # packed tarball. The helper retains exact-version idempotency.
+        # so the tests below exercise the exact binary in the linux-x64-gnu tarball.
+        run: cp "$RUNNER_TEMP/bindings/bindings-x86_64-unknown-linux-gnu/mdx-formatter-napi.linux-x64-gnu.node" crates/mdx-formatter-napi/mdx-formatter-napi.node
+      - name: prepublishOnly equivalent (tsc and vitest)
+        run: |
+          pnpm exec tsc
+          pnpm exec vitest run
+      - name: Pack once, verify and smoke-test the packed install
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: node scripts/release/tags-cli.mjs publish-root "${{ steps.meta.outputs.version }}" "${{ steps.meta.outputs.dist_tag }}"
+          VERSION: ${{ needs.gate.outputs.version }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: node scripts/release/tags-cli.mjs pack --version "$VERSION" --sha "$SHA" --out "$RUNNER_TEMP/tarballs" --bindings "$RUNNER_TEMP/bindings"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-tarballs
+          path: ${{ runner.temp }}/tarballs
+          if-no-files-found: error
+          retention-days: 90
 
-      - name: Promote release dist-tags and verify registry state
+  publish:
+    needs: [gate, pack]
+    if: >-
+      always() && needs.gate.result == 'success' &&
+      needs.gate.outputs.mode == 'release' && needs.gate.outputs.publish == 'true' &&
+      startsWith(github.ref, 'refs/tags/v') && inputs.dry_run != true &&
+      (needs.pack.result == 'success' || needs.pack.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      published_here: ${{ steps.publish.outputs.published_here }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # No registry-url: setup-node would write an npmrc expecting NODE_AUTH_TOKEN.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_RELEASE_VERSION }}
+      - name: Pin npm for OIDC publish and dist-tag
+        run: |
+          npm install -g "npm@${NPM_RELEASE_VERSION}"
+          test "$(npm --version)" = "$NPM_RELEASE_VERSION"
+          node --version
+      - uses: actions/download-artifact@v4
+        if: needs.pack.result == 'success'
+        with:
+          name: release-tarballs
+          path: ${{ runner.temp }}/tarballs
+      - name: Publish through OIDC, then move latest and next
+        id: publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: node scripts/release/tags-cli.mjs sync "${{ steps.meta.outputs.version }}"
+          VERSION: ${{ needs.gate.outputs.version }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: node scripts/release/tags-cli.mjs publish --version "$VERSION" --sha "$SHA" --dir "$RUNNER_TEMP/tarballs"
+
+  finalize:
+    needs: [gate, pack, publish]
+    if: >-
+      always() && needs.gate.result == 'success' && needs.gate.outputs.mode == 'release' &&
+      (needs.pack.result == 'success' || needs.pack.result == 'skipped') &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_RELEASE_VERSION }}
+      - uses: actions/download-artifact@v4
+        if: needs.pack.result == 'success'
+        with:
+          name: release-tarballs
+          path: ${{ runner.temp }}/tarballs
+      - name: Read back all five packages
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+          SHA: ${{ needs.gate.outputs.sha }}
+          PUBLISHED_HERE: ${{ needs.publish.outputs.published_here }}
+        run: node scripts/release/tags-cli.mjs verify --version "$VERSION" --sha "$SHA" --dir "$RUNNER_TEMP/tarballs" --published-here "$PUBLISHED_HERE"
+      - name: Create or confirm the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.gate.outputs.version }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: node scripts/release/tags-cli.mjs finalize --version "$VERSION" --sha "$SHA"
