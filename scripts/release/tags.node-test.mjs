@@ -262,3 +262,11 @@ test('old prerelease rerun cannot move next backwards', async () => {
   );
   assert.equal(npm.calls.length, 0);
 });
+
+test('regression: a registry read error is never reported as "not published"', async () => {
+  const { npmRegistry } = await import('./tags.mjs');
+  const failing = npmRegistry(() => {
+    throw new Error('npm ERR! code E429 Too Many Requests');
+  });
+  await assert.rejects(failing.versionExists(packages[0], '1.3.0'));
+});
